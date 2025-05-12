@@ -1,0 +1,8 @@
+__pycache__/
+tmp/
+.idea/
+.venv/
+.env
+app.log
+test_*
+.pipterm_history
