@@ -78,7 +78,7 @@ class VaultAIAgentRunner:
 
     def run(self):
         terminal = self.terminal
-        terminal.print_green(f"AI agent started with goal: {self.user_goal}")
+        #terminal.print_console(f"[Vault-Tec] AI agent started with goal: {self.user_goal}")
 
         for step_count in range(10):  # Limit steps to avoid infinite loops
             window_context = self._sliding_window_context()
@@ -98,11 +98,11 @@ class VaultAIAgentRunner:
             elif terminal.ai_engine == "openai":
                 ai_reply = terminal.connect_to_chatgpt(self.system_prompt_agent, prompt_text)
             else:
-                terminal.print_green("Invalid AI engine specified. Stopping agent.")
+                terminal.print_console("Invalid AI engine specified. Stopping agent.")
                 self.summary = "Agent stopped: Invalid AI engine specified."
                 break
             
-            terminal.print_green(f"AI agent step {step_count + 1}: {ai_reply}")
+            #terminal.print_console(f"AI agent step {step_count + 1}: {ai_reply}")
 
             data = None
             ai_reply_json_string = None
@@ -125,7 +125,7 @@ class VaultAIAgentRunner:
                         terminal.logger.debug("Successfully parsed JSON from full AI reply.")
                 
                 except json.JSONDecodeError as e:
-                    terminal.print_green(f"AI did not return valid JSON (attempt 1): {e}. Asking for correction...")
+                    terminal.print_console(f"AI did not return valid JSON (attempt 1): {e}. Asking for correction...")
                     terminal.logger.warning(f"Invalid JSON from AI (attempt 1): {ai_reply}")
                     self.context.append({"role": "assistant", "content": ai_reply})
                     
@@ -151,7 +151,7 @@ class VaultAIAgentRunner:
                     else: # openai
                         corrected_ai_reply = terminal.connect_to_chatgpt(self.system_prompt_agent, correction_llm_prompt_text)
                     
-                    terminal.print_green(f"AI agent correction attempt: {corrected_ai_reply}")
+                    terminal.print_console(f"AI agent correction attempt: {corrected_ai_reply}")
 
                     if corrected_ai_reply:
                         try:
@@ -169,24 +169,24 @@ class VaultAIAgentRunner:
                                 corrected_ai_reply_string = corrected_ai_reply
                                 terminal.logger.debug("Successfully parsed corrected JSON from full reply.")
                             
-                            terminal.print_green("Successfully parsed corrected JSON.")
+                            terminal.print_console("Successfully parsed corrected JSON.")
                             self.context.pop()  # Remove user's correction request
                             self.context.pop()  # Remove assistant's failed reply
                             ai_reply_json_string = corrected_ai_reply_string # This is now the primary response string
                         except json.JSONDecodeError as e2:
-                            terminal.print_green(f"AI still did not return valid JSON after correction ({e2}). Stopping agent.")
+                            terminal.print_console(f"AI still did not return valid JSON after correction ({e2}). Stopping agent.")
                             terminal.logger.error(f"Invalid JSON from AI (attempt 2): {corrected_ai_reply}")
                             self.summary = f"Agent stopped: AI failed to provide valid JSON even after retry ({e2})."
                             self.context.append({"role": "assistant", "content": corrected_ai_reply or ""})
                             self.context.append({"role": "user", "content": f"Your response was still not valid JSON: {e2}. I am stopping."})
                             break 
                     else: # No corrected reply
-                        terminal.print_green("AI did not provide a correction. Stopping agent.")
+                        terminal.print_console("AI did not provide a correction. Stopping agent.")
                         self.summary = "Agent stopped: AI did not respond to correction request."
                         break
             
             if data is None:
-                 terminal.print_green("Internal error: JSON data is None after parsing attempts. Stopping agent.")
+                 terminal.print_console("Internal error: JSON data is None after parsing attempts. Stopping agent.")
                  self.summary = "Agent stopped: Internal error during JSON parsing."
                  if ai_reply and not ai_reply_json_string and not corrected_ai_reply_string: # If original reply exists but wasn't parsed
                      self.context.append({"role": "assistant", "content": ai_reply})
@@ -206,7 +206,7 @@ class VaultAIAgentRunner:
             elif isinstance(data, dict):
                 actions_to_process = [data]
             else:
-                terminal.print_green(f"AI response was not a list or dictionary after parsing: {type(data)}. Stopping agent.")
+                terminal.print_console(f"AI response was not a list or dictionary after parsing: {type(data)}. Stopping agent.")
                 self.summary = f"Agent stopped: AI response type was {type(data)} after successful JSON parsing."
                 self.context.append({"role": "user", "content": f"Your response was a {type(data)}, but I expected a list or a dictionary of actions. I am stopping."})
                 break
@@ -214,7 +214,7 @@ class VaultAIAgentRunner:
             agent_should_stop_this_turn = False
             for action_item_idx, action_item in enumerate(actions_to_process):
                 if not isinstance(action_item, dict):
-                    terminal.print_green(f"Action item {action_item_idx + 1}/{len(actions_to_process)} is not a dictionary: {action_item}. Skipping.")
+                    terminal.print_console(f"Action item {action_item_idx + 1}/{len(actions_to_process)} is not a dictionary: {action_item}. Skipping.")
                     self.context.append({"role": "user", "content": f"Action item {action_item_idx + 1} in your list was not a dictionary: {action_item}. I am skipping it."})
                     continue
 
@@ -222,7 +222,7 @@ class VaultAIAgentRunner:
 
                 if tool == "finish":
                     summary_text = action_item.get("summary", "Agent reported task finished.")
-                    terminal.print_green(f"Agent finished its task. Summary: {summary_text}")
+                    terminal.print_console(f"Agent finished its task. Summary: {summary_text}")
                     self.summary = summary_text
                     agent_should_stop_this_turn = True
                     break 
@@ -230,22 +230,22 @@ class VaultAIAgentRunner:
                 elif tool == "bash":
                     command = action_item.get("command")
                     if not command:
-                        terminal.print_green(f"No command provided in bash action: {action_item}. Skipping.")
+                        terminal.print_console(f"No command provided in bash action: {action_item}. Skipping.")
                         self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
                         continue
                     
-                    confirm_prompt_text = f"Agent suggests: '{command}'. Execute? [y/N]: "
+                    confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
                     if len(actions_to_process) > 1:
                         confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
                     
                     confirm = input(f"{confirm_prompt_text}").lower().strip()
                     if confirm != 'y':
-                        terminal.print_green("Command execution cancelled by user. Stopping agent.")
+                        terminal.print_console("Command execution cancelled by user. Stopping agent.")
                         self.summary = "Agent stopped: Command execution cancelled by user."
                         agent_should_stop_this_turn = True
                         break
 
-                    terminal.print_green(f"Executing: {command}")
+                    terminal.print_console(f"Executing: {command}")
                     out, code = "", 1 
                     if self.terminal.ssh_connection:
                         out, code = self.terminal.execute_remote(command)
@@ -253,7 +253,7 @@ class VaultAIAgentRunner:
                         out, code = self.terminal.execute_local(command) # Corrected method call
 
                     self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
-                    terminal.print_green(f"Result (code {code}):\n{out}")
+                    terminal.print_console(f"Result (code {code}):\n{out}")
                     
                     user_feedback_content = ""
                     if code == 0:
@@ -276,11 +276,11 @@ class VaultAIAgentRunner:
                 elif tool == "ask_user":
                     question = action_item.get("question")
                     if not question:
-                        terminal.print_green(f"No question provided in ask_user action: {action_item}. Skipping.")
+                        terminal.print_console(f"No question provided in ask_user action: {action_item}. Skipping.")
                         self.context.append({"role": "user", "content": f"You provided an 'ask_user' action but no question: {action_item}. I am skipping it."})
                         continue
                     
-                    terminal.print_green(f"Agent asks: {question}")
+                    terminal.print_console(f"Agent asks: {question}")
                     user_answer = input(f"Your answer: ")
                     self.context.append({"role": "user", "content": f"User answer to '{question}': {user_answer}"})
 
@@ -289,7 +289,7 @@ class VaultAIAgentRunner:
                              self.context.append({"role": "user", "content": "I will now proceed to the next action you provided."})
                 
                 else: 
-                    terminal.print_green(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
+                    terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                     user_feedback_invalid_tool = (
                         f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
                         f"Valid tools are 'bash', 'ask_user', 'finish'. "
@@ -307,8 +307,8 @@ class VaultAIAgentRunner:
             if agent_should_stop_this_turn:
                 break 
 
-        terminal.print_green("\n--- Agent summary ---")
-        for s_item in self.steps:
-            terminal.print_green(s_item)
-        terminal.print_green(self.summary)
-        terminal.print_green("--- End of agent summary ---")
+        # terminal.print_console("\n--- Agent summary ---")
+        # for s_item in self.steps:
+        #     terminal.print_console(s_item)
+        # terminal.print_console(self.summary)
+        # terminal.print_console("--- End of agent summary ---")

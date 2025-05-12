@@ -9,6 +9,53 @@ from google import genai
 from rich.console import Console
 from AiAgentRunner import VaultAIAgentRunner
 
+PIPBOY_ASCII = r"""
+
+ ........................................................................................ 
+ ........................................................................................ 
+ ........................................................................................ 
+ ..........................................       ....................................... 
+ ........................................   #####    .................................... 
+ ......................................   ##     ###       .............................. 
+ ...............................    .   ###  ...   .  +###   ............................ 
+ .....................     ...   ## . ### . ..........   .##  ........................... 
+ ...................   ### .   ##   .     ...............  ##   ......................... 
+ ..................  ##.##   ##.  ........       .........  -##   ....................... 
+ ..................  # . #####     .       .####   ........    ##   ..................... 
+ .................. ## .         ###### ##########          .   -#.  .................... 
+ ..................  #  ......  #                ###  ########    ## .................... 
+ ................... ##   . . ##  ..............    .       ###...##  ................... 
+ ................... .### . ##   ............     .........  ## .. ## ................... 
+ ................... #   ##   ## ............ ###  ......   ##  .. +# ................... 
+ ................... #  ## ##### ............  ###  ..... ###. ...  #  .................. 
+ ...................  ###.       .............    # .....  -#.. .. ### .................. 
+ ...................  ##  .     ....   ..... .      .....  ## #     #  .................. 
+ ...................  ## .  ### ...  # ....  ### ........ # ## ##  ##  .................. 
+ ................... ## .. #### ..  ## .... --## ........  ##   # ###  .................. 
+ ................... ## .. .##  .  ##  ....  ##  ........ ## ### # #+ ................... 
+ ..................  ## ...       ##  ......    .........   ## #  +#  ...................
+ .................. ##  ....... -##  ..................... # ## .##  .................... 
+ .................. .# ........ ###   .....   ............  #  ###   .................... 
+ .................. ##  .......   ### ......#    ..........      ##  .................... 
+ ..................  ## .    ....   . ..     ### . ............. ##  .................... 
+ ..................  ##   ##           . #### -### ............  .# ..................... 
+ ................... ##  ###  ######## .     #### ........      ##  ..................... 
+ ...................  ##  ####           ####  ## .......  +####+  ...................... 
+ .................... ###      ##########         .....   ###     ....................... 
+ ....................  ###  ..            ............  ###   ........................... 
+ .....................  ###  .... #### .............   ###  ............................. 
+ ......................   ##   ..      ..........    ####  .............................. 
+ ........................  .##    ............... ### ##  ............................... 
+ .........................    ###     ............   ##. ................................ 
+ ............................    ####          .    ##   ................................ 
+ ...............................   ###########   ###   .................................. 
+ .................................    ###########    .................................... 
+ ...................................               ...................................... 
+ ........................................................................................ 
+ ........................................................................................ 
+ ........................................................................................ 
+ ........................................................................................ 
+ """ 
 
 class term_agent:
     def __init__(self):
@@ -83,7 +130,7 @@ class term_agent:
                 return str(response)
         except Exception as e:
             self.logger.error(f"Gemini connection error: {e}")
-            self.print_green(f"Gemini connection error: {e}")
+            self.print_console(f"Gemini connection error: {e}")
             return None
 
 
@@ -113,7 +160,7 @@ class term_agent:
             return response.choices[0].message.content.strip()
         except Exception as e:
             self.logger.error(f"OpenAI connection error: {e}")
-            self.print_green(f"OpenAI connection error: {e}")
+            self.print_console(f"OpenAI connection error: {e}")
             return None
 
     # --- Ollama Function ---
@@ -176,7 +223,7 @@ class term_agent:
 
         except Exception as e:
             self.logger.error(f"Ollama connection error: {e}")
-            self.print_green(f"Ollama connection error: {e}")
+            self.print_console(f"Ollama connection error: {e}")
             return None
 
     def run(self, command, remote=None):
@@ -245,8 +292,11 @@ class term_agent:
             else:
                 self.console.print("[red]Command cancelled.[/]")
 
-    def print_green(self, text):
-        self.console.print(f"[bold green]{text}[/]")
+    def print_console(self, text,color=None):
+        if color:
+            self.console.print(f"[{color}]{text}[/]")
+        else:
+            self.console.print(text)
 
     def execute_local(self, command):
         """
@@ -263,29 +313,49 @@ class term_agent:
         if not remote:
             return '', 1
         ssh_command = ["ssh", remote, command]
-        result = subprocess.run(ssh_command, capture_output=True, text=True)
-        return result.stdout, result.returncode
+        try:
+            result = subprocess.run(ssh_command, capture_output=True, text=True)
+            return result.stdout, result.returncode
+        except Exception as e:
+            self.logger.error(f"SSH execution failed: {e}")
+            return '', 1
 
 def main():
     agent = term_agent()
-    agent.console.print("[bold green]Witaj w Terminal AI Agent![/]")
-    agent.console.print("Podaj cel/zadanie do wykonania przez AI (np. 'Zainstaluj nginx', 'Znajdź duże pliki w katalogu /tmp', itp.)")
-    #user_goal = agent.console.input("[bold yellow]Cel: [/] ")
-    user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
+    agent.console.print(PIPBOY_ASCII)
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault-Tec 3000.\n"
+                        "Fallout-inspired AI Agent is now at your service.\n")
+    agent.console.print("[Vault-Tec] What can I do for you today?\n")
+    
+    try:
+        user_goal = agent.console.input("> ")
+        #user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
+    except EOFError:
+        agent.console.print("\n[red][Vault-Tec] EOFError: Unexpected end of file.[/]")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        agent.console.print("\n[red][Vault-Tec] Sttopeed by user.[/]")
+        sys.exit(1)
     if len(sys.argv) == 2:
         remote = sys.argv[1]
         user = remote.split('@')[0] if '@' in remote else None
         host = remote.split('@')[1] if '@' in remote else remote
         agent.ssh_connection = True  # Ustaw tryb zdalny
         agent.remote_host = remote   # Przechowuj host do użycia w execute_remote
+        agent.console.print(f"[Vault-Tec] AI agent started with goal: {user_goal} on {remote}.\n")
     else:
         remote = None
         user = None
         host = None
         agent.ssh_connection = False
         agent.remote_host = None
+        agent.console.print(f"[Vault-Tec] AI agent started with goal: {user_goal}")
     runner = VaultAIAgentRunner(agent, user_goal, user=user, host=host)
-    runner.run()
+    try:
+        runner.run()
+    except KeyboardInterrupt:
+        agent.console.print("[red]Agent przerwany przez użytkownika.[/]")
+        # Możesz dodać podsumowanie lub zapis stanu
 
 if __name__ == "__main__":
     main()
