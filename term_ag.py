@@ -169,7 +169,6 @@ class term_agent:
         Send a prompt to Ollama API and return the response as a string.
         Uses simple prompt (not chat format) for best compatibility.
         """
-
         if model is None:
             model = self.ollama_model
         if max_tokens is None:
@@ -328,8 +327,8 @@ def main():
     agent.console.print("[Vault-Tec] What can I do for you today?\n")
     
     try:
-        user_goal = agent.console.input("> ")
-        #user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
+        #user_goal = agent.console.input("> ")
+        user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
     except EOFError:
         agent.console.print("\n[red][Vault-Tec] EOFError: Unexpected end of file.[/]")
         sys.exit(1)
