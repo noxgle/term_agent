@@ -34,20 +34,20 @@ class VaultAIAskRunner:
             # Compose prompt for LLM
             if self.agent.ai_engine == "ollama":
                 prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
-                response = self.agent.connect_to_ollama(system_prompt, prompt_text)
+                response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
             elif self.agent.ai_engine == "google":
                 prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
-                response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
+                response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)
             elif self.agent.ai_engine == "openai":
                 # OpenAI supports full chat context
-                response = self.agent.connect_to_chatgpt(system_prompt, user_input if len(self.history) <= 2 else self.history[1:])
+                response = self.agent.connect_to_chatgpt(system_prompt, user_input if len(self.history) <= 2 else self.history[1:], format=None)
             else:
                 self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
                 break
             if response:
                 try:
                     str_response = json.loads(response)
-                    answer = str_response.get('response', response)
+                    answer = str_response.get('response', response['response'])
                 except Exception:
                     answer = response
                 self.agent.console.print(f"[cyan]VaultAI:[/] {answer}")
