@@ -97,7 +97,7 @@ class term_agent:
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
 
-    def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None):
+    def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
         """
         Send a prompt to Google Gemini and return the response as a string.
         """
@@ -109,13 +109,20 @@ class term_agent:
             temperature = self.default_temperature
         try:
             client = genai.Client(api_key=self.api_key)
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config={
-                    "response_mime_type": "application/json"
-                }
-            )
+            if format == 'json':
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json"
+                    }
+                )
+            else:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt
+                )
+
 
 
             self.logger.info(f"Gemini prompt: {prompt}")
@@ -136,7 +143,7 @@ class term_agent:
 
     # --- ChatGPT Function ---
     def connect_to_chatgpt(self, role_system_content, prompt,
-                           model=None, max_tokens=None, temperature=None):
+                           model=None, max_tokens=None, temperature=None, format='json'):
         if model is None:
             model = self.default_model
         if max_tokens is None:
@@ -145,16 +152,27 @@ class term_agent:
             temperature = self.default_temperature
         client = OpenAI(api_key=self.api_key)
         try:
-            response = client.chat.completions.create(
-                model=model,
-                messages=[
-                    {"role": "system", "content": role_system_content},
-                    {"role": "user",   "content": prompt}
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature,
-                response_format={"type": "json_object"}
-            )
+            if format == 'json':
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format={"type": "json"}
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
             self.logger.info(f"OpenAI prompt: {prompt}")
             self.logger.debug(f"OpenAI raw response: {response}")
             return response.choices[0].message.content.strip()
@@ -164,7 +182,7 @@ class term_agent:
             return None
 
     # --- Ollama Function ---
-    def connect_to_ollama(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, ollama_url=None, format=None):
+    def connect_to_ollama(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, ollama_url=None, format="json"):
         """
         Send a prompt to Ollama API and return the response as a string.
         Uses simple prompt (not chat format) for best compatibility.
@@ -191,8 +209,8 @@ class term_agent:
             }
         }
 
-        if format is not None:
-            payload["format"] = format
+        if format == "json":
+            payload["format"] = "json"
 
         try:
             resp = requests.post(ollama_url, json=payload, timeout=120)
