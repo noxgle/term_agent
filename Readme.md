@@ -43,10 +43,11 @@
  ........................................................................................ 
  ........................................................................................ 
  ........................................................................................  
+```
 
 # Vault 3000 Terminal Agent
 
-**Vault 3000** is a Fallout-inspired terminal AI assistant that answers user questions, helps with Linux commands, supports various AI engines (OpenAI, Google Gemini, Ollama), and can work locally or remotely via SSH.
+**Vault 3000** is a Fallout-inspired terminal AI assistant that answers user questions, helps with Linux commands, supports various AI engine (OpenAI, Google Gemini, Ollama), and can work locally or remotely via SSH.
 
 ## Features
 
