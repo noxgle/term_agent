@@ -2,50 +2,55 @@ import sys
 import json
 
 class VaultAIAskRunner:
-    #def __init__(self, agent, user_goal, user=None, host=None):
     def __init__(self, agent, user=None, host=None):
         self.agent = agent
-        #self.user_goal = user_goal
         self.user = user
         self.host = host
         self.history = []
 
     def run(self):
-        #self.agent.console.print(f"[Vault-Tec] Chat mode started. Ask your questions! (type 'exit' to quit)")
-        # Initial system prompt for context
         system_prompt = (
-            "You are VaultAI, a helpful Fallout-inspired AI assistant. "
+            "You are a helpful AI assistant. "
             "Answer user questions clearly and concisely. "
             "If the question is about Linux or terminal commands, provide the answer as a code block. "
-            "Stay in character as a Vault-Tec assistant."
         )
         context = [
             {"role": "system", "content": system_prompt},
-            #{"role": "user", "content": self.user_goal}
         ]
+        self.history = context.copy()
         while True:
             try:
-                user_input = self.agent.console.input("[bold green]> [/] ")
+                user_input = self.agent.console.input("> ")
             except (EOFError, KeyboardInterrupt):
-                self.agent.console.print("\n[red][Vault-Tec] Session ended by user.[/]")
+                self.agent.console.print("\n[red][Vault-Tec 3000] Session ended by user.[/]")
                 sys.exit(0)
             if user_input.strip().lower() in ("exit", "quit"):  
-                self.agent.console.print("[Vault-Tec] Exiting chat mode. Goodbye!")
+                self.agent.console.print("[Vault-Tec 3000] Exiting chat mode. Goodbye!")
                 break
-            context.append({"role": "user", "content": user_input})
-            # Choose AI engine
+            # Add user message to history
+            self.history.append({"role": "user", "content": user_input})
+            # Prepare prompt with memory (last 10 exchanges)
+            prompt_context = self.history[-20:] if len(self.history) > 20 else self.history
+            # Compose prompt for LLM
             if self.agent.ai_engine == "ollama":
-                response = self.agent.connect_to_ollama(system_prompt, user_input)
+                prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
+                response = self.agent.connect_to_ollama(system_prompt, prompt_text)
             elif self.agent.ai_engine == "google":
-                response = self.agent.connect_to_gemini(f"{system_prompt}\n{user_input}")
+                prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
+                response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
             elif self.agent.ai_engine == "openai":
-                response = self.agent.connect_to_chatgpt(system_prompt, user_input)
+                # OpenAI supports full chat context
+                response = self.agent.connect_to_chatgpt(system_prompt, user_input if len(self.history) <= 2 else self.history[1:])
             else:
                 self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
                 break
             if response:
-                str_response = json.loads(response)
-                self.agent.console.print(f"[cyan]VaultAI:[/] {str_response['response']}")
-                context.append({"role": "assistant", "content": response})
+                try:
+                    str_response = json.loads(response)
+                    answer = str_response.get('response', response)
+                except Exception:
+                    answer = response
+                self.agent.console.print(f"[cyan]VaultAI:[/] {answer}")
+                self.history.append({"role": "assistant", "content": answer})
             else:
                 self.agent.console.print("[red]No response from AI.[/]")
