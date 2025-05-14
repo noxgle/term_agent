@@ -166,3 +166,52 @@ MIT
 ---
 
 Vault 3000 – Your Fallout-inspired console application!
+
+## Example
+
+When you start the chat, you might see:
+
+```
+VaultAI (cogito:8b) is online. Ask your questions?
+```
+
+**User:**
+```
+How do I install Docker on Ubuntu and run an nginx container?
+```
+
+**VaultAI:**
+```
+Here's how to install Docker on Ubuntu and run an Nginx container:
+
+1. Update package list:
+    sudo apt update
+
+2. Install required packages:
+    sudo apt install -y \
+        apt-transport-https \
+        ca-certificates \
+        curl \
+        gnupg-agent \
+        software-properties-common
+
+3. Add Docker's official GPG key:
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+
+4. Set up the stable repository:
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+5. Install Docker Engine:
+    sudo apt update
+    sudo apt install -y docker-ce docker-ce-cli containerd.io
+
+6. Start and enable Docker:
+    sudo systemctl start docker
+    sudo systemctl enable docker
+
+7. Run an Nginx container:
+    sudo docker run --name mynginx -d -p 8080:80 nginx
+
+Now you can access Nginx at http://localhost:8080.
+```
