@@ -5,4 +5,3 @@ tmp/
 .env
 app.log
 test_*
-.pipterm_history
