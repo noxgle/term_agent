@@ -46,37 +46,37 @@
 
 # Vault 3000 Terminal Agent
 
-**Vault 3000** to Fallout-inspirowany, terminalowy asystent AI, który odpowiada na pytania użytkownika, pomaga z poleceniami Linuksa, obsługuje różne silniki AI (OpenAI, Google Gemini, Ollama) i umożliwia pracę lokalnie lub zdalnie przez SSH.
+**Vault 3000** is a Fallout-inspired terminal AI assistant that answers user questions, helps with Linux commands, supports various AI engines (OpenAI, Google Gemini, Ollama), and can work locally or remotely via SSH.
 
-## Funkcje
+## Features
 
-- **Tryb czatu**: Rozmawiaj z Vault 3000 w terminalu, z pamięcią konwersacji.
-- **Wykonywanie zadań i automatyzacja**: Agent może realizować zadania i polecenia według celu użytkownika.
-- **Obsługa wielu silników AI**: OpenAI (ChatGPT), Google Gemini, Ollama.
-- **Wykonywanie poleceń lokalnie i zdalnie (SSH)**.
-- **Konfigurowalność przez `.env`**.
-- **Logowanie i kolorowa konsola (Rich)**.
-- **Motyw Fallout/Pip-Boy**.
+- **Chat mode**: Talk to Vault 3000 in the terminal, with conversation memory.
+- **Task execution and automation**: The agent can perform tasks and commands based on user goals.
+- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama.
+- **Execute commands locally and remotely (SSH)**.
+- **Configurable via `.env`**.
+- **Logging and colored console (Rich)**.
+- **Fallout/Pip-Boy theme**.
 
-## Wymagania
+## Requirements
 
 - Python 3.9+
-- Klucz API do wybranego silnika AI (OpenAI, Google Gemini, Ollama)
-- Plik `.env` z konfiguracją (patrz niżej)
+- API key for the selected AI engine (OpenAI, Google Gemini, Ollama)
+- `.env` configuration file (see below)
 
-## Instalacja
+## Installation
 
 ```bash
-git clone https://github.com/twoj-login/vault3000.git
+git clone https://github.com/noxgle/term_agent.git
 cd vault3000
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## Konfiguracja `.env`
+## `.env` Configuration
 
-Przykład pliku `.env.copy`:
+Example `.env.copy` file:
 
 ```
 AI_ENGINE=openai
@@ -96,55 +96,65 @@ LOG_LEVEL=INFO
 LOG_TO_CONSOLE=true
 ```
 
-## Uruchomienie
+## Usage
 
-### Tryb czatu (pytania, dialog):
+### Chat mode (questions, dialog):
 
 ```bash
 python term_ask.py
 ```
 
-### Tryb agenta (automatyzacja, zadania):
+### Agent mode (automation, tasks):
 
 ```bash
 python term_ag.py
 ```
 
-### Tryb agenta zdalnego (SSH):
+### Remote agent mode (SSH):
 
 ```bash
 python term_ag.py user@host
 ```
 
-## Pliki
+## Files
 
-- `term_ag.py` – główny agent, automatyzacja, zadania, klasa agenta, obsługa AI i poleceń.
-- `term_ask.py` – czat ai, pytania, dialogi
-- `VaultAIAskRunner.py` – logika czatu.
-- `VaultAiAgentRunner.py` – logika agenta.
+- `term_ag.py` – main agent, automation, tasks, agent class, AI and command handling.
+- `term_ask.py` – AI chat, questions, dialogs.
+- `VaultAIAskRunner.py` – chat logic.
+- `VaultAiAgentRunner.py` – agent logic.
 
 ## Alias
 
-1. **Dodaj krótkie aliasy do swojego pliku `~/.bashrc` (lub `~/.zshrc`):**
+1. **Add short aliases to your `~/.bashrc` (or `~/.zshrc`):**
 
 ```bash
 alias ask='cd /home/username/term_agent && source .venv/bin/activate && python term_ask.py'
 alias ag='cd /home/username/term_agent && source .venv/bin/activate && python term_ag.py'
 ```
 
-2. **Załaduj aliasy:**
+2. **Reload aliases:**
 
 ```bash
 source ~/.bashrc
 ```
 
+3. **Usage:**
 
-> **Wskazówka:** Zmień ścieżkę `/home/username/term_agent` na własną, jeśli projekt jest w innym miejscu.
+- Start chat:  
+  ```bash
+  ask
+  ```
+- Start agent:  
+  ```bash
+  ag
+  ```
 
-## Licencja
+> **Tip:** Change the path `/home/username/term_agent` to your own if the project is in a different location.
+
+## License
 
 MIT
 
 ---
 
-Vault 3000 – Twój terminalowy asystent AI w klimacie Fallout!
+Vault 3000 – Your Fallout-inspired terminal AI assistant!
