@@ -324,32 +324,30 @@ class term_agent:
             try:
                 client = OpenAI(api_key=self.api_key)
                 client.models.list()
-                return True, "OpenAI API is online.",self.default_model
+                return True, "OpenAI API is online.", self.default_model
             except Exception as e:
                 return False, f"OpenAI API unavailable: {e}", self.default_model
         elif self.ai_engine == "ollama":
             try:
                 resp = requests.get(self.ollama_url.replace("/api/generate", ""), timeout=5)
                 if resp.status_code == 200:
-                    return True, "Ollama API is online.",self.ollama_model
+                    return True, "Ollama API is online.", self.ollama_model
                 else:
-                    return False, f"Ollama API unavailable: HTTP {resp.status_code}",self.ollama_model
+                    return False, f"Ollama API unavailable: HTTP {resp.status_code}", self.ollama_model
             except Exception as e:
-                return False, f"Ollama API unavailable: {e}"
+                return False, f"Ollama API unavailable: {e}", self.ollama_model
         elif self.ai_engine == "google":
             try:
                 client = genai.Client(api_key=self.api_key)
-                # Try a simple model list or dummy call
                 models = client.models.list()
                 if models:
-                    return True, "Google Gemini API is online.",self.gemini_model
+                    return True, "Google Gemini API is online.", self.gemini_model
                 else:
-                    return False, "Google Gemini API returned no models.",self.gemini_model
+                    return False, "Google Gemini API returned no models.", self.gemini_model
             except Exception as e:
-                return False, f"Google Gemini API unavailable: {e}"
+                return False, f"Google Gemini API unavailable: {e}", self.gemini_model
         else:
-            return False, f"Unknown AI engine: {self.ai_engine}"
-
+            return False, f"Unknown AI engine: {self.ai_engine}", None
 def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
@@ -359,13 +357,12 @@ def main():
     if ai_status:
         agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?\n""")
     else:
-        agent.console.print("[red]Fallout-inspired AI Agent is offline.[/]\n")
+        agent.console.print("[red]AgentAI is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
     
     try:
         user_goal = agent.console.input("> ")
-        #user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
     except EOFError:
         agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
         sys.exit(1)
