@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
 from rich.console import Console
-from AiAgentRunner import VaultAIAgentRunner
+from VaultAiAgentRunner import VaultAIAgentRunner
 
 PIPBOY_ASCII = r"""
 
