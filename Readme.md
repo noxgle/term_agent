@@ -152,6 +152,12 @@ source ~/.bashrc
 
 > **Tip:** Change the path `/home/username/term_agent` to your own if the project is in a different location.
 
+> **Warning:**  
+> The agent can execute arbitrary shell commands (locally or remotely via SSH) based on user input or AI suggestions.  
+> **Always review and understand the commands before running the agent.**  
+> Using this tool may be unsafe on production systems or with sensitive data.  
+> You are responsible for any actions performed by the agent on your system.
+
 ## License
 
 MIT
