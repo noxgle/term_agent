@@ -318,17 +318,56 @@ class term_agent:
         except Exception as e:
             self.logger.error(f"SSH execution failed: {e}")
             return '', 1
+    
+    def check_ai_online(self):
+        if self.ai_engine == "openai":
+            try:
+                client = OpenAI(api_key=self.api_key)
+                client.models.list()
+                return True, "OpenAI API is online.",self.default_model
+            except Exception as e:
+                return False, f"OpenAI API unavailable: {e}", self.default_model
+        elif self.ai_engine == "ollama":
+            try:
+                resp = requests.get(self.ollama_url.replace("/api/generate", ""), timeout=5)
+                if resp.status_code == 200:
+                    return True, "Ollama API is online.",self.ollama_model
+                else:
+                    return False, f"Ollama API unavailable: HTTP {resp.status_code}",self.ollama_model
+            except Exception as e:
+                return False, f"Ollama API unavailable: {e}"
+        elif self.ai_engine == "google":
+            try:
+                client = genai.Client(api_key=self.api_key)
+                # Try a simple model list or dummy call
+                models = client.models.list()
+                if models:
+                    return True, "Google Gemini API is online.",self.gemini_model
+                else:
+                    return False, "Google Gemini API returned no models.",self.gemini_model
+            except Exception as e:
+                return False, f"Google Gemini API unavailable: {e}"
+        else:
+            return False, f"Unknown AI engine: {self.ai_engine}"
 
 def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
-    agent.console.print("\nWelcome, Vault Dweller, to the Vault-Tec 3000.\n"
-                        "Fallout-inspired AI Agent is now at your service.\n")
+    ai_status,mode_owner,ai_model = agent.check_ai_online()
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault-Tec 3000.\n")
+    
+    if ai_status:
+        agent.console.print(f"""Fallout-inspired AI Agent ({ai_model}) is online.\n""")
+    else:
+        agent.console.print("[red]Fallout-inspired AI Agent is offline.[/]\n")
+        agent.console.print("[red]Please check your API key and network connection.[/]\n")
+        sys.exit(1)
+
     agent.console.print("[Vault-Tec] What can I do for you today?\n")
     
     try:
-        #user_goal = agent.console.input("> ")
-        user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
+        user_goal = agent.console.input("> ")
+        #user_goal = "sprawdz ilsoć wolengo miejsca na dysku"
     except EOFError:
         agent.console.print("\n[red][Vault-Tec] EOFError: Unexpected end of file.[/]")
         sys.exit(1)
