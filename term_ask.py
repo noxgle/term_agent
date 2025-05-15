@@ -6,7 +6,8 @@ def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
     ai_status,mode_owner,ai_model = agent.check_ai_online()
-    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.\n")
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
         agent.console.print(f"""VaultAI ({ai_model}) is online. Ask your questions?\n""")
@@ -33,7 +34,6 @@ def main():
         runner.run()
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent przerwany przez użytkownika.[/]")
-        # Możesz dodać podsumowanie lub zapis stanu
 
 if __name__ == "__main__":
     main()

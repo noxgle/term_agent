@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 import sys
+import random
 from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
@@ -58,6 +59,32 @@ PIPBOY_ASCII = r"""
  ........................................................................................ 
  """ 
 
+VAULT_TEC_TIPS = [
+    "Vault-Tec reminds you: Always back up your data!",
+    "Tip: Stay hydrated. Even in the Wasteland.",
+    "Remember: War never changes.",
+    "Tip: Use 'ls -l' to see more details.",
+    "Vault-Tec: Safety is our number one priority.",
+    "Tip: You can use TAB for autocompletion.",
+    "Vault-Tec recommends: Don't feed the radroaches.",
+    "Tip: Use 'history' to see previous commands.",
+    "Vault-Tec: Have you tried turning it off and on again?",
+    "Tip: 'man <command>' gives you the manual."
+]
+
+FALLOUT_FINDINGS = [
+    "You found: [Stimpak]",
+    "You found: [Bottle of Nuka-Cola]",
+    "You found: [Vault Boy Cap]",
+    "You found: [Bottlecap]",
+    "You found: [Terminal Fragment]",
+    "You found: [Old Holotape]",
+    "You found: [Empty Syringe]",
+    "You found: [Miniature Reactor]",
+    "You found: [Pack of RadAway]",
+    "You found: [Rusty Key]"
+]
+
 class term_agent:
     def __init__(self):
         load_dotenv()
@@ -99,6 +126,13 @@ class term_agent:
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
         self.user = None
         self.host = None
+
+
+    def print_vault_tip(self):
+        return random.choice(VAULT_TEC_TIPS)
+    
+    def maybe_print_finding(self):
+        return random.choice(FALLOUT_FINDINGS)
 
     def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
         """
@@ -428,8 +462,9 @@ class term_agent:
 def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
-    ai_status,mode_owner,ai_model = agent.check_ai_online()
-    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.\n")
+    ai_status,mode_owner,ai_model = agent.check_ai_online()    
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
         agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?\n""")
@@ -469,7 +504,6 @@ def main():
         runner.run()
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent przerwany przez użytkownika.[/]")
-        # Możesz dodać podsumowanie lub zapis stanu
 
 if __name__ == "__main__":
     main()
