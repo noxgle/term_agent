@@ -254,7 +254,17 @@ class VaultAIAgentRunner:
 
                     self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
                     terminal.print_console(f"Result (code {code}):\n{out}")
-                    
+
+                    # Check for SSH connection error (code 255)
+                    if self.terminal.ssh_connection and code == 255:
+                        terminal.print_console(
+                            "[ERROR] SSH connection failed (host may be offline or unreachable). "
+                            "Agent is stopping."
+                        )
+                        self.summary = "Agent stopped: SSH connection failed (host offline or unreachable)."
+                        agent_should_stop_this_turn = True
+                        break
+
                     user_feedback_content = ""
                     if code == 0:
                         user_feedback_content = f"Command '{command}' executed successfully. Output:\n```\n{out}\n```\n"
