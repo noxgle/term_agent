@@ -151,6 +151,9 @@ source ~/.bashrc
   ag
   ```
 
+> **Tip:**  For the best experience with the remote agent mode (SSH), it is recommended to set up SSH key-based authentication on your target servers.  
+> This allows the agent to execute commands without repeatedly prompting for a password and improves both security and usability.
+
 > **Tip:** Change the path `/home/username/term_agent` to your own if the project is in a different location.
 
 > **Warning:**  
@@ -158,6 +161,10 @@ source ~/.bashrc
 > **Always review and understand the commands before running the agent.**  
 > Using this tool may be unsafe on production systems or with sensitive data.  
 > You are responsible for any actions performed by the agent on your system.
+
+> **Note:**  
+> The larger and more advanced the AI model you use (e.g., GPT-4, Gemini 1.5, or large Ollama models), the better and more reliable the agent's results will be.  
+> Smaller or older models may not handle complex tasks or multi-step automation as effectively.
 
 ## License
 
@@ -167,7 +174,7 @@ MIT
 
 Vault 3000 – Your Fallout-inspired console application!
 
-## Example
+## Example (chat)
 
 When you start the chat, you might see:
 
@@ -214,4 +221,63 @@ Here's how to install Docker on Ubuntu and run an Nginx container:
     sudo docker run --name mynginx -d -p 8080:80 nginx
 
 Now you can access Nginx at http://localhost:8080.
+```
+
+## Example (agent)
+
+When you start the agent, you might see:
+
+```
+AgentAI (cogito:8b) is online. What can I do for you today?
+```
+
+**User:**
+```
+Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI
+```
+
+**VaultAI agent:**
+```
+VaultAI AI agent started with goal: Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI on 
+root@192.168.200.198.
+
+> 'mkdir -p deploy_script'. Execute? [y/N]: y
+Executing: mkdir -p deploy_script
+Result (code 0):
+
+Agent asks: Do you want to create a bash script named 'deploy.sh' inside the 'deploy_script' directory?
+Your answer: y
+
+> 'touch deploy_script/deploy.sh'. Execute? [y/N]: y
+Executing: touch deploy_script/deploy.sh
+Result (code 0):
+
+> 'chmod 755 deploy_script/deploy.sh'. Execute? [y/N]: y
+Executing: chmod 755 deploy_script/deploy.sh
+Result (code 0):
+
+Agent asks: Do you want to add a shebang line at the top of the script?
+Your answer: y
+
+> 'echo '#!/bin/bash' > deploy_script/deploy.sh'. Execute? [y/N]: y
+Executing: echo '#!/bin/bash' > deploy_script/deploy.sh
+Result (code 0):
+
+> 'echo -e "#!/bin/bash
+cd /to/project
+
+git pull
+pip install -r requirements.txt
+python manage.py migrate
+sudo systemctl restart uwsgi" >> deploy_script/deploy.sh'. Execute? [y/N]: y
+Executing: echo -e "#!/bin/bash
+cd /to/project
+
+git pull
+pip install -r requirements.txt
+python manage.py migrate
+sudo systemctl restart uwsgi" >> deploy_script/deploy.sh
+Result (code 0):
+
+Agent finished its task. Summary: I've created a bash deployment script that does the following steps: 1) Created an empty deploy script file, 2) Made it executable, 3) Added a shebang line at the top, and 4) Appended all the required commands to execute git pull, pip install, database migrations, and restart uWSGI service.
 ```
