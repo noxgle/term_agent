@@ -22,10 +22,10 @@ class VaultAIAskRunner:
             try:
                 user_input = self.agent.console.input("> ")
             except (EOFError, KeyboardInterrupt):
-                self.agent.console.print("\n[red][Vault-Tec 3000] Session ended by user.[/]")
+                self.agent.console.print("\n[red][Vault 3000] Session ended by user.[/]")
                 sys.exit(0)
             if user_input.strip().lower() in ("exit", "quit"):  
-                self.agent.console.print("[Vault-Tec 3000] Exiting chat mode. Goodbye!")
+                self.agent.console.print("[Vault 3000] Exiting chat mode. Goodbye!")
                 break
             # Add user message to history
             self.history.append({"role": "user", "content": user_input})

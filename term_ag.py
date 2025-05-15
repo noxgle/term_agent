@@ -503,7 +503,7 @@ def main():
     try:
         runner.run()
     except KeyboardInterrupt:
-        agent.console.print("[red][Vault 3000] Agent przerwany przez użytkownika.[/]")
+        agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
 
 if __name__ == "__main__":
     main()
