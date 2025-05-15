@@ -8,6 +8,7 @@ from openai import OpenAI
 from google import genai
 from rich.console import Console
 from VaultAiAgentRunner import VaultAIAgentRunner
+import pexpect
 
 PIPBOY_ASCII = r"""
 
@@ -96,6 +97,8 @@ class term_agent:
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
+        self.user = None
+        self.host = None
 
     def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
         """
@@ -337,6 +340,62 @@ class term_agent:
             self.logger.error(f"SSH execution failed: {e}")
             return '', 1
     
+    def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
+        """
+        Wykonuje komendę zdalnie przez SSH z obsługą promptów (pexpect).
+        Jeśli nie można połączyć się po SSH, zwraca kod 255.
+        """
+        ssh_cmd = f"ssh {remote} '{command}'"
+        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
+        output = ""
+        try:
+            while True:
+                i = child.expect([
+                    r"[Pp]assword:",           # hasło do ssh
+                    r"\(yes/no\)\?",           # fingerprint confirmation
+                    r"\[sudo\] password for .*:", # sudo password
+                    r"\[Yy]es/[Nn]o",          # interaktywne pytania
+                    pexpect.EOF,
+                    pexpect.TIMEOUT,
+                    r"ssh: connect to host .* port .*: Connection refused",
+                    r"ssh: Could not resolve hostname .*",
+                    r"ssh: connect to host .* port .*: No route to host",
+                    r"ssh: connect to host .* port .*: Operation timed out",
+                    r"Permission denied",
+                ])
+                if i == 0 and password:
+                    child.sendline(password)
+                elif i == 1:
+                    child.sendline("yes")
+                elif i == 2 and password:
+                    child.sendline(password)
+                elif i == 3:
+                    if auto_yes:
+                        child.sendline("y")
+                    else:
+                        answer = input("Remote command asks [yes/no]: ")
+                        child.sendline(answer)
+                elif i == 4 or i == 5:
+                    output += child.before
+                    break
+                elif i in [6, 7, 8, 9, 10]:
+                    # SSH connection error
+                    output += child.before
+                    output += child.after if hasattr(child, "after") else ""
+                    #output += "\n[ERROR] SSH connection failed."
+                    return output, 255
+                output += child.before
+        except Exception as e:
+            output += f"\n[pexpect error] {e}"
+        # --- POPRAWKA: kod wyjścia ---
+        exit_code = child.exitstatus
+        if exit_code is None:
+            if hasattr(child, "signalstatus") and child.signalstatus is not None:
+                exit_code = 128 + child.signalstatus
+            else:
+                exit_code = 1  # domyślny kod błędu
+        return output, exit_code
+
     def check_ai_online(self):
         if self.ai_engine == "openai":
             try:
@@ -391,8 +450,10 @@ def main():
         remote = sys.argv[1]
         user = remote.split('@')[0] if '@' in remote else None
         host = remote.split('@')[1] if '@' in remote else remote
-        agent.ssh_connection = True  # Ustaw tryb zdalny
-        agent.remote_host = remote   # Przechowuj host do użycia w execute_remote
+        agent.ssh_connection = True
+        agent.remote_host = remote
+        agent.user = user
+        agent.host = host
         agent.console.print(f"VaultAI AI agent started with goal: {user_goal} on {remote}.\n")
     else:
         remote = None
@@ -400,6 +461,8 @@ def main():
         host = None
         agent.ssh_connection = False
         agent.remote_host = None
+        agent.user = None
+        agent.host = None
         agent.console.print(f"VaultAI AI agent started with goal: {user_goal}")
     runner = VaultAIAgentRunner(agent, user_goal, user=user, host=host)
     try:
