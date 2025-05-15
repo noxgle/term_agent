@@ -11,10 +11,11 @@ class VaultAIAgentRunner:
                 system_prompt_agent=(
                                     "You are an autonomous AI agent with access to a Linux terminal. "
                                     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-                                    "For each step, reply in JSON: "
+                                    "For each step, always reply in JSON: "
                                     "{'tool': 'bash', 'command': '...'} "
                                     "or {'tool': 'ask_user', 'question': '...'} "
                                     "or {'tool': 'finish', 'summary': '...'} when done. "
+                                    "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
                                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
                                     "Be careful and always use safe commands. "
                                     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
@@ -26,30 +27,10 @@ class VaultAIAgentRunner:
                 ):
         
         self.user_goal = user_goal
-
         self.system_prompt_agent = system_prompt_agent
-
-        # if self.system_prompt_agent is None:
-        #     self.system_prompt_agent=(
-        #                             "You are an autonomous AI agent with access to a Linux terminal. "
-        #                             "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-        #                             "For each step, reply in JSON: "
-        #                             "{'tool': 'bash', 'command': '...'} "
-        #                             "or {'tool': 'ask_user', 'question': '...'} "
-        #                             "or {'tool': 'finish', 'summary': '...'} when done. "
-        #                             "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-        #                             "Be careful and always use safe commands. "
-        #                             "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-        #                             "All commands must be non-interactive and must not require additional input after execution."
-        #                             )
-        # else:
-        #     self.system_prompt_agent = system_prompt_agent
-        
         self.terminal = terminal
-
         self.user = user
         self.host = host
-
         self.widow_size=window_size
 
         if self.user == "root":
@@ -59,9 +40,6 @@ class VaultAIAgentRunner:
             {"role": "system", "content": self.system_prompt_agent},
             {"role": "user", "content": (
                 f"Your goal: {user_goal}."
-                #f"Your goal: {user_goal}. You can execute commands and read/write files. "
-                # "Reply in JSON: {'tool': 'bash', 'command': '...'} or {'tool': 'finish', 'summary': '...'} when done. "
-                # "At the end, always summarize what you have done in the 'summary' field."
             )}
         ]
         self.steps = []
@@ -80,7 +58,7 @@ class VaultAIAgentRunner:
         terminal = self.terminal
         #terminal.print_console(f"[Vault-Tec] AI agent started with goal: {self.user_goal}")
 
-        for step_count in range(10):  # Limit steps to avoid infinite loops
+        for step_count in range(100):  # Limit steps to avoid infinite loops
             window_context = self._sliding_window_context()
 
             prompt_text_parts = []
@@ -248,7 +226,9 @@ class VaultAIAgentRunner:
                     terminal.print_console(f"Executing: {command}")
                     out, code = "", 1 
                     if self.terminal.ssh_connection:
-                        out, code = self.terminal.execute_remote(command)
+                        remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
+                        password = getattr(self.terminal, "ssh_password", None)
+                        out, code = self.terminal.execute_remote_pexpect(command, remote, password=password)
                     else:
                         out, code = self.terminal.execute_local(command) # Corrected method call
 
@@ -266,15 +246,20 @@ class VaultAIAgentRunner:
                         break
 
                     user_feedback_content = ""
-                    if code == 0:
-                        user_feedback_content = f"Command '{command}' executed successfully. Output:\n```\n{out}\n```\n"
-                    else:
-                        user_feedback_content = (
-                            f"The command '{command}' failed with exit code {code}.\n"
-                            f"Output:\n```\n{out}\n```\n"
-                            f"Please analyze this error. Should you try a different command, correct this one, or stop?"
-                        )
-                    
+                    # if code == 0:
+                    #     user_feedback_content = f"Command '{command}' executed successfully. Output:\n```\n{out}\n```\n"
+                    # else:
+                    #     user_feedback_content = (
+                    #         f"The command '{command}' failed with exit code {code}.\n"
+                    #         f"Output:\n```\n{out}\n```\n"
+                    #         f"Please analyze this error. Should you try a different command, correct this one, or stop?"
+                    #     )
+                    user_feedback_content = (
+                        f"Command '{command}' executed with exit code {code}.\n"
+                        f"Output:\n```\n{out}\n```\n"
+                        "Based on this, what should be the next step?"
+                    )
+
                     if not agent_should_stop_this_turn:
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_content += "\nI will now proceed to the next action you provided."
