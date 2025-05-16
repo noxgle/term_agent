@@ -472,7 +472,7 @@ class term_agent:
             with open(path, "r", encoding="utf-8") as f:
                 return f.read()
         except Exception as e:
-            self.print_console(f"[red][Vault 3000] ERROR Could not load /goal from file '{path}': {e}[/]")
+            self.print_console(f"[Vault 3000] ERROR Could not load prompt/goal from file '{path}': {e}")
             sys.exit(1)
 
 def main():
