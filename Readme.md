@@ -118,6 +118,14 @@ python term_ag.py
 python term_ag.py user@host
 ```
 
+### Loading a prompt/goal from a file
+
+You can load a prompt or goal from a file by typing:
+
+//path/to/your_prompt.txt
+
+The agent will read the file and use its contents as your goal or question.
+
 ## Files
 
 - `term_ag.py` – main agent, automation, tasks, agent class, AI and command handling.
@@ -167,6 +175,7 @@ source ~/.bashrc
 > Smaller or older models may not handle complex tasks or multi-step automation as effectively.
 
 ## License
+
 
 MIT
 
