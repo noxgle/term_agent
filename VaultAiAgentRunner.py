@@ -13,8 +13,9 @@ class VaultAIAgentRunner:
                                     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
                                     "For each step, always reply in JSON: "
                                     "{'tool': 'bash', 'command': '...'} "
-                                    "or {'tool': 'ask_user', 'question': '...'} "
+                                    "or {'tool': 'ask_user', 'question': '...'} "   
                                     "or {'tool': 'finish', 'summary': '...'} when done. "
+                                    "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
                                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
                                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
                                     "Be careful and always use safe commands. "
@@ -23,7 +24,7 @@ class VaultAIAgentRunner:
                                     ),
                 user=None, 
                 host=None,
-                window_size=10
+                window_size=20
                 ):
         
         self.user_goal = user_goal
@@ -283,6 +284,54 @@ class VaultAIAgentRunner:
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                              self.context.append({"role": "user", "content": "I will now proceed to the next action you provided."})
                 
+                elif tool == "filesystem":
+                    """
+                    {
+                        "tool": "filesystem",
+                        "structure": {
+                            "dir1": {
+                            "file1.txt": "Zawartość pliku 1",
+                            "subdir": {
+                                "file2.txt": "Zawartość pliku 2"
+                            }
+                            },
+                            "README.md": "# Projekt"
+                        }
+                    }
+                    """
+                    # Oczekiwany format: {"tool": "filesystem", "structure": {...}}
+                    structure = action_item.get("structure")
+                    if not structure:
+                        terminal.print_console(f"No 'structure' provided in filesystem action: {action_item}. Skipping.")
+                        self.context.append({"role": "user", "content": f"You provided a 'filesystem' tool action but no 'structure': {action_item}. I am skipping it."})
+                        continue
+
+                    def create_structure(base_path, struct):
+                        import os
+                        for name, value in struct.items():
+                            path = os.path.join(base_path, name)
+                            if isinstance(value, dict):
+                                # katalog
+                                os.makedirs(path, exist_ok=True)
+                                create_structure(path, value)
+                            elif isinstance(value, str):
+                                # plik z zawartością
+                                os.makedirs(base_path, exist_ok=True)
+                                with open(path, "w", encoding="utf-8") as f:
+                                    f.write(value)
+                            else:
+                                terminal.print_console(f"Unknown value for '{name}' in structure: {value}")
+
+                    try:
+                        create_structure(".", structure)
+                        terminal.print_console("Filesystem structure created successfully.")
+                        self.context.append({"role": "user", "content": "Filesystem structure created successfully."})
+                    except Exception as e:
+                        terminal.print_console(f"Failed to create filesystem structure: {e}")
+                        self.context.append({"role": "user", "content": f"Failed to create filesystem structure: {e}"})
+                    # Po utworzeniu struktury przejdź do kolejnej akcji
+                    continue
+
                 else: 
                     terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                     user_feedback_invalid_tool = (
