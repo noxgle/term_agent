@@ -1,5 +1,20 @@
 import sys
 import json
+from prompt_toolkit import prompt
+
+
+def multiline_input(prompt="Paste your input (end with empty line):"):
+    print(prompt)
+    lines = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            break
+        if line == "":
+            break
+        lines.append(line)
+    return "\n".join(lines)
 
 class VaultAIAskRunner:
     def __init__(self, agent, user=None, host=None):
@@ -7,6 +22,7 @@ class VaultAIAskRunner:
         self.user = user
         self.host = host
         self.history = []
+        self.start_without_prompt = False
 
     def run(self):
         system_prompt = (
@@ -21,6 +37,24 @@ class VaultAIAskRunner:
         while True:
             try:
                 user_input = self.agent.console.input("> ")
+                #user_input = prompt("> :\n", multiline=True)
+                #user_input = multiline_input("Paste your prompt (end with empty line):")
+                try:
+                    if user_input.strip().startswith("//") and not self.start_without_prompt:
+                        file_path = user_input.strip()[2:].strip()
+                        print(f"Loading prompt from file: {file_path}")
+                        user_input = self.agent.load_prompt_from_file(file_path)
+                        self.agent.console.print(f"[Vault 3000] Loaded prompt from file: {file_path}\n")
+                        print(f"{user_input}\n")
+                    else:
+                        self.start_without_prompt = True
+                except EOFError:
+                    self.agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
+                    sys.exit(1)
+                except KeyboardInterrupt:
+                    self.agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
+                    sys.exit(1)
+
             except (EOFError, KeyboardInterrupt):
                 self.agent.console.print("\n[red][Vault 3000] Session ended by user.[/]")
                 sys.exit(0)
