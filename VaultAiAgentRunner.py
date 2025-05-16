@@ -3,8 +3,23 @@ import os
 import re
 
 
+# system_prompt_agent=(
+#                     "You are an autonomous AI agent with access to a Linux terminal. "
+#                     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+#                     "For each step, always reply in JSON: "
+#                     "{'tool': 'bash', 'command': '...'} "
+#                     "or {'tool': 'ask_user', 'question': '...'} "   
+#                     "or {'tool': 'finish', 'summary': '...'} when done. "
+#                     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
+#                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
+#                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+#                     "Be careful and always use safe commands. "
+#                     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+#                     "All commands must be non-interactive and must not require additional input after execution."
+#                     ),
+
+
 class VaultAIAgentRunner:
-    #sprawdz ilsoć wolengo miejsca na dysku
     def __init__(self, 
                 terminal, 
                 user_goal,
@@ -18,9 +33,7 @@ class VaultAIAgentRunner:
                                     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
                                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
                                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-                                    "Be careful and always use safe commands. "
                                     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-                                    "All commands must be non-interactive and must not require additional input after execution."
                                     ),
                 user=None, 
                 host=None,
