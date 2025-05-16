@@ -1,0 +1,23 @@
+"You are an Ansible expert. I need to create an Ansible project that performs the following tasks:
+
+1.  **Project Structure:**  Create the project in the `/tmp/ans1` directory. The project should follow Ansible best practices (e.g., using roles, `hosts` file, `ansible.cfg` file).
+2.  **Inventory:** Assume I have 3 servers accessible via SSH.  Create a `hosts` file within the project to define these servers. Use a range such as `server[1:10]` for the hostnames. Assume all servers use the same SSH username (`ansible_user=your_ssh_username`) and SSH key ( or password if key is not used). 
+Replace `your_ssh_username` with a real username.
+3.  **Roles:** Create two roles:
+    *   `update_system`: This role should update all packages on the target servers using the appropriate package manager for the distribution (e.g., `apt` for Debian/Ubuntu, `yum` for CentOS/RHEL).
+    *   `install_lamp`: This role should install Apache, MySQL, and PHP (LAMP stack) on the target servers.  It should also start and enable the Apache and MySQL services.
+4.  **Playbook:** Create a playbook named `site.yml` that includes both the `update_system` and `install_lamp` roles.
+5.  **Configuration:**  Include a basic `ansible.cfg` file to configure Ansible (e.g., setting the inventory file location).
+6.  **Idempotency:** Ensure that all tasks are idempotent, meaning they can be run multiple times without causing unintended changes.
+7.  **Variables:** Use variables where appropriate (e.g., for package names, service names) and define them in `vars/main.yml` within the roles.  Assume the target servers are running Debian/Ubuntu.
+9.  **Hosts: 192.168.233.1,192.168.233.2,192.168.233.3
+
+Provide the following:
+
+*   The directory structure of the Ansible project `/tmp/ans1`
+*   The contents of the `ansible.cfg` file.
+*   The contents of the `hosts` file.
+*   The contents of the `site.yml` playbook.
+*   The contents of the `update_system` role's `tasks/main.yml` and `vars/main.yml` files.
+*   The contents of the `install_lamp` role's `tasks/main.yml` and `vars/main.yml` files.
+*   A command to run the playbook."
