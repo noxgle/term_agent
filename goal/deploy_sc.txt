@@ -1,1 +1,1 @@
-Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI
+Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI in /tmp
