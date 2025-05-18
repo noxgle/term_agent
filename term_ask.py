@@ -1,20 +1,22 @@
 import sys
 from VaultAIAskRunner import VaultAIAskRunner
-from term_ag import term_agent,PIPBOY_ASCII
+from term_ag import term_agent, PIPBOY_ASCII
 
 def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
-    ai_status,mode_owner,ai_model = agent.check_ai_online()
-    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.\n")
+    ai_status, mode_owner, ai_model = agent.check_ai_online()
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
-        agent.console.print(f"""VaultAI ({ai_model}) is online. Ask your questions?\n""")
+        agent.console.print(f"""VaultAI ({ai_model}) is online. Ask your questions?""")
+        agent.console.print("Add file to prompt, use //path/to/file in your input.") 
+        agent.console.print("Press [cyan]Ctrl+S[/] to send your input to the model!")
     else:
         agent.console.print("[red]VaultAI is offline.[/]\n")
         agent.console.print("[red][Vault 3000] Please check your API key and network connection.[/]\n")
         sys.exit(1)
-
 
     if len(sys.argv) == 2:
         remote = sys.argv[1]
@@ -28,12 +30,12 @@ def main():
         host = None
         agent.ssh_connection = False
         agent.remote_host = None
+
     runner = VaultAIAskRunner(agent, user=user, host=host)
     try:
         runner.run()
     except KeyboardInterrupt:
-        agent.console.print("[red][Vault 3000] Agent przerwany przez użytkownika.[/]")
-        # Możesz dodać podsumowanie lub zapis stanu
+        agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
 
 if __name__ == "__main__":
     main()

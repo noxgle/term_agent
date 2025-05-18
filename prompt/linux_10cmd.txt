@@ -1,0 +1,2 @@
+Wypisz 10 najczęściej używanych poleceń w systemie Linux wraz z krótkim opisem każdego z nich.  
+Dla każdego polecenia podaj przykład użycia w terminalu.

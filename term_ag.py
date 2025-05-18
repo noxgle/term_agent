@@ -3,11 +3,15 @@ import logging
 import os
 import subprocess
 import sys
+import random
 from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
 from rich.console import Console
 from VaultAiAgentRunner import VaultAIAgentRunner
+import pexpect
+from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
 
 PIPBOY_ASCII = r"""
 
@@ -57,6 +61,32 @@ PIPBOY_ASCII = r"""
  ........................................................................................ 
  """ 
 
+VAULT_TEC_TIPS = [
+    "Vault-Tec reminds you: Always back up your data!",
+    "Tip: Stay hydrated. Even in the Wasteland.",
+    "Remember: War never changes.",
+    "Tip: Use 'ls -l' to see more details.",
+    "Vault-Tec: Safety is our number one priority.",
+    "Tip: You can use TAB for autocompletion.",
+    "Vault-Tec recommends: Don't feed the radroaches.",
+    "Tip: Use 'history' to see previous commands.",
+    "Vault-Tec: Have you tried turning it off and on again?",
+    "Tip: 'man <command>' gives you the manual."
+]
+
+FALLOUT_FINDINGS = [
+    "You found: [Stimpak]",
+    "You found: [Bottle of Nuka-Cola]",
+    "You found: [Vault Boy Cap]",
+    "You found: [Bottlecap]",
+    "You found: [Terminal Fragment]",
+    "You found: [Old Holotape]",
+    "You found: [Empty Syringe]",
+    "You found: [Miniature Reactor]",
+    "You found: [Pack of RadAway]",
+    "You found: [Rusty Key]"
+]
+
 class term_agent:
     def __init__(self):
         load_dotenv()
@@ -96,6 +126,15 @@ class term_agent:
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
+        self.user = None
+        self.host = None
+
+
+    def print_vault_tip(self):
+        return random.choice(VAULT_TEC_TIPS)
+    
+    def maybe_print_finding(self):
+        return random.choice(FALLOUT_FINDINGS)
 
     def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
         """
@@ -337,6 +376,68 @@ class term_agent:
             self.logger.error(f"SSH execution failed: {e}")
             return '', 1
     
+    def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
+        # Jeśli polecenie zawiera wiele sudo, zamień na jedno sudo sh -c '...'
+        if command.count("sudo") > 1 or ("&&" in command and command.strip().startswith("sudo")):
+            # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
+            cmd_no_sudo = command.replace("sudo ", "")
+            command = f"sudo -S sh -c '{cmd_no_sudo}'"
+        elif command.strip().startswith("sudo") and "-S" not in command:
+            command = command.replace("sudo", "sudo -S", 1)
+        ssh_cmd = f"ssh {remote} '{command}'"
+        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
+        output = ""
+        try:
+            while True:
+                i = child.expect([
+                    r"[Pp]assword:",           # hasło do ssh
+                    r"\(yes/no\)\?",           # fingerprint confirmation
+                    r"\[sudo\] password for .*:", # sudo password
+                    r"\[Yy]es/[Nn]o",          # interaktywne pytania
+                    pexpect.EOF,
+                    pexpect.TIMEOUT,
+                    r"ssh: connect to host .* port .*: Connection refused",
+                    r"ssh: Could not resolve hostname .*",
+                    r"ssh: connect to host .* port .*: No route to host",
+                    r"ssh: connect to host .* port .*: Operation timed out",
+                    r"ssh: connect to host .* port .*: Permission denied",
+                ])
+                if i == 0 and password:
+                    child.sendline(password)
+                elif i == 0 and not password:
+                    password = prompt("Enter SSH password: ", is_password=True)
+                    child.sendline(password)
+                elif i == 1:
+                    child.sendline("yes")
+                elif i == 2 and password:
+                    child.sendline(password)
+                elif i == 2 and not password:
+                    password = prompt("Enter sudo password: ", is_password=True)
+                    child.sendline(password)
+                elif i == 3:
+                    if auto_yes:
+                        child.sendline("y")
+                    else:
+                        answer = input("Remote command asks [yes/no]: ")
+                        child.sendline(answer)
+                elif i == 4 or i == 5:
+                    output += child.before
+                    break
+                elif i in [6, 7, 8, 9, 10]:
+                    output += child.before
+                    output += child.after if hasattr(child, "after") else ""
+                    return output, 255
+                output += child.before
+        except Exception as e:
+            output += f"\n[pexpect error] {e}"
+        exit_code = child.exitstatus
+        if exit_code is None:
+            if hasattr(child, "signalstatus") and child.signalstatus is not None:
+                exit_code = 128 + child.signalstatus
+            else:
+                exit_code = 1
+        return output, exit_code
+
     def check_ai_online(self):
         if self.ai_engine == "openai":
             try:
@@ -366,47 +467,96 @@ class term_agent:
                 return False, f"Google Gemini API unavailable: {e}", self.gemini_model
         else:
             return False, f"Unknown AI engine: {self.ai_engine}", None
+
+    def create_keybindings(self):
+        kb = KeyBindings()
+        
+        @kb.add('c-s')
+        def _(event):
+            event.current_buffer.validate_and_handle()
+        
+        return kb
+
+    def load_data_from_file(self, filepath):
+        """Load content from a file given its path."""
+        try:
+            # Remove the // prefix from filepath
+            clean_path = filepath.replace('//', '', 1)
+            with open(clean_path, 'r') as file:
+                return file.read().strip()
+        except Exception as e:
+            self.print_console(f"[Vault 3000] ERROR Could not load goal from file '{filepath}': {e}")
+            sys.exit(1)
+
+    def process_input(self, text):
+        """Process input text and replace file paths with file contents."""
+        words = text.split()
+        result = []
+        
+        for word in words:
+            if word.startswith('//'):
+                file_content = self.load_data_from_file(word)
+                result.append(f"\nFile content from {word}:\n{file_content}\n")
+            else:
+                result.append(word)
+                
+        return ' '.join(result)    
+
 def main():
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
-    ai_status,mode_owner,ai_model = agent.check_ai_online()
-    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.\n")
+    ai_status, mode_owner, ai_model = agent.check_ai_online()    
+    agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
-        agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?\n""")
+        agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?""")
+        agent.console.print("If you want to load a goal from a file, type //path/to/file\n")
+        agent.console.print("Press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
     
     try:
-        user_goal = agent.console.input("> ")
+        user_input = prompt(
+                    "> ", 
+                    multiline=True,
+                    prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
+                    enable_system_prompt=True,
+                    key_bindings=agent.create_keybindings()
+                )
+        user_input = agent.process_input(user_input)
+
     except EOFError:
         agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
         sys.exit(1)
     except KeyboardInterrupt:
-        agent.console.print("\n[red][Vault 3000] Sttopeed by user.[/]")
+        agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
         sys.exit(1)
     if len(sys.argv) == 2:
         remote = sys.argv[1]
         user = remote.split('@')[0] if '@' in remote else None
         host = remote.split('@')[1] if '@' in remote else remote
-        agent.ssh_connection = True  # Ustaw tryb zdalny
-        agent.remote_host = remote   # Przechowuj host do użycia w execute_remote
-        agent.console.print(f"VaultAI AI agent started with goal: {user_goal} on {remote}.\n")
+        agent.ssh_connection = True
+        agent.remote_host = remote
+        agent.user = user
+        agent.host = host
+        agent.console.print(f"VaultAI agent strated on {remote} with goal: {user_input}.\n")
     else:
         remote = None
         user = None
         host = None
         agent.ssh_connection = False
         agent.remote_host = None
-        agent.console.print(f"VaultAI AI agent started with goal: {user_goal}")
-    runner = VaultAIAgentRunner(agent, user_goal, user=user, host=host)
+        agent.user = None
+        agent.host = None
+        agent.console.print(f"VaultAI AI agent started with goal: {user_input}")
+    runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()
     except KeyboardInterrupt:
-        agent.console.print("[red][Vault 3000] Agent przerwany przez użytkownika.[/]")
-        # Możesz dodać podsumowanie lub zapis stanu
+        agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
 
 if __name__ == "__main__":
     main()
