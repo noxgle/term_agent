@@ -26,9 +26,10 @@ class VaultAIAgentRunner:
                 system_prompt_agent=(
                                     "You are an autonomous AI agent with access to a Linux terminal. "
                                     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+                                    "Your first task is to analyze the user's goal and decide what to do next. "
                                     "For each step, always reply in JSON: "
                                     "{'tool': 'bash', 'command': '...'} "
-                                    "or {'tool': 'ask_user', 'question': '...'} "   
+                                    "or {'tool': 'ask_user', 'question': '...'} "
                                     "or {'tool': 'finish', 'summary': '...'} when done. "
                                     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
                                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "

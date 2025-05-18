@@ -11,6 +11,7 @@ from rich.console import Console
 from VaultAiAgentRunner import VaultAIAgentRunner
 import pexpect
 from prompt_toolkit import prompt
+from prompt_toolkit.key_binding import KeyBindings
 
 PIPBOY_ASCII = r"""
 
@@ -467,13 +468,39 @@ class term_agent:
         else:
             return False, f"Unknown AI engine: {self.ai_engine}", None
 
-    def load_prompt_from_file(self, path):
+    def create_keybindings(self):
+        kb = KeyBindings()
+        
+        @kb.add('c-s')
+        def _(event):
+            event.current_buffer.validate_and_handle()
+        
+        return kb
+
+    def load_data_from_file(self, filepath):
+        """Load content from a file given its path."""
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                return f.read()
+            # Remove the // prefix from filepath
+            clean_path = filepath.replace('//', '', 1)
+            with open(clean_path, 'r') as file:
+                return file.read().strip()
         except Exception as e:
-            self.print_console(f"[Vault 3000] ERROR Could not load prompt/goal from file '{path}': {e}")
+            self.print_console(f"[Vault 3000] ERROR Could not load goal from file '{filepath}': {e}")
             sys.exit(1)
+
+    def process_input(self, text):
+        """Process input text and replace file paths with file contents."""
+        words = text.split()
+        result = []
+        
+        for word in words:
+            if word.startswith('//'):
+                file_content = self.load_data_from_file(word)
+                result.append(f"\nFile content from {word}:\n{file_content}\n")
+            else:
+                result.append(word)
+                
+        return ' '.join(result)    
 
 def main():
     agent = term_agent()
@@ -484,18 +511,23 @@ def main():
     
     if ai_status:
         agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?""")
-        agent.console.print("If you want to load a prompt from a file, type //path/to/file")
+        agent.console.print("If you want to load a goal from a file, type //path/to/file\n")
+        agent.console.print("Press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
     
     try:
-        user_goal = agent.console.input("> ")
-        if user_goal.strip().startswith("//"):
-            file_path = user_goal.strip()[2:].strip()
-            user_goal = agent.load_prompt_from_file(file_path)
-            agent.console.print(f"Loaded prompt from file: {file_path}")
+        user_input = prompt(
+                    "> ", 
+                    multiline=True,
+                    prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
+                    enable_system_prompt=True,
+                    key_bindings=agent.create_keybindings()
+                )
+        user_input = agent.process_input(user_input)
+
     except EOFError:
         agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
         sys.exit(1)
@@ -510,7 +542,7 @@ def main():
         agent.remote_host = remote
         agent.user = user
         agent.host = host
-        agent.console.print(f"VaultAI agent strated on {remote} with goal: {user_goal}.\n")
+        agent.console.print(f"VaultAI agent strated on {remote} with goal: {user_input}.\n")
     else:
         remote = None
         user = None
@@ -519,8 +551,8 @@ def main():
         agent.remote_host = None
         agent.user = None
         agent.host = None
-        agent.console.print(f"VaultAI AI agent started with goal: {user_goal}")
-    runner = VaultAIAgentRunner(agent, user_goal, user=user, host=host)
+        agent.console.print(f"VaultAI AI agent started with goal: {user_input}")
+    runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()
     except KeyboardInterrupt:
