@@ -11,7 +11,8 @@ def main():
     
     if ai_status:
         agent.console.print(f"""VaultAI ({ai_model}) is online. Ask your questions?""")
-        agent.console.print("If you want to load a prompt from a file, type //path/to/file")
+        agent.console.print("Add file to prompt, use //path/to/file in your input.") 
+        agent.console.print("Press [cyan]Ctrl+S[/] to send your input to the model!")
     else:
         agent.console.print("[red]VaultAI is offline.[/]\n")
         agent.console.print("[red][Vault 3000] Please check your API key and network connection.[/]\n")
