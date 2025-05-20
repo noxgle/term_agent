@@ -78,14 +78,16 @@ pip install -r requirements.txt
 
 ## `.env` Configuration
 
-Example `.env.copy` file:
+Copy `.env.copy` to `.env` and paste your api key.
+
+Example `.env` file:
 
 ```
 AI_ENGINE=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.5
-OPENAI_MAX_TOKENS=150
+OPENAI_MAX_TOKENS=1000
 
 GOOGLE_API_KEY=...
 GOOGLE_MODEL=gemini-2.0-flash

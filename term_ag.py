@@ -90,13 +90,14 @@ FALLOUT_FINDINGS = [
 class term_agent:
     def __init__(self):
         load_dotenv()
+        self.basedir = os.path.dirname(os.path.abspath(__file__))
         # --- Logging config from .env ---
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         log_file = os.getenv("LOG_FILE", "")
         log_to_console = os.getenv("LOG_TO_CONSOLE", "true").lower() == "true"
         handlers = []
         if log_file:
-            handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+            handlers.append(logging.FileHandler(f"{self.basedir}/{log_file}", encoding="utf-8"))
         if log_to_console or not handlers:
             handlers.append(logging.StreamHandler())
         logging.basicConfig(
