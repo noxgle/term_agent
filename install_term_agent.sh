@@ -15,6 +15,15 @@ if (( $(echo "$python_version < 3.9" | bc -l) )); then
     exit 1
 fi
 
+# Clone repository
+echo "Cloning Vault 3000 repository..."
+git clone https://github.com/noxgle/term_agent.git
+cd term_agent
+
+# Create and activate virtual environment
+echo "Creating virtual environment..."
+python3 -m venv .venv
+
 # Create and activate virtual environment
 echo "Creating virtual environment..."
 python3 -m venv .venv
