@@ -68,8 +68,6 @@ if [ ! -f .env ]; then
     echo "Please edit .env file and add your API keys"
 fi
 
-mkdir -p logs
-
 echo "\nInstallation complete!"
 echo "To activate the virtual environment, run: source .venv/bin/activate"
 echo "Don't forget to edit .env file and add your API keys"
@@ -89,8 +87,8 @@ if [ "$add_aliases" = "y" ]; then
         SHELL_RC="$HOME/.bashrc"
     fi
     echo -e "\n# Vault 3000 aliases" >> "$SHELL_RC"
-    echo "alias ask='cd $CURRENT_DIR && source .venv/bin/activate && python term_ask.py'" >> "$SHELL_RC"
-    echo "alias ag='cd $CURRENT_DIR && source .venv/bin/activate && python term_ag.py'" >> "$SHELL_RC"
+    echo "alias ask=\"$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/term_ask.py\"" >> "$SHELL_RC"
+    echo "alias ag=\"$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/term_ag.py\"" >> "$SHELL_RC"
     echo -e "\nAliases added to $SHELL_RC"
     echo "Please restart your terminal or run 'source $SHELL_RC' to use the aliases"
     echo "You can now use 'ask' for chat mode and 'ag' for agent mode from anywhere"
@@ -100,5 +98,6 @@ echo -e "\nInstallation complete!"
 echo "To activate the virtual environment, run: source .venv/bin/activate"
 echo "Don't forget to edit .env file and add your API keys"
 echo ""
-echo "To start Vault 3000 in chat mode, run: python term_ask.py"
-echo "To start Vault 3000 in agent mode, run: python term_ag.py"
+echo "To start Vault 3000 in chat mode, run: ask term_ask.py"
+echo "To start Vault 3000 in agent mode, run: ag term_ag.py"
+echo "To start Vault 3000 in remote agent mode, run: ag term_ag.py test@192.168.0.1"
