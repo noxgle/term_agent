@@ -68,6 +68,26 @@
 
 ## Installation
 
+### Quick Install (using install script)
+
+```bash
+# Download and run the installation script
+curl -O https://raw.githubusercontent.com/noxgle/term_agent/main/install_term_agent.sh
+chmod +x install_term_agent.sh
+./install_term_agent.sh
+```
+
+The install script will:
+- Check Python version requirements (3.9+)
+- Create and configure virtual environment
+- Install all required packages
+- Create initial `.env` file from template
+- Optionally add convenient aliases to your shell configuration:
+  - `ask` - to start chat mode
+  - `ag` - to start agent mode
+
+### Manual Installation
+
 ```bash
 git clone https://github.com/noxgle/term_agent.git
 cd vault3000
