@@ -130,12 +130,59 @@ class term_agent:
         self.user = None
         self.host = None
 
+        self.linux_distro, self.linux_version = self.detect_linux_distribution()
+
 
     def print_vault_tip(self):
         return random.choice(VAULT_TEC_TIPS)
     
     def maybe_print_finding(self):
         return random.choice(FALLOUT_FINDINGS)
+    
+    
+    def detect_linux_distribution(self):
+        """
+        Returns a tuple: (distribution_name, version)
+        Tries /etc/os-release, then lsb_release, then fallback to uname.
+        """
+        # Try /etc/os-release
+        os_release_path = "/etc/os-release"
+        if os.path.isfile(os_release_path):
+            with open(os_release_path) as f:
+                lines = f.readlines()
+            info = {}
+            for line in lines:
+                if "=" in line:
+                    key, val = line.strip().split("=", 1)
+                    info[key] = val.strip('"')
+            name = info.get("NAME", "")
+            version = info.get("VERSION_ID", info.get("VERSION", ""))
+            if name:
+                return (name, version)
+        
+        # Try lsb_release
+        try:
+            name = subprocess.check_output(["lsb_release", "-si"], text=True).strip()
+            version = subprocess.check_output(["lsb_release", "-sr"], text=True).strip()
+            return (name, version)
+        except Exception:
+            pass
+    
+        # Fallback to uname
+        try:
+            name = subprocess.check_output(["uname", "-s"], text=True).strip()
+            version = subprocess.check_output(["uname", "-r"], text=True).strip()
+            return (name, version)
+        except Exception:
+            pass
+    
+        return ("Unknown", "")
+    
+    # Przykład użycia:
+    # distro, version = detect_linux_distribution()
+    # print(f"Detected: {distro} {version}")
+    
+    # --- Gemini Function ---
 
     def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
         """
@@ -508,6 +555,13 @@ def main():
     agent.console.print(PIPBOY_ASCII)
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    
+    if agent.linux_distro != "Unknown":
+        agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
+    else:
+        agent.console.print("[red]Could not detect Linux distribution.[/]")
+        sys.exit(1)
+
     agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
