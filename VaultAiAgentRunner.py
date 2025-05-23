@@ -23,26 +23,32 @@ class VaultAIAgentRunner:
     def __init__(self, 
                 terminal, 
                 user_goal,
-                system_prompt_agent=(
-                                    "You are an autonomous AI agent with access to a Linux terminal. "
-                                    "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-                                    "Your first task is to analyze the user's goal and decide what to do next. "
-                                    "For each step, always reply in JSON: "
-                                    "{'tool': 'bash', 'command': '...'} "
-                                    "or {'tool': 'ask_user', 'question': '...'} "
-                                    "or {'tool': 'finish', 'summary': '...'} when done. "
-                                    "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
-                                    "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
-                                    "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-                                    "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-                                    ),
+                system_prompt_agent=None,
                 user=None, 
                 host=None,
                 window_size=20
                 ):
         
+
+        
         self.user_goal = user_goal
-        self.system_prompt_agent = system_prompt_agent
+        if system_prompt_agent is None:
+            self.system_prompt_agent = (
+                                        f"You are an autonomous AI agent with access to a {terminal.linux_distro} {terminal.linux_version} terminal. "
+                                        "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+                                        "Your first task is to analyze the user's goal and decide what to do next. "
+                                        "For each step, always reply in JSON: "
+                                        "{'tool': 'bash', 'command': '...'} "
+                                        "or {'tool': 'ask_user', 'question': '...'} "
+                                        "or {'tool': 'finish', 'summary': '...'} when done. "
+                                        "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
+                                        "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
+                                        "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+                                        "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+                                        ),
+        else:
+            self.system_prompt_agent = system_prompt_agent
+
         self.terminal = terminal
         self.user = user
         self.host = host
