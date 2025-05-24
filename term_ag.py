@@ -471,23 +471,25 @@ class term_agent:
             return '', 1
     
     def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
-        # Jeśli polecenie zawiera wiele sudo, zamień na jedno sudo sh -c '...'
-        if command.count("sudo") > 1 or ("&&" in command and command.strip().startswith("sudo")):
+        # Dodaj znacznik exit code na końcu polecenia
+        marker = "__EXITCODE:"
+        command_with_exit = f"{command}; echo {marker}$?__"
+        if command_with_exit.count("sudo") > 1 or ("&&" in command_with_exit and command_with_exit.strip().startswith("sudo")):
             # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
-            cmd_no_sudo = command.replace("sudo ", "")
-            command = f"sudo -S sh -c '{cmd_no_sudo}'"
-        elif command.strip().startswith("sudo") and "-S" not in command:
-            command = command.replace("sudo", "sudo -S", 1)
-        ssh_cmd = f"ssh {remote} '{command}'"
+            cmd_no_sudo = command_with_exit.replace("sudo ", "")
+            command_with_exit = f"sudo -S sh -c '{cmd_no_sudo}'"
+        elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
+            command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
+        ssh_cmd = f"ssh {remote} '{command_with_exit}'"
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
         output = ""
         try:
             while True:
                 i = child.expect([
-                    r"[Pp]assword:",           # hasło do ssh
-                    r"\(yes/no\)\?",           # fingerprint confirmation
-                    r"\[sudo\] password for .*:", # sudo password
-                    r"\[Yy]es/[Nn]o",          # interaktywne pytania
+                    r"[Pp]assword:",
+                    r"\(yes/no\)\?",
+                    r"\[sudo\] password for .*:",
+                    r"\[Yy]es/[Nn]o",
                     pexpect.EOF,
                     pexpect.TIMEOUT,
                     r"ssh: connect to host .* port .*: Connection refused",
@@ -524,12 +526,15 @@ class term_agent:
                 output += child.before
         except Exception as e:
             output += f"\n[pexpect error] {e}"
-        exit_code = child.exitstatus
-        if exit_code is None:
-            if hasattr(child, "signalstatus") and child.signalstatus is not None:
-                exit_code = 128 + child.signalstatus
-            else:
-                exit_code = 1
+
+        # Parsowanie kodu wyjścia z outputu
+        exit_code = 1
+        import re
+        match = re.search(rf"{marker}(\d+)__", output)
+        if match:
+            exit_code = int(match.group(1))
+            # Usuń marker z outputu
+            output = re.sub(rf"{marker}\d+__\s*", "", output)
         return output, exit_code
 
     def check_ai_online(self):
@@ -613,7 +618,7 @@ def main():
     if ai_status:
         agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?""")
         agent.console.print("If you want to load a goal from a file, type //path/to/file\n")
-        agent.console.print("Press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
