@@ -50,6 +50,13 @@
 
 **Vault 3000** is a Fallout-inspired console application that answers user questions, helps with Linux commands, supports various AI engines (OpenAI, Google Gemini, Ollama), and can work locally or remotely via SSH.
 
+## Demo
+
+See Vault 3000 in action:  
+[![Vault 3000 Demo](https://img.youtube.com/vi/gFWQzcY27ds/0.jpg)](https://youtu.be/gFWQzcY27ds)
+
+[Watch the demo on YouTube](https://youtu.be/gFWQzcY27ds)
+
 ## Features
 
 - **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
