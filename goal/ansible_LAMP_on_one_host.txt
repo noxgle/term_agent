@@ -1,0 +1,2 @@
+Create an Ansible project in the `/tmp/ans_LAMP` directory. This project should include an inventory file with the host `192.168.200.198` and a playbook to 
+install and configure a full LAMP stack (Linux, Apache, MySQL, PHP) on that host as user root on Debain 12.
