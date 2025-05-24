@@ -19,6 +19,10 @@ class VaultAIAgentRunner:
             self.linux_distro, self.linux_version = terminal.detect_linux_distribution()
         else:
             self.linux_distro, self.linux_version = terminal.detect_remote_linux_distribution(host, user=user)
+
+        if self.linux_distro == "Unknown":
+            terminal.print_console("Could not detect Linux distribution. Please ensure you are running this on a Linux system.")
+            raise RuntimeError("Linux distribution detection failed.")
         
         self.user_goal = user_goal
         if system_prompt_agent is None:
