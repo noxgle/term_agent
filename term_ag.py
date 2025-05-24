@@ -130,9 +130,6 @@ class term_agent:
         self.user = None
         self.host = None
 
-        self.linux_distro, self.linux_version = self.detect_linux_distribution()
-
-
     def print_vault_tip(self):
         return random.choice(VAULT_TEC_TIPS)
     
@@ -178,9 +175,58 @@ class term_agent:
     
         return ("Unknown", "")
     
-    # Przykład użycia:
-    # distro, version = detect_linux_distribution()
-    # print(f"Detected: {distro} {version}")
+    def detect_remote_linux_distribution(self, remote_host, user=None):
+        """
+        Wykrywa dystrybucję Linuksa na zdalnej maszynie przez SSH.
+        Zwraca tuple: (distribution_name, version)
+        """
+        ssh_prefix = f"{user}@{remote_host}" if user else remote_host
+
+        # 1. Spróbuj /etc/os-release
+        try:
+            cmd = "cat /etc/os-release"
+            result = subprocess.run(
+                ["ssh", ssh_prefix, cmd],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                info = {}
+                for line in result.stdout.splitlines():
+                    if "=" in line:
+                        key, val = line.strip().split("=", 1)
+                        info[key] = val.strip('"')
+                name = info.get("NAME", "")
+                version = info.get("VERSION_ID", info.get("VERSION", ""))
+                if name:
+                    return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: /etc/os-release failed: {e}")
+
+        # 2. Spróbuj lsb_release
+        try:
+            name = subprocess.check_output(
+                ["ssh", ssh_prefix, "lsb_release -si"], text=True, timeout=10
+            ).strip()
+            version = subprocess.check_output(
+                ["ssh", ssh_prefix, "lsb_release -sr"], text=True, timeout=10
+            ).strip()
+            return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: lsb_release failed: {e}")
+
+        # 3. Fallback do uname
+        try:
+            name = subprocess.check_output(
+                ["ssh", ssh_prefix, "uname -s"], text=True, timeout=10
+            ).strip()
+            version = subprocess.check_output(
+                ["ssh", ssh_prefix, "uname -r"], text=True, timeout=10
+            ).strip()
+            return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: uname failed: {e}")
+
+        return ("Unknown", "")
     
     # --- Gemini Function ---
 
@@ -556,11 +602,11 @@ def main():
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     
-    if agent.linux_distro != "Unknown":
-        agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
-    else:
-        agent.console.print("[red]Could not detect Linux distribution.[/]")
-        sys.exit(1)
+    # if agent.linux_distro != "Unknown":
+    #     agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
+    # else:
+    #     agent.console.print("[red]Could not detect Linux distribution.[/]")
+    #     sys.exit(1)
 
     agent.console.print(f"{agent.print_vault_tip()}\n")
     
