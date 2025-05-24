@@ -130,9 +130,6 @@ class term_agent:
         self.user = None
         self.host = None
 
-        self.linux_distro, self.linux_version = self.detect_linux_distribution()
-
-
     def print_vault_tip(self):
         return random.choice(VAULT_TEC_TIPS)
     
@@ -178,9 +175,58 @@ class term_agent:
     
         return ("Unknown", "")
     
-    # Przykład użycia:
-    # distro, version = detect_linux_distribution()
-    # print(f"Detected: {distro} {version}")
+    def detect_remote_linux_distribution(self, remote_host, user=None):
+        """
+        Wykrywa dystrybucję Linuksa na zdalnej maszynie przez SSH.
+        Zwraca tuple: (distribution_name, version)
+        """
+        ssh_prefix = f"{user}@{remote_host}" if user else remote_host
+
+        # 1. Spróbuj /etc/os-release
+        try:
+            cmd = "cat /etc/os-release"
+            result = subprocess.run(
+                ["ssh", ssh_prefix, cmd],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                info = {}
+                for line in result.stdout.splitlines():
+                    if "=" in line:
+                        key, val = line.strip().split("=", 1)
+                        info[key] = val.strip('"')
+                name = info.get("NAME", "")
+                version = info.get("VERSION_ID", info.get("VERSION", ""))
+                if name:
+                    return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: /etc/os-release failed: {e}")
+
+        # 2. Spróbuj lsb_release
+        try:
+            name = subprocess.check_output(
+                ["ssh", ssh_prefix, "lsb_release -si"], text=True, timeout=10
+            ).strip()
+            version = subprocess.check_output(
+                ["ssh", ssh_prefix, "lsb_release -sr"], text=True, timeout=10
+            ).strip()
+            return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: lsb_release failed: {e}")
+
+        # 3. Fallback do uname
+        try:
+            name = subprocess.check_output(
+                ["ssh", ssh_prefix, "uname -s"], text=True, timeout=10
+            ).strip()
+            version = subprocess.check_output(
+                ["ssh", ssh_prefix, "uname -r"], text=True, timeout=10
+            ).strip()
+            return (name, version)
+        except Exception as e:
+            self.logger.warning(f"detect_remote_linux_distribution: uname failed: {e}")
+
+        return ("Unknown", "")
     
     # --- Gemini Function ---
 
@@ -425,23 +471,25 @@ class term_agent:
             return '', 1
     
     def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
-        # Jeśli polecenie zawiera wiele sudo, zamień na jedno sudo sh -c '...'
-        if command.count("sudo") > 1 or ("&&" in command and command.strip().startswith("sudo")):
+        # Dodaj znacznik exit code na końcu polecenia
+        marker = "__EXITCODE:"
+        command_with_exit = f"{command}; echo {marker}$?__"
+        if command_with_exit.count("sudo") > 1 or ("&&" in command_with_exit and command_with_exit.strip().startswith("sudo")):
             # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
-            cmd_no_sudo = command.replace("sudo ", "")
-            command = f"sudo -S sh -c '{cmd_no_sudo}'"
-        elif command.strip().startswith("sudo") and "-S" not in command:
-            command = command.replace("sudo", "sudo -S", 1)
-        ssh_cmd = f"ssh {remote} '{command}'"
+            cmd_no_sudo = command_with_exit.replace("sudo ", "")
+            command_with_exit = f"sudo -S sh -c '{cmd_no_sudo}'"
+        elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
+            command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
+        ssh_cmd = f"ssh {remote} '{command_with_exit}'"
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
         output = ""
         try:
             while True:
                 i = child.expect([
-                    r"[Pp]assword:",           # hasło do ssh
-                    r"\(yes/no\)\?",           # fingerprint confirmation
-                    r"\[sudo\] password for .*:", # sudo password
-                    r"\[Yy]es/[Nn]o",          # interaktywne pytania
+                    r"[Pp]assword:",
+                    r"\(yes/no\)\?",
+                    r"\[sudo\] password for .*:",
+                    r"\[Yy]es/[Nn]o",
                     pexpect.EOF,
                     pexpect.TIMEOUT,
                     r"ssh: connect to host .* port .*: Connection refused",
@@ -478,12 +526,15 @@ class term_agent:
                 output += child.before
         except Exception as e:
             output += f"\n[pexpect error] {e}"
-        exit_code = child.exitstatus
-        if exit_code is None:
-            if hasattr(child, "signalstatus") and child.signalstatus is not None:
-                exit_code = 128 + child.signalstatus
-            else:
-                exit_code = 1
+
+        # Parsowanie kodu wyjścia z outputu
+        exit_code = 1
+        import re
+        match = re.search(rf"{marker}(\d+)__", output)
+        if match:
+            exit_code = int(match.group(1))
+            # Usuń marker z outputu
+            output = re.sub(rf"{marker}\d+__\s*", "", output)
         return output, exit_code
 
     def check_ai_online(self):
@@ -556,18 +607,18 @@ def main():
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     
-    if agent.linux_distro != "Unknown":
-        agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
-    else:
-        agent.console.print("[red]Could not detect Linux distribution.[/]")
-        sys.exit(1)
+    # if agent.linux_distro != "Unknown":
+    #     agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
+    # else:
+    #     agent.console.print("[red]Could not detect Linux distribution.[/]")
+    #     sys.exit(1)
 
     agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
         agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?""")
         agent.console.print("If you want to load a goal from a file, type //path/to/file\n")
-        agent.console.print("Press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")

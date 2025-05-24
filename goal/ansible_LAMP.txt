@@ -1,0 +1,12 @@
+Create an Ansible project in the `/tmp/ans_LAMP` directory. The project should contain:
+- An `inventory.ini` file with a host group `web_db_servers`, covering the IP range `10.0.0.1-10.0.0.200`.
+- A playbook (e.g., `main.yml` or `site.yml`) responsible for:
+    - Installing the Apache web server (or `httpd`, depending on the Linux distribution).
+    - Ensuring the Apache service is running and enabled on system startup.
+    - Installing the MySQL or MariaDB database server.
+    - Ensuring the database service is running and enabled on system startup.
+    - Installing PHP and modules necessary for MySQL integration (e.g., `php-mysql` or `php-mysqlnd`).
+    - Restarting the Apache service after PHP installation, if necessary.
+    - Optionally: Configuring the firewall (e.g., firewalld or ufw) to allow HTTP (port 80) and HTTPS (port 443) traffic.
+
+Present the full directory structure and the content of all Ansible files (inventory, playbook, any roles).

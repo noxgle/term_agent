@@ -2,23 +2,6 @@ import json
 import os
 import re
 
-
-# system_prompt_agent=(
-#                     "You are an autonomous AI agent with access to a Linux terminal. "
-#                     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-#                     "For each step, always reply in JSON: "
-#                     "{'tool': 'bash', 'command': '...'} "
-#                     "or {'tool': 'ask_user', 'question': '...'} "   
-#                     "or {'tool': 'finish', 'summary': '...'} when done. "
-#                     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
-#                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
-#                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-#                     "Be careful and always use safe commands. "
-#                     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-#                     "All commands must be non-interactive and must not require additional input after execution."
-#                     ),
-
-
 class VaultAIAgentRunner:
     def __init__(self, 
                 terminal, 
@@ -29,12 +12,22 @@ class VaultAIAgentRunner:
                 window_size=20
                 ):
         
+        self.linux_distro = None
+        self.linux_version = None
 
+        if host is None:
+            self.linux_distro, self.linux_version = terminal.detect_linux_distribution()
+        else:
+            self.linux_distro, self.linux_version = terminal.detect_remote_linux_distribution(host, user=user)
+
+        if self.linux_distro == "Unknown":
+            terminal.print_console("Could not detect Linux distribution. Please ensure you are running this on a Linux system.")
+            raise RuntimeError("Linux distribution detection failed.")
         
         self.user_goal = user_goal
         if system_prompt_agent is None:
             self.system_prompt_agent = (
-                                        f"You are an autonomous AI agent with access to a {terminal.linux_distro} {terminal.linux_version} terminal. "
+                                        f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
                                         "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
                                         "Your first task is to analyze the user's goal and decide what to do next. "
                                         "For each step, always reply in JSON: "
@@ -370,9 +363,3 @@ class VaultAIAgentRunner:
             
             if agent_should_stop_this_turn:
                 break 
-
-        # terminal.print_console("\n--- Agent summary ---")
-        # for s_item in self.steps:
-        #     terminal.print_console(s_item)
-        # terminal.print_console(self.summary)
-        # terminal.print_console("--- End of agent summary ---")
