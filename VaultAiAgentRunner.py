@@ -1,6 +1,8 @@
 import json
 import os
 import re
+import tempfile
+import shutil
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -26,19 +28,34 @@ class VaultAIAgentRunner:
         
         self.user_goal = user_goal
         if system_prompt_agent is None:
+            # self.system_prompt_agent = (
+            #                             f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
+            #                             "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+            #                             "Your first task is to analyze the user's goal and decide what to do next. "
+            #                             "For each step, always reply in JSON: "
+            #                             "{'tool': 'bash', 'command': '...'} "
+            #                             "or {'tool': 'ask_user', 'question': '...'} "
+            #                             "or {'tool': 'finish', 'summary': '...'} when done. "
+            #                             "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
+            #                             "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
+            #                             "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+            #                             "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+            #                             ),
             self.system_prompt_agent = (
-                                        f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
-                                        "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-                                        "Your first task is to analyze the user's goal and decide what to do next. "
-                                        "For each step, always reply in JSON: "
-                                        "{'tool': 'bash', 'command': '...'} "
-                                        "or {'tool': 'ask_user', 'question': '...'} "
-                                        "or {'tool': 'finish', 'summary': '...'} when done. "
-                                        "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
-                                        "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
-                                        "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-                                        "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-                                        ),
+                f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
+                "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+                "Your first task is to analyze the user's goal and decide what to do next. "
+                "For each step, always reply in JSON: "
+                "{'tool': 'bash', 'command': '...'} "
+                "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
+                "or {'tool': 'ask_user', 'question': '...'} "
+                "or {'tool': 'finish', 'summary': '...'} when done. "
+                "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
+                "Use the 'write_file' tool to create or overwrite files with specific content. "
+                "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
+                "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+                "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+            )
         else:
             self.system_prompt_agent = system_prompt_agent
 
@@ -345,6 +362,60 @@ class VaultAIAgentRunner:
                     # Po utworzeniu struktury przejdź do kolejnej akcji
                     continue
 
+                elif tool == "write_file":
+                    file_path = action_item.get("path")
+                    file_content = action_item.get("content")
+                    if not file_path or file_content is None:
+                        terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")
+                        self.context.append({"role": "user", "content": f"You provided a 'write_file' tool action but no 'path' or 'content': {action_item}. I am skipping it."})
+                        continue
+
+                    if self.terminal.ssh_connection:
+                        # Utwórz plik lokalnie w katalogu tymczasowym
+                        with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmpf:
+                            tmpf.write(file_content)
+                            tmpf_path = tmpf.name
+
+                        remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
+                        password = getattr(self.terminal, "ssh_password", None)
+
+                        # Skopiuj plik na zdalny host (do katalogu docelowego)
+                        # Uwaga: katalog docelowy musi istnieć lub trzeba go utworzyć przez SSH!
+                        remote_dir = os.path.dirname(file_path)
+                        # Utwórz katalog na zdalnym hoście (opcjonalnie)
+                        mkdir_cmd = f"mkdir -p '{remote_dir}'"
+                        self.terminal.execute_remote_pexpect(mkdir_cmd, remote, password=password)
+
+                        # Skopiuj plik
+                        scp_cmd = ["scp", tmpf_path, f"{remote}:{file_path}"]
+                        try:
+                            import subprocess
+                            result = subprocess.run(scp_cmd, capture_output=True, text=True)
+                            if result.returncode == 0:
+                                terminal.print_console(f"File '{file_path}' copied to remote host.")
+                                self.context.append({"role": "user", "content": f"File '{file_path}' copied to remote host."})
+                            else:
+                                terminal.print_console(f"Failed to copy file '{file_path}' to remote host: {result.stderr}")
+                                self.context.append({"role": "user", "content": f"Failed to copy file '{file_path}' to remote host: {result.stderr}"})
+                        finally:
+                            # Usuń plik tymczasowy
+                            try:
+                                os.remove(tmpf_path)
+                            except Exception:
+                                pass
+                    else:
+                        # Lokalnie
+                        try:
+                            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                            with open(file_path, "w", encoding="utf-8") as f:
+                                f.write(file_content)
+                            terminal.print_console(f"File '{file_path}' written successfully.")
+                            self.context.append({"role": "user", "content": f"File '{file_path}' written successfully."})
+                        except Exception as e:
+                            terminal.print_console(f"Failed to write file '{file_path}': {e}")
+                            self.context.append({"role": "user", "content": f"Failed to write file '{file_path}': {e}"})
+                    continue
+
                 else: 
                     terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                     user_feedback_invalid_tool = (
@@ -362,4 +433,4 @@ class VaultAIAgentRunner:
                         break 
             
             if agent_should_stop_this_turn:
-                break 
+                break

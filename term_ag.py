@@ -470,16 +470,17 @@ class term_agent:
             self.logger.error(f"SSH execution failed: {e}")
             return '', 1
     
+        
     def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
         # Dodaj znacznik exit code na końcu polecenia
         marker = "__EXITCODE:"
         command_with_exit = f"{command}; echo {marker}$?__"
-        if command_with_exit.count("sudo") > 1 or ("&&" in command_with_exit and command_with_exit.strip().startswith("sudo")):
-            # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
-            cmd_no_sudo = command_with_exit.replace("sudo ", "")
-            command_with_exit = f"sudo -S sh -c '{cmd_no_sudo}'"
-        elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
-            command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
+        # if command_with_exit.count("sudo") > 1 or ("&&" in command_with_exit and command_with_exit.strip().startswith("sudo")):
+        #     # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
+        #     cmd_no_sudo = command_with_exit.replace("sudo ", "")
+        #     command_with_exit = f"sudo -S sh -c '{cmd_no_sudo}'"
+        # elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
+        #     command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
         ssh_cmd = f"ssh {remote} '{command_with_exit}'"
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
         output = ""
