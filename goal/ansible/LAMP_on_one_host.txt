@@ -1,2 +1,11 @@
-Create an Ansible project in the `/tmp/ans_LAMP` directory. This project should include an inventory file with the host `192.168.200.198` and a playbook to 
-install and configure a full LAMP stack (Linux, Apache, MySQL, PHP) on that host as user root on Debain 12.
+Your task is to automate the installation of a LAMP stack (Linux, Apache, MySQL, PHP) on a remote server using Ansible.
+
+Perform the following steps:
+
+1.  **Ansible Project Preparation:**
+    *   Create an Ansible project directory at `/tmp/ans_LAMP`.
+    *   Inside this directory, create an `inventory.ini` file containing the host `192.168.200.198`.
+    *   Create a `lamp_playbook.yml` file that will install and configure a full LAMP stack (Apache2, MySQL Server, PHP along with `php-mysql`, `libapache2-mod-php`). This playbook should also create the `/var/www/html/info.php` file containing the code `<?php phpinfo(); ?>` on the remote host (`192.168.200.198` - 
+Debian 12). The playbook should use the user `ans` to connect to the remote host.
+2.  **Playbook Execution:**
+    *   After creating the project, run `lamp_playbook.yml` using `ansible-playbook`.
