@@ -608,12 +608,6 @@ def main():
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     
-    # if agent.linux_distro != "Unknown":
-    #     agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
-    # else:
-    #     agent.console.print("[red]Could not detect Linux distribution.[/]")
-    #     sys.exit(1)
-
     agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
@@ -649,7 +643,7 @@ def main():
         agent.remote_host = remote
         agent.user = user
         agent.host = host
-        agent.console.print(f"VaultAI agent strated on {remote} with goal: {user_input}.\n")
+        agent.console.print(f"VaultAI agent strated on {remote} with goal: \n\n{user_input}\n")
     else:
         remote = None
         user = None
@@ -658,7 +652,7 @@ def main():
         agent.remote_host = None
         agent.user = None
         agent.host = None
-        agent.console.print(f"VaultAI AI agent started with goal: {user_input}")
+        agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
     runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()
