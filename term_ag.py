@@ -643,7 +643,7 @@ def main():
         agent.remote_host = remote
         agent.user = user
         agent.host = host
-        agent.console.print(f"VaultAI agent strated on {remote} with goal: {user_input}.\n")
+        agent.console.print(f"VaultAI agent strated on {remote} with goal: \n\n{user_input}\n")
     else:
         remote = None
         user = None
@@ -652,7 +652,7 @@ def main():
         agent.remote_host = None
         agent.user = None
         agent.host = None
-        agent.console.print(f"VaultAI AI agent started with goal: {user_input}")
+        agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
     runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()
