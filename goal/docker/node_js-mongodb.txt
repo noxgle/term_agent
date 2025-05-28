@@ -1,0 +1,29 @@
+Your goal is to set up a complete local development environment for a simple Node.js + MongoDB application using Docker and Docker Compose.
+
+Follow these steps:
+
+1. Create a new project directory in /home/ans/myapp (or ask the user for a preferred path).
+
+2. Inside that directory, generate the following:
+   • A minimal Node.js app (`index.js`) that listens on port 3000 and responds with "Hello from Node!"
+   • A `package.json` file with Express.js as a dependency
+
+3. Create a `Dockerfile` that:
+   • Uses the official Node.js LTS image
+   • Installs dependencies
+   • Copies the app code
+   • Exposes port 3000
+   • Runs the app using `node index.js`
+
+4. Create a `docker-compose.yml` file that:
+   • Defines two services: `web` (the Node.js app) and `mongo` (using the official MongoDB image)
+   • Maps port 3000 on the host to the app container
+   • Links the web app to the MongoDB container
+
+5. Add a `.dockerignore` file (e.g., to exclude `node_modules`, `*.log`).
+
+6. Run `docker-compose up -d` to launch the application.
+
+7. Verify the app is running by sending an HTTP request to `http://localhost:3000`.
+
+Write all necessary files, show the Docker commands being used, and run them to complete the setup.
