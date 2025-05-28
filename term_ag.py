@@ -608,12 +608,6 @@ def main():
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     
-    # if agent.linux_distro != "Unknown":
-    #     agent.console.print(f"Detected Linux Distribution: {agent.linux_distro} {agent.linux_version}")
-    # else:
-    #     agent.console.print("[red]Could not detect Linux distribution.[/]")
-    #     sys.exit(1)
-
     agent.console.print(f"{agent.print_vault_tip()}\n")
     
     if ai_status:
