@@ -48,7 +48,7 @@
 
 # Vault 3000 Console Agent
 
-**Vault 3000** is a Fallout-inspired console application that answers user questions, helps with Linux commands, supports various AI engines (OpenAI, Google Gemini, Ollama), and can work locally or remotely via SSH.
+**Vault 3000** is a Fallout-inspired console application that not only answers your questions and helps with Linux commands, but can also autonomously achieve complex goals for you—automating tasks, creating and editing files, and executing multi-step operations—using advanced AI engines (OpenAI, Google Gemini, Ollama). It works both locally and remotely via SSH.
 
 ## Demo
 
