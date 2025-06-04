@@ -1,0 +1,39 @@
+Your goal is to update this Linux server and apply basic security hardening best practices.
+
+Perform the following steps:
+
+1. System Update:
+   • Run `sudo apt update && sudo apt upgrade -y` to bring all packages up to date.
+
+2. Firewall Configuration (UFW):
+   • Install UFW if missing: `sudo apt install ufw -y`
+   • Allow only SSH (22), HTTP (80) and HTTPS (443): 
+     - `sudo ufw allow 22`
+     - `sudo ufw allow 80`
+     - `sudo ufw allow 443`
+   • Enable the firewall: `sudo ufw enable`
+
+3. Fail2Ban Installation and Configuration:
+   • Install Fail2Ban: `sudo apt install fail2ban -y`
+   • Copy default config to `/etc/fail2ban/jail.local`
+   • Enable SSH protection with default settings
+   • Start and enable service: `sudo systemctl enable --now fail2ban`
+
+4. SSH Hardening:
+   • Edit `/etc/ssh/sshd_config` to set:
+     - `PermitRootLogin no`
+     - `PasswordAuthentication no`
+   • Restart SSH: `sudo systemctl restart sshd`
+   • Warn if no SSH key in `~/.ssh/authorized_keys`
+
+5. Create an Admin User:
+   • Prompt for a username (e.g., `devadmin`)
+   • Create user: `sudo adduser devadmin`
+   • Add to sudoers: `sudo usermod -aG sudo devadmin`
+
+
+6. Verification:
+   • Check UFW status: `sudo ufw status`
+   • Verify Fail2Ban status: `sudo fail2ban-client status sshd`
+
+Write and execute all necessary shell commands and configuration edits, and inform the user before making any disruptive changes.

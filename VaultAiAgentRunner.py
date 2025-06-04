@@ -3,6 +3,7 @@ import os
 import re
 import tempfile
 import shutil
+import subprocess
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -28,13 +29,29 @@ class VaultAIAgentRunner:
         
         self.user_goal = user_goal
         if system_prompt_agent is None:
+            # self.system_prompt_agent = (
+            #     f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
+            #     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+            #     "Your first task is to analyze the user's goal and decide what to do next. "
+            #     "For each step, always reply in JSON: "
+            #     "{'tool': 'bash', 'command': '...'} "
+            #     "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
+            #     "or {'tool': 'ask_user', 'question': '...'} "
+            #     "or {'tool': 'finish', 'summary': '...'} when done. "
+            #     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
+            #     "Use the 'write_file' tool to create or overwrite files with specific content. "
+            #     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
+            #     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+            #     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+            # )
             self.system_prompt_agent = (
                 f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
-                "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
+                "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                 "Your first task is to analyze the user's goal and decide what to do next. "
                 "For each step, always reply in JSON: "
                 "{'tool': 'bash', 'command': '...'} "
                 "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
+                "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
                 "or {'tool': 'finish', 'summary': '...'} when done. "
                 "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
@@ -42,6 +59,16 @@ class VaultAIAgentRunner:
                 "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
                 "At the end, always summarize what you have done in the 'summary' field of the finish message. "
                 "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
+                "You can also use the 'edit_file' tool to modify existing files in a structured way. "
+                "The 'edit_file' tool supports actions such as: "
+                "- 'replace': replace all occurrences of a string, "
+                "- 'insert_after': insert a line after a line containing a given string, "
+                "- 'insert_before': insert a line before a line containing a given string, "
+                "- 'delete_line': delete lines containing a given string. "
+                " Example usage: "
+                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'replace', 'search': 'foo=bar', 'replace': 'foo=baz'} "
+                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'insert_after', 'search': '[section]', 'line': 'new_option=1'} "
+                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'delete_line', 'search': 'deprecated_option'} "
             )
         else:
             self.system_prompt_agent = system_prompt_agent
@@ -376,7 +403,6 @@ class VaultAIAgentRunner:
                         # Skopiuj plik
                         scp_cmd = ["scp", tmpf_path, f"{remote}:{file_path}"]
                         try:
-                            import subprocess
                             result = subprocess.run(scp_cmd, capture_output=True, text=True)
                             if result.returncode == 0:
                                 terminal.print_console(f"File '{file_path}' copied to remote host.")
@@ -401,6 +427,107 @@ class VaultAIAgentRunner:
                         except Exception as e:
                             terminal.print_console(f"Failed to write file '{file_path}': {e}")
                             self.context.append({"role": "user", "content": f"Failed to write file '{file_path}': {e}"})
+                    continue
+
+                elif tool == "edit_file":
+                    file_path = action_item.get("path")
+                    action = action_item.get("action")
+                    search = action_item.get("search")
+                    replace = action_item.get("replace")
+                    line = action_item.get("line")
+
+                    if not file_path or not action:
+                        terminal.print_console(f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping.")
+                        self.context.append({"role": "user", "content": f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping."})
+                        continue
+
+                    def edit_file_local():
+                        try:
+                            with open(file_path, "r", encoding="utf-8") as f:
+                                lines = f.readlines()
+                        except Exception as e:
+                            terminal.print_console(f"Failed to read file '{file_path}': {e}")
+                            self.context.append({"role": "user", "content": f"Failed to read file '{file_path}': {e}"})
+                            return False
+
+                        changed = False
+                        new_lines = []
+                        if action == "replace" and search is not None and replace is not None:
+                            for l in lines:
+                                if search in l:
+                                    new_lines.append(l.replace(search, replace))
+                                    changed = True
+                                else:
+                                    new_lines.append(l)
+                        elif action == "insert_after" and search is not None and line is not None:
+                            for l in lines:
+                                new_lines.append(l)
+                                if search in l:
+                                    new_lines.append(line + "\n")
+                                    changed = True
+                        elif action == "insert_before" and search is not None and line is not None:
+                            for l in lines:
+                                if search in l:
+                                    new_lines.append(line + "\n")
+                                    changed = True
+                                new_lines.append(l)
+                        elif action == "delete_line" and search is not None:
+                            for l in lines:
+                                if search in l:
+                                    changed = True
+                                    continue
+                                new_lines.append(l)
+                        else:
+                            terminal.print_console(f"Unsupported or missing parameters for edit_file: {action_item}")
+                            self.context.append({"role": "user", "content": f"Unsupported or missing parameters for edit_file: {action_item}"})
+                            return False
+
+                        if changed:
+                            try:
+                                with open(file_path, "w", encoding="utf-8") as f:
+                                    f.writelines(new_lines)
+                                terminal.print_console(f"File '{file_path}' edited successfully.")
+                                self.context.append({"role": "user", "content": f"File '{file_path}' edited successfully."})
+                                return True
+                            except Exception as e:
+                                terminal.print_console(f"Failed to write file '{file_path}': {e}")
+                                self.context.append({"role": "user", "content": f"Failed to write file '{file_path}': {e}"})
+                                return False
+                        else:
+                            terminal.print_console(f"No changes made to '{file_path}'.")
+                            self.context.append({"role": "user", "content": f"No changes made to '{file_path}'."})
+                            return False
+
+                    if self.terminal.ssh_connection:
+                        # Pobierz plik zdalnie, edytuj lokalnie, odeślij z powrotem
+                        remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
+                        password = getattr(self.terminal, "ssh_password", None)
+                        with tempfile.TemporaryDirectory() as tmpdir:
+                            local_tmp_path = os.path.join(tmpdir, os.path.basename(file_path))
+                            # Pobierz plik
+                            scp_get = ["scp", f"{remote}:{file_path}", local_tmp_path]
+                            result = subprocess.run(scp_get, capture_output=True, text=True)
+                            if result.returncode != 0:
+                                terminal.print_console(f"Failed to fetch remote file '{file_path}': {result.stderr}")
+                                self.context.append({"role": "user", "content": f"Failed to fetch remote file '{file_path}': {result.stderr}"})
+                                continue
+                            # Edytuj lokalnie
+                            file_path_backup = file_path  # zachowaj oryginalną ścieżkę
+                            file_path = local_tmp_path
+                            ok = edit_file_local()
+                            file_path = file_path_backup
+                            if ok:
+                                # Odeślij plik z powrotem
+                                scp_put = ["scp", local_tmp_path, f"{remote}:{file_path}"]
+                                result = subprocess.run(scp_put, capture_output=True, text=True)
+                                if result.returncode == 0:
+                                    terminal.print_console(f"File '{file_path}' edited and uploaded to remote host.")
+                                    self.context.append({"role": "user", "content": f"File '{file_path}' edited and uploaded to remote host."})
+                                else:
+                                    terminal.print_console(f"Failed to upload edited file '{file_path}' to remote host: {result.stderr}")
+                                    self.context.append({"role": "user", "content": f"Failed to upload edited file '{file_path}' to remote host: {result.stderr}"})
+                    else:
+                        edit_file_local()
                     continue
 
                 else: 
