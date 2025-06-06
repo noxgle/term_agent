@@ -18,6 +18,7 @@ Perform the following steps:
    • Copy default config to `/etc/fail2ban/jail.local`
    • Enable SSH protection with default settings
    • Start and enable service: `sudo systemctl enable --now fail2ban`
+   - Check if fail2ban work correctly
 
 4. SSH Hardening:
    • Edit `/etc/ssh/sshd_config` to set:

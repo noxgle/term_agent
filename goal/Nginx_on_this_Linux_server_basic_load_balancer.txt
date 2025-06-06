@@ -56,12 +56,12 @@ server 10.0.0.101:8080 max_fails=3 fail_timeout=30s;
 server 10.0.0.102:8080 max_fails=3 fail_timeout=30s;
 }
 
-    This ensures Nginx temporarily removes an unresponsive backend after 3 failed attempts.
+This ensures Nginx temporarily removes an unresponsive backend after 3 failed attempts.
 
-    Verify Load Balancing:
+Verify Load Balancing:
 
-    Send repeated HTTP requests to http://lb.your-domain.com (e.g., curl -s http://lb.your-domain.com) and observe responses from both backends.
+Send repeated HTTP requests to http://lb.your-domain.com (e.g., curl -s http://lb.your-domain.com) and observe responses from both backends.
 
-    You can also monitor Nginx logs to confirm round-robin distribution.
+You can also monitor Nginx logs to confirm round-robin distribution.
 
 Write and execute all commands and create the necessary configuration files so that this server acts as a load balancer distributing traffic evenly across the two backends.

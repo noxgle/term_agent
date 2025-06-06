@@ -1,0 +1,23 @@
+You are an expert in Linux systems and shell scripting (Bash). Your task is to generate a Bash script that performs a comprehensive diagnosis of a Linux system and saves the results to a single text file. The script should gather the following information (each section should be clearly marked in the output file):
+
+*   **System Information:** Hostname, Linux distribution, kernel version, CPU architecture.
+*   **Resource Usage:** CPU usage, RAM usage, disk space usage (all mounted partitions).
+*   **Network Information:** IP address, MAC address, network interface information (name, status), routing table, DNS configuration.
+*   **Process Information:** List of running processes (top 10 sorted by CPU usage and top 10 sorted by memory usage), system load (load average).
+*   **System Log Information:** Last 10 lines from `/var/log/syslog` (or the equivalent for the specific distribution, e.g., `/var/log/messages`, `/var/log/journal`), last 10 lines from `/var/log/auth.log` (if it exists, otherwise skip this section).
+*   **Service Information:** List of running services (using `systemctl` if available, otherwise `service --status-all`).
+*   **Available Updates:** Check for available updates (using `apt update && apt list --upgradable` for Debian-based systems, `yum check-update` for RHEL/CentOS-based systems, `dnf upgrade --refresh --assumeno` for Fedora, `pacman -Qu` for Arch Linux. If the system doesn't match any of the listed ones, skip this 
+section).
+*   **Firewall Configuration:** Firewall status (e.g., `ufw status` or `firewall-cmd --state`).
+
+The script should:
+
+*   Be well-documented (comments explaining what each section of the code does).
+*   Handle errors (e.g., check if a command exists before executing it).
+*   Be portable (work on various Linux distributions as much as possible).
+*   Save all results to a file named `system_diagnosis.txt` in the home directory of the user running the script.
+*   Include a header indicating the date and time the script was run.
+*   Display information about the start and end of the diagnostics and the location of the output file to standard output.
+
+Generate the entire script code. Do not provide any explanations, just the complete script. Assume that the script will be run with the privileges of a user who has the right to read log files. Remember to check for the presence of the `systemctl` command before using it and use the alternative `service --status-all`
+when `systemctl` is not available. Do the same for update checking commands.
