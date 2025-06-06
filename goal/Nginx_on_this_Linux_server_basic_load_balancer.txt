@@ -1,3 +1,7 @@
+ask:
+Preapre prompt for agent ai to configure Nginx on this Linux server as a basic load balancer for two backend application servers (192.168.100.100:8080 and 192.168.100.101:8080).
+
+
 Your goal is to configure Nginx on this Linux server as a basic load balancer for two backend application servers.
 
 Follow these steps:
