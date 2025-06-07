@@ -1,0 +1,67 @@
+ask:
+Preapre prompt for agent ai to configure Nginx on this Linux server as a basic load balancer for two backend application servers (192.168.100.100:8080 and 192.168.100.101:8080).
+
+
+Your goal is to configure Nginx on this Linux server as a basic load balancer for two backend application servers.
+
+Follow these steps:
+
+Install Nginx if not already present (sudo apt update && sudo apt install nginx -y).
+
+Define the backend servers:
+
+Assume two application servers are reachable at 10.0.0.101:8080 and 10.0.0.102:8080.
+
+Create an Nginx upstream block in a new file /etc/nginx/sites-available/load_balancer and name the upstream app_cluster that lists both backends using round-robin:
+
+upstream app_cluster {
+server 10.0.0.101:8080;
+server 10.0.0.102:8080;
+}
+
+    Create the server block in the same file (/etc/nginx/sites-available/load_balancer):
+
+server {
+listen 80;
+server_name lb.your-domain.com;
+
+location / {
+    proxy_pass http://app_cluster;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+}
+
+}
+
+Enable the configuration:
+
+Create a symbolic link:
+sudo ln -s /etc/nginx/sites-available/load_balancer /etc/nginx/sites-enabled/
+
+Test and reload:
+
+Check syntax: sudo nginx -t
+
+Reload Nginx: sudo systemctl reload nginx
+
+Health Check (Optional):
+
+Enable passive health checks by adding parameters to the upstream block, e.g.:
+
+upstream app_cluster {
+server 10.0.0.101:8080 max_fails=3 fail_timeout=30s;
+server 10.0.0.102:8080 max_fails=3 fail_timeout=30s;
+}
+
+This ensures Nginx temporarily removes an unresponsive backend after 3 failed attempts.
+
+Verify Load Balancing:
+
+Send repeated HTTP requests to http://lb.your-domain.com (e.g., curl -s http://lb.your-domain.com) and observe responses from both backends.
+
+You can also monitor Nginx logs to confirm round-robin distribution.
+
+Write and execute all commands and create the necessary configuration files so that this server acts as a load balancer distributing traffic evenly across the two backends.
