@@ -387,7 +387,6 @@ class VaultAIAgentRunner:
                     preview = file_content[:100] + ("..." if len(file_content) > 100 else "")
 
                     if self.terminal.ssh_connection:
-                        # Utwórz plik lokalnie w katalogu tymczasowym
                         with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmpf:
                             tmpf.write(file_content)
                             tmpf_path = tmpf.name
@@ -395,19 +394,29 @@ class VaultAIAgentRunner:
                         remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
                         password = getattr(self.terminal, "ssh_password", None)
 
-                        # Wysyłamy plik do katalogu tymczasowego na zdalnym hoście
                         remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
+
+                        # Usuń istniejący plik docelowy na zdalnym hoście, jeśli istnieje
+                        rm_cmd = f"rm -f '{file_path}'"
+                        self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
+                        # Usuń istniejący plik tymczasowy na zdalnym hoście, jeśli istnieje
+                        rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
+                        self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
+
                         scp_cmd = ["scp", tmpf_path, f"{remote}:{remote_tmp_path}"]
                         try:
                             result = subprocess.run(scp_cmd, capture_output=True, text=True)
                             if result.returncode == 0:
-                                # Jeśli docelowy katalog to /etc, /usr, /root, itp. i nie jesteśmy rootem, użyj sudo cp
                                 needs_sudo = not (self.user == "root" or file_path.startswith(f"/home/{self.user}") or file_path.startswith("/tmp"))
-                                if needs_sudo:
-                                    cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
+                                if remote_tmp_path == file_path:
+                                    code = 0
+                                    out = ""
                                 else:
-                                    cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
-                                out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
+                                    if needs_sudo:
+                                        cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
+                                    else:
+                                        cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
+                                    out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                                 if code == 0:
                                     terminal.print_console(f"File '{file_path}' copied to remote host.\nPreview:\n{preview}")
                                     self.context.append({"role": "user", "content": f"File '{file_path}' copied to remote host. Preview:\n{preview}"})
@@ -423,9 +432,11 @@ class VaultAIAgentRunner:
                             except Exception:
                                 pass
                     else:
-                        # Lokalnie
                         try:
                             os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                            # Usuń lokalny plik jeśli istnieje
+                            if os.path.exists(file_path):
+                                os.remove(file_path)
                             with open(file_path, "w", encoding="utf-8") as f:
                                 f.write(file_content)
                             terminal.print_console(f"File '{file_path}' written successfully.\nPreview:\n{preview}")
@@ -524,17 +535,25 @@ class VaultAIAgentRunner:
                             ok = edit_file_local()
                             file_path = file_path_backup
                             if ok:
+                                # Usuń istniejący plik docelowy i tymczasowy na zdalnym hoście
+                                rm_cmd = f"rm -f '{file_path}'"
+                                self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
+                                rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
+                                self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
                                 # Odeślij plik do /tmp na zdalnym hoście
                                 scp_put = ["scp", local_tmp_path, f"{remote}:{remote_tmp_path}"]
                                 result = subprocess.run(scp_put, capture_output=True, text=True)
                                 if result.returncode == 0:
-                                    # Jeśli docelowy katalog to /etc, /usr, /root, itp. i nie jesteśmy rootem, użyj sudo cp
                                     needs_sudo = not (self.user == "root" or file_path.startswith(f"/home/{self.user}") or file_path.startswith("/tmp"))
-                                    if needs_sudo:
-                                        cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
+                                    if remote_tmp_path == file_path:
+                                        code = 0
+                                        out = ""
                                     else:
-                                        cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
-                                    out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
+                                        if needs_sudo:
+                                            cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
+                                        else:
+                                            cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
+                                        out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                                     if code == 0:
                                         terminal.print_console(f"File '{file_path}' edited and uploaded to remote host.")
                                         self.context.append({"role": "user", "content": f"File '{file_path}' edited and uploaded to remote host."})
