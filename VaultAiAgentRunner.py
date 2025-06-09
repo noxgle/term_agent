@@ -69,6 +69,7 @@ class VaultAIAgentRunner:
                 "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'replace', 'search': 'foo=bar', 'replace': 'foo=baz'} "
                 "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'insert_after', 'search': '[section]', 'line': 'new_option=1'} "
                 "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'delete_line', 'search': 'deprecated_option'} "
+                """Important: Always reply with a valid JSON object. Use double quotes for all keys and string values, e.g. {"tool": "bash", "command": "ls"}. Do not use single quotes. Do not include any explanation, only the JSON object. """
             )
         else:
             self.system_prompt_agent = system_prompt_agent
@@ -535,7 +536,7 @@ class VaultAIAgentRunner:
                             ok = edit_file_local()
                             file_path = file_path_backup
                             if ok:
-                                # Usuń istniejący plik docelowy i tymczasowy na zdalnym hoście
+                               # Usuń istniejący plik docelowy i tymczasowy na zdalnym hoście
                                 rm_cmd = f"rm -f '{file_path}'"
                                 self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
                                 rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
