@@ -305,54 +305,6 @@ class VaultAIAgentRunner:
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                              self.context.append({"role": "user", "content": "I will now proceed to the next action you provided."})
                 
-                elif tool == "filesystem":
-                    """
-                    {
-                        "tool": "filesystem",
-                        "structure": {
-                            "dir1": {
-                            "file1.txt": "Zawartość pliku 1",
-                            "subdir": {
-                                "file2.txt": "Zawartość pliku 2"
-                            }
-                            },
-                            "README.md": "# Projekt"
-                        }
-                    }
-                    """
-                    # Oczekiwany format: {"tool": "filesystem", "structure": {...}}
-                    structure = action_item.get("structure")
-                    if not structure:
-                        terminal.print_console(f"No 'structure' provided in filesystem action: {action_item}. Skipping.")
-                        self.context.append({"role": "user", "content": f"You provided a 'filesystem' tool action but no 'structure': {action_item}. I am skipping it."})
-                        continue
-
-                    def create_structure(base_path, struct):
-                        import os
-                        for name, value in struct.items():
-                            path = os.path.join(base_path, name)
-                            if isinstance(value, dict):
-                                # katalog
-                                os.makedirs(path, exist_ok=True)
-                                create_structure(path, value)
-                            elif isinstance(value, str):
-                                # plik z zawartością
-                                os.makedirs(base_path, exist_ok=True)
-                                with open(path, "w", encoding="utf-8") as f:
-                                    f.write(value)
-                            else:
-                                terminal.print_console(f"Unknown value for '{name}' in structure: {value}")
-
-                    try:
-                        create_structure(".", structure)
-                        terminal.print_console("Filesystem structure created successfully.")
-                        self.context.append({"role": "user", "content": "Filesystem structure created successfully."})
-                    except Exception as e:
-                        terminal.print_console(f"Failed to create filesystem structure: {e}")
-                        self.context.append({"role": "user", "content": f"Failed to create filesystem structure: {e}"})
-                    # Po utworzeniu struktury przejdź do kolejnej akcji
-                    continue
-
                 elif tool == "write_file":
                     file_path = action_item.get("path")
                     file_content = action_item.get("content")
@@ -548,7 +500,7 @@ class VaultAIAgentRunner:
                     terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                     user_feedback_invalid_tool = (
                         f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
-                        f"Valid tools are 'bash', 'ask_user', 'finish'. "
+                        f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', and 'finish'. "
                     )
                     if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                         user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."
