@@ -10,6 +10,7 @@ from google import genai
 from rich.console import Console
 from VaultAiAgentRunner import VaultAIAgentRunner
 import pexpect
+import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 
@@ -125,6 +126,7 @@ class term_agent:
         self.ollama_model = os.getenv("OLLAMA_MODEL", "granite3.3:8b")
         self.ollama_temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.5"))
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+        self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
         self.user = None
@@ -482,7 +484,7 @@ class term_agent:
         # elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
         #     command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
         ssh_cmd = f"ssh {remote} '{command_with_exit}'"
-        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=120)
+        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=self.ssh_remote_timeout)
         output = ""
         try:
             while True:
@@ -530,7 +532,6 @@ class term_agent:
 
         # Parsowanie kodu wyjścia z outputu
         exit_code = 1
-        import re
         match = re.search(rf"{marker}(\d+)__", output)
         if match:
             exit_code = int(match.group(1))
