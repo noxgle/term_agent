@@ -10,6 +10,7 @@ from google import genai
 from rich.console import Console
 from VaultAiAgentRunner import VaultAIAgentRunner
 import pexpect
+import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 
@@ -530,7 +531,6 @@ class term_agent:
 
         # Parsowanie kodu wyjścia z outputu
         exit_code = 1
-        import re
         match = re.search(rf"{marker}(\d+)__", output)
         if match:
             exit_code = int(match.group(1))
