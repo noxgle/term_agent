@@ -29,21 +29,6 @@ class VaultAIAgentRunner:
         
         self.user_goal = user_goal
         if system_prompt_agent is None:
-            # self.system_prompt_agent = (
-            #     f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
-            #     "Your task is to achieve the user's goal by executing shell commands and reading/writing files. "
-            #     "Your first task is to analyze the user's goal and decide what to do next. "
-            #     "For each step, always reply in JSON: "
-            #     "{'tool': 'bash', 'command': '...'} "
-            #     "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
-            #     "or {'tool': 'ask_user', 'question': '...'} "
-            #     "or {'tool': 'finish', 'summary': '...'} when done. "
-            #     "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
-            #     "Use the 'write_file' tool to create or overwrite files with specific content. "
-            #     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
-            #     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-            #     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-            # )
             self.system_prompt_agent = (
                 f"You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
                 "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
