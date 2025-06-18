@@ -291,15 +291,6 @@ class VaultAIAgentRunner:
                         agent_should_stop_this_turn = True
                         break
 
-                    user_feedback_content = ""
-                    # if code == 0:
-                    #     user_feedback_content = f"Command '{command}' executed successfully. Output:\n```\n{out}\n```\n"
-                    # else:
-                    #     user_feedback_content = (
-                    #         f"The command '{command}' failed with exit code {code}.\n"
-                    #         f"Output:\n```\n{out}\n```\n"
-                    #         f"Please analyze this error. Should you try a different command, correct this one, or stop?"
-                    #     )
                     user_feedback_content = (
                         f"Command '{command}' executed with exit code {code}.\n"
                         f"Output:\n```\n{out}\n```\n"
