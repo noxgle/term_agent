@@ -39,6 +39,7 @@ class VaultAIAgentRunner:
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
                 "or {'tool': 'finish', 'summary': '...'} when done. "
+                "At the last step, always provide a detailed summary and analysis of the entire task you performed. The summary should clearly explain what was achieved, what actions were taken, and any important results or issues encountered. "
                 "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
                 "Use the 'write_file' tool to create or overwrite files with specific content. "
                 "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
@@ -243,16 +244,18 @@ class VaultAIAgentRunner:
                         self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
                         continue
                     
-                    confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
-                    if len(actions_to_process) > 1:
-                        confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
-                    
-                    confirm = input(f"{confirm_prompt_text}").lower().strip()
-                    if confirm != 'y':
-                        terminal.print_console("Command execution cancelled by user. Stopping agent.")
-                        self.summary = "Agent stopped: Command execution cancelled by user."
-                        agent_should_stop_this_turn = True
-                        break
+                    if not terminal.auto_accept:
+
+                        confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
+                        if len(actions_to_process) > 1:
+                            confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
+                        
+                        confirm = input(f"{confirm_prompt_text}").lower().strip()
+                        if confirm != 'y':
+                            terminal.print_console("Command execution cancelled by user. Stopping agent.")
+                            self.summary = "Agent stopped: Command execution cancelled by user."
+                            agent_should_stop_this_turn = True
+                            break
 
                     terminal.print_console(f"Executing: {command}")
                     out, code = "", 1 
