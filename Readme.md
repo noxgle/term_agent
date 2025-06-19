@@ -73,6 +73,10 @@ See Vault 3000 in action:
 - API key for the selected AI engine (OpenAI, Google Gemini, Ollama)
 - `.env` configuration file (see below)
 
+## System Requirements
+
+- Operating system: Linux or macOS
+
 ## Installation
 
 ### Quick Install (using install script)
@@ -122,6 +126,9 @@ GOOGLE_MODEL=gemini-2.0-flash
 OLLAMA_URL=http://localhost:11434/api/chat
 OLLAMA_MODEL=granite3.3:8b
 OLLAMA_TEMPERATURE=0.5
+
+SSH_REMOTE_TIMEOUT=360
+AUTO_ACCEPT=false
 
 LOG_LEVEL=INFO
 LOG_TO_CONSOLE=true
