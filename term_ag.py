@@ -127,6 +127,7 @@ class term_agent:
         self.ollama_temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.5"))
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
+        self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
         self.user = None

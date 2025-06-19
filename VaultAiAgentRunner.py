@@ -244,16 +244,18 @@ class VaultAIAgentRunner:
                         self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
                         continue
                     
-                    confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
-                    if len(actions_to_process) > 1:
-                        confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
-                    
-                    confirm = input(f"{confirm_prompt_text}").lower().strip()
-                    if confirm != 'y':
-                        terminal.print_console("Command execution cancelled by user. Stopping agent.")
-                        self.summary = "Agent stopped: Command execution cancelled by user."
-                        agent_should_stop_this_turn = True
-                        break
+                    if not terminal.auto_accept:
+
+                        confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
+                        if len(actions_to_process) > 1:
+                            confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
+                        
+                        confirm = input(f"{confirm_prompt_text}").lower().strip()
+                        if confirm != 'y':
+                            terminal.print_console("Command execution cancelled by user. Stopping agent.")
+                            self.summary = "Agent stopped: Command execution cancelled by user."
+                            agent_should_stop_this_turn = True
+                            break
 
                     terminal.print_console(f"Executing: {command}")
                     out, code = "", 1 
