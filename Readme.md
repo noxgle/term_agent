@@ -73,6 +73,10 @@ See Vault 3000 in action:
 - API key for the selected AI engine (OpenAI, Google Gemini, Ollama)
 - `.env` configuration file (see below)
 
+## System Requirements
+
+- Operating system: Linux or macOS
+
 ## Installation
 
 ### Quick Install (using install script)
