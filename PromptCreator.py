@@ -55,14 +55,15 @@ class PromptCreator:
         return ai_reply
 
     def start(self):
-        self.console.print("[bold green]Welcome to the Advanced Prompt Creator![/]")
-        user_goal = self.console.input("[bold yellow]Describe your goal: [/] ")
+        # Fallout-style color palette: yellow, green, blue, cyan
+        self.console.print("[bold yellow]*** WELCOME TO THE ADVANCED PROMPT CREATOR ***[/]")
+        user_goal = self.console.input("[bold green]Describe your goal: [/] ")
         self.prompt_history.append({"user": user_goal})
         current_prompt = user_goal
         while True:
             ai_reply = self.ask_ai(f"User's goal: {current_prompt}\nHistory: {self.prompt_history}")
             if not ai_reply:
-                self.console.print("[red]AI did not respond or engine is invalid. Exiting.[/]")
+                self.console.print("[bold red]AI did not respond or engine is invalid. Exiting.[/]")
                 break
             # Try to parse as JSON
             try:
@@ -70,7 +71,7 @@ class PromptCreator:
                 prompt_draft = reply_json.get("prompt_draft")
                 question = reply_json.get("question")
                 if prompt_draft:
-                    self.console.print("[bold magenta]Current prompt draft:[/]")
+                    self.console.print("[bold cyan]Current prompt draft:[/]")
                     self.console.print_json(data=prompt_draft)
                 # Now handle end-of-questions logic
                 if question is None or question == "" or str(question).lower() == "null":
@@ -78,18 +79,18 @@ class PromptCreator:
                     self.console.print_json(data=prompt_draft)
                     add_more = self.console.input("[bold yellow]Do you want to add anything else to the prompt? (y/n): [/] ")
                     if add_more.strip().lower() == 'y':
-                        user_extra = self.console.input("[bold yellow]Add your extra details: [/] ")
+                        user_extra = self.console.input("[bold blue]Add your extra details: [/] ")
                         self.prompt_history.append({"user": user_extra})
                         current_prompt += "\n" + user_extra
                         continue
                     else:
                         self.final_prompt = prompt_draft
-                        self.console.print("[bold green]Final prompt:[/]")
+                        self.console.print("[bold yellow]Final prompt:[/]")
                         self.console.print_json(data=self.final_prompt)
                         break
                 else:
                     self.console.print(f"[bold blue]AI asks: {question}[/]")
-                    user_answer = self.console.input("[bold yellow]Your answer: [/] ")
+                    user_answer = self.console.input("[bold green]Your answer: [/] ")
                     self.prompt_history.append({"ai": ai_reply, "user": user_answer})
                     current_prompt += "\n" + user_answer
             except Exception:
@@ -97,10 +98,10 @@ class PromptCreator:
                 if "PROMPT_READY" in ai_reply:
                     self.final_prompt = current_prompt
                     self.console.print("[bold green]Prompt is ready![/]")
-                    self.console.print(f"[cyan]{self.final_prompt}[/]")
+                    self.console.print(f"[bold yellow]{self.final_prompt}[/]")
                     break
                 self.console.print(f"[bold blue]AI asks: {ai_reply}[/]")
-                user_answer = self.console.input("[bold yellow]Your answer: [/] ")
+                user_answer = self.console.input("[bold green]Your answer: [/] ")
                 self.prompt_history.append({"ai": ai_reply, "user": user_answer})
                 current_prompt += "\n" + user_answer
 
