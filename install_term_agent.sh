@@ -89,6 +89,7 @@ if [ "$add_aliases" = "y" ]; then
     echo -e "\n# Vault 3000 aliases" >> "$SHELL_RC"
     echo "alias ask=\"$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/term_ask.py\"" >> "$SHELL_RC"
     echo "alias ag=\"$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/term_ag.py\"" >> "$SHELL_RC"
+    echo "alias prompt=\"$CURRENT_DIR/.venv/bin/python $CURRENT_DIR/PromptCreator.py\"" >> "$SHELL_RC"
     echo -e "\nAliases added to $SHELL_RC"
     echo "Please restart your terminal or run 'source $SHELL_RC' to use the aliases"
     echo "You can now use 'ask' for chat mode and 'ag' for agent mode from anywhere"
