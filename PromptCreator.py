@@ -1,10 +1,11 @@
-from term_ag import term_agent
+from term_ag import term_agent, PIPBOY_ASCII
 from rich.console import Console
 from prompt_toolkit import prompt
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.formatted_text import HTML
 import json
 from prompt_toolkit.key_binding import KeyBindings
+
 
 class PromptCreator:
     def __init__(self,promopt_for_agent=False):
@@ -21,6 +22,7 @@ class PromptCreator:
             enable_system_prompt=True,
             key_bindings=self.create_keybindings()
         )
+        print(PIPBOY_ASCII)
 
     def create_keybindings(self):
         kb = KeyBindings()
