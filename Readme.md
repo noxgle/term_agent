@@ -66,6 +66,7 @@ See Vault 3000 in action:
 - **Configurable via `.env`**.
 - **Logging and colored console (Rich)**.
 - **Fallout/Pip-Boy theme**.
+- **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. The Prompt Creator guides you step-by-step, asking clarifying questions and combining your answers into a single, actionable prompt.
 
 ## Requirements
 
