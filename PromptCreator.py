@@ -7,11 +7,12 @@ import json
 from prompt_toolkit.key_binding import KeyBindings
 
 class PromptCreator:
-    def __init__(self):
+    def __init__(self,promopt_for_agent=False):
         self.agent = term_agent()
         self.console = Console()
         self.prompt_history = []
         self.final_prompt = None
+        self.is_for_ai= promopt_for_agent
 
         # Use PromptSession for multiline Fallout-style input
         self.session = PromptSession(
@@ -20,7 +21,6 @@ class PromptCreator:
             enable_system_prompt=True,
             key_bindings=self.create_keybindings()
         )
-        # self.is_for_ai i self.system_prompt_agent będą ustawione w start()
 
     def create_keybindings(self):
         kb = KeyBindings()
@@ -35,8 +35,6 @@ class PromptCreator:
         self.console.print("Prompt your goal and press [cyan]Ctrl+S[/] to start!")
         try:
             # Pytanie o AI agenta na początku dialogu, nie w __init__!
-            is_for_ai = self.session.prompt(HTML("<ansiyellow>Is this prompt being created for an AI agent? (y/n): </ansiyellow>"))
-            self.is_for_ai = is_for_ai.strip().lower() == "y"
             if self.is_for_ai:
                 self.system_prompt_agent = (
                     "You are an expert prompt engineer. "
@@ -82,7 +80,8 @@ class PromptCreator:
                     if question is None or question == "" or str(question).lower() == "null":
                         self.console.print("[bold green]Prompt is ready![/]")
                         self.console.print_json(data=prompt_draft)
-                        add_more = self.session.prompt(HTML("<ansiyellow>Do you want to add anything else to the prompt? (y/n): </ansiyellow>"))
+                        # Akceptacja Enterem (jednolinijkowy prompt)
+                        add_more = prompt(HTML("<ansiyellow>Do you want to add anything else to the prompt? (y/n): </ansiyellow>"))
                         if add_more.strip().lower() == 'y':
                             user_extra = self.session.prompt(HTML("<ansicyan>Add your extra details: </ansicyan>"))
                             self.prompt_history.append({"user": user_extra})
@@ -95,7 +94,8 @@ class PromptCreator:
                             break
                     else:
                         self.console.print(f"[bold blue]AI asks: [bold yellow]{question}[/]")
-                        user_answer = self.session.prompt(HTML("<ansigreen>Your answer: </ansigreen>"))
+                        # Akceptacja odpowiedzi Enterem (jednolinijkowy prompt)
+                        user_answer = prompt(HTML("<ansigreen>Your answer: </ansigreen>"))
                         self.prompt_history.append({"ai": ai_reply, "user": user_answer})
                         current_prompt += "\n" + user_answer
                 except Exception:
@@ -105,12 +105,27 @@ class PromptCreator:
                         self.console.print(f"[bold yellow]{self.final_prompt}[/]")
                         break
                     self.console.print(f"[bold blue]AI asks: [bold yellow]{ai_reply}[/]")
-                    user_answer = self.session.prompt(HTML("<ansigreen>Your answer: </ansigreen>"))
+                    # Akceptacja odpowiedzi Enterem (jednolinijkowy prompt)
+                    user_answer = prompt(HTML("<ansigreen>Your answer: </ansigreen>"))
                     self.prompt_history.append({"ai": ai_reply, "user": user_answer})
-                    current_prompt += "\n"
+                    current_prompt += "\n" + user_answer
         except KeyboardInterrupt:
             self.console.print("\n[bold red]Prompt creation interrupted by user (KeyboardInterrupt). Exiting...[/]")
 
+    def ask_ai(self, prompt_text):
+        terminal = self.agent
+        if terminal.ai_engine == "ollama":
+            ai_reply = terminal.connect_to_ollama(self.system_prompt_agent, prompt_text, format="json")
+        elif terminal.ai_engine == "google":
+            ai_reply = terminal.connect_to_gemini(f"{self.system_prompt_agent}\n{prompt_text}")
+        elif terminal.ai_engine == "openai":
+            ai_reply = terminal.connect_to_chatgpt(self.system_prompt_agent, prompt_text)
+        else:
+            terminal.print_console("Invalid AI engine specified. Stopping agent.", color="red")
+            self.final_prompt = None
+            return None
+        return ai_reply
+
 if __name__ == "__main__":
-    creator = PromptCreator()
+    creator = PromptCreator(promopt_for_agent=True)
     creator.start()
