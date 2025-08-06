@@ -44,46 +44,44 @@
  ..................................sup me eth: 0x01beABA20aF5e66Ee3Fcfb74c6e75A232126cf0B 
  ........................................................................................  
 ```
-sup me eth: 0x01beABA20aF5e66Ee3Fcfb74c6e75A232126cf0B
-
-# Vault 3000 Console Agent
-
-**Vault 3000** is a Fallout-inspired terminal application that not only answers your questions and helps with Linux commands, but can also autonomously achieve complex goals for you—automating tasks, creating and editing files, and executing multi-step operations—using advanced AI engines (OpenAI, Google Gemini, Ollama). It works both locally and remotely via SSH.
-
-## Demo
-
-See Vault 3000 in action:  
-[![Vault 3000 Demo](https://img.youtube.com/vi/gFWQzcY27ds/0.jpg)](https://youtu.be/gFWQzcY27ds)
-
-[Watch the demo on YouTube](https://youtu.be/gFWQzcY27ds)
-
 ## Features
 
 - **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
-- **Task execution and automation**: The agent can perform tasks and commands based on user goals.
+- **Task automation**: The agent can perform tasks and commands based on user goals.
 - **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama.
-- **Execute commands locally and remotely (SSH)**.
-- **Configurable via `.env`**.
-- **Logging and colored console (Rich)**.
-- **Fallout/Pip-Boy theme**.
-- **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. The Prompt Creator guides you step-by-step, asking clarifying questions and combining your answers into a single, actionable prompt.
+- **Local and remote execution (SSH)**: Run commands on your machine or remote hosts.
+- **Configurable via `.env`**: Easily switch engines and settings.
+- **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
+- **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
+
+## Prompt Creator
+
+The **Prompt Creator** is an interactive assistant that helps you build high-quality prompts for AI agents.
+
+**How it works:**
+- Guides you step-by-step, asking clarifying questions to gather all necessary details.
+- Combines your answers into a single, coherent prompt draft.
+- Supports multiline input (accept with Ctrl+S) and Fallout-style color themes.
+- Lets you confirm or add more details at each step with Enter or Ctrl+S.
+- Ensures your final prompt is precise, actionable, and ready for use with any supported AI engine.
+
+**To use the Prompt Creator, run:**
+```bash
+python PromptCreator.py
+```
 
 ## Requirements
 
 - Python 3.9+
 - API key for the selected AI engine (OpenAI, Google Gemini, Ollama)
 - `.env` configuration file (see below)
-
-## System Requirements
-
-- Operating system: Linux or macOS
+- Linux or macOS
 
 ## Installation
 
 ### Quick Install (using install script)
 
 ```bash
-# Download and run the installation script
 curl -O https://raw.githubusercontent.com/noxgle/term_agent/main/install_term_agent.sh
 chmod +x install_term_agent.sh
 ./install_term_agent.sh
@@ -91,7 +89,7 @@ chmod +x install_term_agent.sh
 
 The install script will:
 - Check Python version requirements (3.9+)
-- Create and configure virtual environment
+- Create and configure a virtual environment
 - Install all required packages
 - Create initial `.env` file from template
 - Optionally add convenient aliases to your shell configuration:
@@ -102,7 +100,7 @@ The install script will:
 
 ```bash
 git clone https://github.com/noxgle/term_agent.git
-cd vault3000
+cd term_agent
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -110,10 +108,9 @@ pip install -r requirements.txt
 
 ## `.env` Configuration
 
-Copy `.env.copy` to `.env` and paste your api key.
+Copy `.env.copy` to `.env` and paste your API key(s).
 
 Example `.env` file:
-
 ```
 AI_ENGINE=openai
 OPENAI_API_KEY=sk-...
@@ -155,11 +152,19 @@ python term_ag.py
 python term_ag.py user@host
 ```
 
+### Prompt Creator (interactive prompt builder):
+
+```bash
+python PromptCreator.py
+```
+
 ### Loading a prompt/goal from a file
 
 You can load a prompt or goal from a file by typing:
 
-//path/to/your_prompt.txt
+```
+/path/to/your_prompt.txt
+```
 
 The agent will read the file and use its contents as your goal or question.
 
@@ -169,23 +174,25 @@ The agent will read the file and use its contents as your goal or question.
 - `term_ask.py` – AI chat, questions, dialogs.
 - `VaultAIAskRunner.py` – chat logic.
 - `VaultAiAgentRunner.py` – agent logic.
+- `PromptCreator.py` – interactive prompt builder.
 
-## Alias
+## Aliases
 
-1. **Add short aliases to your `~/.bashrc` (or `~/.zshrc`):**
+Add short aliases to your `~/.bashrc` (or `~/.zshrc`):
 
 ```bash
 alias ask='cd /home/username/term_agent && source .venv/bin/activate && python term_ask.py'
 alias ag='cd /home/username/term_agent && source .venv/bin/activate && python term_ag.py'
+alias prom='cd /home/username/term_agent && source .venv/bin/activate && python PromptCreator.py'
 ```
 
-2. **Reload aliases:**
+Reload aliases:
 
 ```bash
 source ~/.bashrc
 ```
 
-3. **Usage:**
+Usage:
 
 - Start chat:  
   ```bash
@@ -196,7 +203,7 @@ source ~/.bashrc
   ag
   ```
 
-> **Tip:**  For the best experience with the remote agent mode (SSH), it is recommended to set up SSH key-based authentication on your target servers.  
+> **Tip:** For the best experience with remote agent mode (SSH), set up SSH key-based authentication on your target servers.  
 > This allows the agent to execute commands without repeatedly prompting for a password and improves both security and usability.
 
 > **Tip:** Change the path `/home/username/term_agent` to your own if the project is in a different location.
