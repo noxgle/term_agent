@@ -44,6 +44,19 @@
  ..................................sup me eth: 0x01beABA20aF5e66Ee3Fcfb74c6e75A232126cf0B 
  ........................................................................................  
 ```
+## Table of Contents
+
+- [Features](#features)
+- [Prompt Creator](#prompt-creator)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#env-configuration)
+- [Usage](#usage)
+- [Files](#files)
+- [Aliases](#aliases)
+- [Examples](#example-chat)
+- [License](#license)
+
 ## Features
 
 - **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
@@ -334,3 +347,11 @@ Result (code 0):
 
 Agent finished its task. Summary: I've created a bash deployment script that does the following steps: 1) Created an empty deploy script file, 2) Made it executable, 3) Added a shebang line at the top, and 4) Appended all the required commands to execute git pull, pip install, database migrations, and restart uWSGI service.
 ```
+
+## Support & Issues
+
+If you find a bug or want to request a feature, please open an issue on [GitHub Issues](https://github.com/noxgle/term_agent/issues).
+
+## Contributing
+
+Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
