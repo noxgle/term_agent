@@ -130,6 +130,8 @@ class term_agent:
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
+        self.ssh_password = None
+        self.remote_host = None
         self.user = None
         self.host = None
 
@@ -188,13 +190,10 @@ class term_agent:
         # 1. Spróbuj /etc/os-release
         try:
             cmd = "cat /etc/os-release"
-            result = subprocess.run(
-                ["ssh", ssh_prefix, cmd],
-                capture_output=True, text=True, timeout=10
-            )
-            if result.returncode == 0:
+            stdout, returncode = self.execute_remote_pexpect(cmd, ssh_prefix)
+            if returncode == 0:
                 info = {}
-                for line in result.stdout.splitlines():
+                for line in stdout.splitlines():
                     if "=" in line:
                         key, val = line.strip().split("=", 1)
                         info[key] = val.strip('"')
@@ -207,25 +206,19 @@ class term_agent:
 
         # 2. Spróbuj lsb_release
         try:
-            name = subprocess.check_output(
-                ["ssh", ssh_prefix, "lsb_release -si"], text=True, timeout=10
-            ).strip()
-            version = subprocess.check_output(
-                ["ssh", ssh_prefix, "lsb_release -sr"], text=True, timeout=10
-            ).strip()
-            return (name, version)
+            name_stdout, name_returncode = self.execute_remote_pexpect("lsb_release -si", ssh_prefix)
+            version_stdout, version_returncode = self.execute_remote_pexpect("lsb_release -sr", ssh_prefix)
+            if name_returncode == 0 and version_returncode == 0:
+                return (name_stdout.strip(), version_stdout.strip())
         except Exception as e:
             self.logger.warning(f"detect_remote_linux_distribution: lsb_release failed: {e}")
 
         # 3. Fallback do uname
         try:
-            name = subprocess.check_output(
-                ["ssh", ssh_prefix, "uname -s"], text=True, timeout=10
-            ).strip()
-            version = subprocess.check_output(
-                ["ssh", ssh_prefix, "uname -r"], text=True, timeout=10
-            ).strip()
-            return (name, version)
+            name_stdout, name_returncode = self.execute_remote_pexpect("uname -s", ssh_prefix)
+            version_stdout, version_returncode = self.execute_remote_pexpect("uname -r", ssh_prefix)
+            if name_returncode == 0 and version_returncode == 0:
+                return (name_stdout.strip(), version_stdout.strip())
         except Exception as e:
             self.logger.warning(f"detect_remote_linux_distribution: uname failed: {e}")
 
@@ -475,15 +468,14 @@ class term_agent:
     
         
     def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
+        # Use cached password if available
+        if self.ssh_password:
+            password = self.ssh_password
+
         # Dodaj znacznik exit code na końcu polecenia
         marker = "__EXITCODE:"
+        command = command.replace("'", "'\\''")
         command_with_exit = f"{command}; echo {marker}$?__"
-        # if command_with_exit.count("sudo") > 1 or ("&&" in command_with_exit and command_with_exit.strip().startswith("sudo")):
-        #     # Usuń wszystkie "sudo" i opakuj w sudo sh -c ''
-        #     cmd_no_sudo = command_with_exit.replace("sudo ", "")
-        #     command_with_exit = f"sudo -S sh -c '{cmd_no_sudo}'"
-        # elif command_with_exit.strip().startswith("sudo") and "-S" not in command_with_exit:
-        #     command_with_exit = command_with_exit.replace("sudo", "sudo -S", 1)
         ssh_cmd = f"ssh {remote} '{command_with_exit}'"
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=self.ssh_remote_timeout)
         output = ""
@@ -502,18 +494,24 @@ class term_agent:
                     r"ssh: connect to host .* port .*: Operation timed out",
                     r"ssh: connect to host .* port .*: Permission denied",
                 ])
-                if i == 0 and password:
-                    child.sendline(password)
-                elif i == 0 and not password:
-                    password = prompt("Enter SSH password: ", is_password=True)
-                    child.sendline(password)
+                if i == 0:  # SSH Password or Sudo password
+                    if password:
+                        child.sendline(password)
+                    else:
+                        password_prompted = prompt("Enter SSH password: ", is_password=True)
+                        self.ssh_password = password_prompted  # Cache the password
+                        password = password_prompted
+                        child.sendline(password)
                 elif i == 1:
                     child.sendline("yes")
-                elif i == 2 and password:
-                    child.sendline(password)
-                elif i == 2 and not password:
-                    password = prompt("Enter sudo password: ", is_password=True)
-                    child.sendline(password)
+                elif i == 2:  # Sudo password prompt
+                    if password:
+                        child.sendline(password)
+                    else:
+                        password_prompted = prompt("Enter sudo password: ", is_password=True)
+                        self.ssh_password = password_prompted # Cache the password
+                        password = password_prompted
+                        child.sendline(password)
                 elif i == 3:
                     if auto_yes:
                         child.sendline("y")
