@@ -135,6 +135,12 @@ class term_agent:
         self.user = None
         self.host = None
 
+        self.local_linux_distro = self.detect_linux_distribution()
+        self.remote_linux_distro = None
+
+       
+
+
     def print_vault_tip(self):
         return random.choice(VAULT_TEC_TIPS)
     
@@ -251,8 +257,6 @@ class term_agent:
                     model=model,
                     contents=prompt
                 )
-
-
 
             self.logger.info(f"Gemini prompt: {prompt}")
             self.logger.debug(f"Gemini raw response: {response}")
@@ -604,24 +608,53 @@ class term_agent:
 
 def main():
     agent = term_agent()
+    print(agent.local_linux_distro)
+    print(agent.remote_linux_distro)
     agent.console.print(PIPBOY_ASCII)
+    agent.console.print(f"{agent.print_vault_tip()}\n")
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
-    
-    agent.console.print(f"{agent.print_vault_tip()}\n")
+    agent.console.print(f"Your local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     
     if ai_status:
-        agent.console.print(f"""AgentAI ({ai_model}) is online. What can I do for you today?""")
-        agent.console.print("If you want to load a goal from a file, type //path/to/file\n")
-        agent.console.print("Prompt your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print(f"""AgentAI: ({ai_model}) is online.\n""")
+        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
-        agent.console.print("[red]AgentAI is offline.[/]\n")
+        agent.console.print("[red]AgentAI: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
+
+    if len(sys.argv) == 2:
+        remote = sys.argv[1]
+        user = remote.split('@')[0] if '@' in remote else None
+        host = remote.split('@')[1] if '@' in remote else remote
+        agent.ssh_connection = True
+        agent.remote_host = remote
+        agent.user = user
+        agent.host = host
+        output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept)
+        if returncode != 0:
+            agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
+            agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
+            sys.exit(1)
+
+        agent.remote_linux_distro = agent.detect_remote_linux_distribution(host, user=user)
+        agent.console.print(f"Your remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
+        input_text = f"{user}@{host}" if user else host
+    else:
+        remote = None
+        user = None
+        host = None
+        agent.ssh_connection = False
+        agent.remote_host = None
+        agent.user = None
+        agent.host = None
+        input_text = "local"
     
+    agent.console.print("\n")
     try:
         user_input = prompt(
-                    "> ", 
+                    f"{input_text}> ", 
                     multiline=True,
                     prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
                     enable_system_prompt=True,
@@ -635,29 +668,14 @@ def main():
     except KeyboardInterrupt:
         agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
         sys.exit(1)
-    if len(sys.argv) == 2:
-        remote = sys.argv[1]
-        user = remote.split('@')[0] if '@' in remote else None
-        host = remote.split('@')[1] if '@' in remote else remote
-        agent.ssh_connection = True
-        agent.remote_host = remote
-        agent.user = user
-        agent.host = host
-        agent.console.print(f"VaultAI agent strated on {remote} with goal: \n\n{user_input}\n")
-    else:
-        remote = None
-        user = None
-        host = None
-        agent.ssh_connection = False
-        agent.remote_host = None
-        agent.user = None
-        agent.host = None
-        agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
+
+    agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
     runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
