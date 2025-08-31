@@ -608,8 +608,6 @@ class term_agent:
 
 def main():
     agent = term_agent()
-    print(agent.local_linux_distro)
-    print(agent.remote_linux_distro)
     agent.console.print(PIPBOY_ASCII)
     agent.console.print(f"{agent.print_vault_tip()}\n")
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
@@ -618,7 +616,7 @@ def main():
     
     if ai_status:
         agent.console.print(f"""ValutAI: {ai_model} is online.\n""")
-        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
+        #agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
@@ -632,14 +630,34 @@ def main():
         agent.remote_host = remote
         agent.user = user
         agent.host = host
-        output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept)
-        if returncode != 0:
-            agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
-            agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
+        try:
+            output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept)
+            if agent.ssh_password is not None:
+                ask_input= input("Do you want to use passwordless SSH login in the future? (y/n): ")
+                if ask_input.lower() == 'y':
+                    agent.console.print(f"[yellow][Vault 3000] Setting up passwordless SSH login to {remote}...[/]")
+                    try:
+                        subprocess.run(["ssh-copy-id", remote], check=True)
+                        agent.console.print(f"[green][Vault 3000] Passwordless SSH login set up successfully.[/]")
+                    except subprocess.CalledProcessError as e:
+                        agent.console.print(f"[red][Vault 3000] ERROR: ssh-copy-id failed: {e}[/]")
+                    except Exception as e:
+                        agent.console.print(f"[red][Vault 3000] ERROR: Unexpected error during ssh-copy-id: {e}[/]")
+            if returncode != 0:
+                agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
+                agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
+                sys.exit(1)
+
+            agent.remote_linux_distro = agent.detect_remote_linux_distribution(host, user=user)
+        except KeyboardInterrupt:
+            agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
+            sys.exit(1)
+        except Exception as e:
+            agent.console.print(f"[red][Vault 3000] ERROR: SSH connection to {remote} failed: {e}[/]")
             sys.exit(1)
 
-        agent.remote_linux_distro = agent.detect_remote_linux_distribution(host, user=user)
         agent.console.print(f"Your remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
+        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
         input_text = f"{user}@{host}" if user else host
     else:
         remote = None
@@ -651,7 +669,7 @@ def main():
         agent.host = None
         input_text = "local"
     
-    agent.console.print("\n")
+    #agent.console.print("\n")
     try:
         user_input = prompt(
                     f"{input_text}> ", 
