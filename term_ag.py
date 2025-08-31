@@ -617,7 +617,7 @@ def main():
     agent.console.print(f"Your local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     
     if ai_status:
-        agent.console.print(f"""AgentAI: ({ai_model}) is online.\n""")
+        agent.console.print(f"""ValutAI: {ai_model} is online.\n""")
         agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI: is offline.[/]\n")
