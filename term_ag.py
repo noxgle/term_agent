@@ -687,7 +687,7 @@ def main():
         agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
         sys.exit(1)
 
-    agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
+    #agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
     runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
     try:
         runner.run()

@@ -4,6 +4,7 @@ import re
 import tempfile
 import shutil
 import subprocess
+import time
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -109,6 +110,34 @@ class VaultAIAgentRunner:
         self.steps = []
         self.summary = ""
 
+    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=3, delay=60):
+        for attempt in range(retries):
+            ai_reply = None
+            try:
+                if terminal.ai_engine == "ollama":
+                    ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
+                elif terminal.ai_engine == "google":
+                    ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
+                elif terminal.ai_engine == "openai":
+                    ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
+                else:
+                    terminal.print_console("Invalid AI engine specified. Stopping agent.")
+                    self.summary = "Agent stopped: Invalid AI engine specified."
+                    return None
+
+                if ai_reply and "503" not in ai_reply:
+                    return ai_reply
+                else:
+                    terminal.print_console(f"AI returned an error or empty response (Attempt {attempt + 1}/{retries}). Retrying in {delay}s...")
+                    time.sleep(delay)
+
+            except Exception as e:
+                terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s...")
+                time.sleep(delay)
+        
+        terminal.print_console("Failed to get a valid response from AI after multiple retries.")
+        return None
+
     def _sliding_window_context(self):
         # Always include the first two messages (system + user goal)
         # plus the last WINDOW_SIZE messages from the rest of the context
@@ -132,16 +161,10 @@ class VaultAIAgentRunner:
                 prompt_text_parts.append(f"{m['role']}: {m['content']}")
             prompt_text = "\n".join(prompt_text_parts)
 
-            ai_reply = None
-            if terminal.ai_engine == "ollama":
-                ai_reply = terminal.connect_to_ollama(self.system_prompt_agent, prompt_text, format="json")
-            elif terminal.ai_engine == "google":
-                ai_reply = terminal.connect_to_gemini(f"{self.system_prompt_agent}\n{prompt_text}")
-            elif terminal.ai_engine == "openai":
-                ai_reply = terminal.connect_to_chatgpt(self.system_prompt_agent, prompt_text)
-            else:
-                terminal.print_console("Invalid AI engine specified. Stopping agent.")
-                self.summary = "Agent stopped: Invalid AI engine specified."
+            ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, prompt_text)
+
+            if ai_reply is None:
+                self.summary = "Agent stopped: Failed to get response from AI after multiple retries."
                 break
             
             #terminal.print_console(f"AI agent step {step_count + 1}: {ai_reply}")
@@ -185,13 +208,7 @@ class VaultAIAgentRunner:
                         correction_llm_prompt_parts.append(f"{m_corr['role']}: {m_corr['content']}")
                     correction_llm_prompt_text = "\n".join(correction_llm_prompt_parts)
                     
-                    corrected_ai_reply = None
-                    if terminal.ai_engine == "ollama":
-                        corrected_ai_reply = terminal.connect_to_ollama(self.system_prompt_agent, correction_llm_prompt_text, format="json")
-                    elif terminal.ai_engine == "google":
-                        corrected_ai_reply = terminal.connect_to_gemini(f"{self.system_prompt_agent}\n{correction_llm_prompt_text}")
-                    else: # openai
-                        corrected_ai_reply = terminal.connect_to_chatgpt(self.system_prompt_agent, correction_llm_prompt_text)
+                    corrected_ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, correction_llm_prompt_text)
                     
                     terminal.print_console(f"AI agent correction attempt: {corrected_ai_reply}")
 
@@ -278,7 +295,7 @@ class VaultAIAgentRunner:
                     
                     if not terminal.auto_accept:
 
-                        confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
+                        confirm_prompt_text = f"ValutAI> '{command}'. Execute? [y/N]: "
                         if len(actions_to_process) > 1:
                             confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
                         
@@ -289,7 +306,7 @@ class VaultAIAgentRunner:
                             agent_should_stop_this_turn = True
                             break
 
-                    terminal.print_console(f"Executing: {command}")
+                    terminal.print_console(f"\nValutAI> Executing: {command}")
                     out, code = "", 1 
                     if self.terminal.ssh_connection:
                         remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
