@@ -278,7 +278,7 @@ class VaultAIAgentRunner:
                     
                     if not terminal.auto_accept:
 
-                        confirm_prompt_text = f"> '{command}'. Execute? [y/N]: "
+                        confirm_prompt_text = f"ValutAI> '{command}'. Execute? [y/N]: "
                         if len(actions_to_process) > 1:
                             confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
                         
@@ -289,7 +289,7 @@ class VaultAIAgentRunner:
                             agent_should_stop_this_turn = True
                             break
 
-                    terminal.print_console(f"Executing: {command}")
+                    terminal.print_console(f"\nExecuting: {command}")
                     out, code = "", 1 
                     if self.terminal.ssh_connection:
                         remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
