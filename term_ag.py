@@ -678,7 +678,7 @@ def main():
                     enable_system_prompt=True,
                     key_bindings=agent.create_keybindings()
                 )
-        user_input = agent.process_input(user_input)
+        user_input_text = agent.process_input(user_input)
 
     except EOFError:
         agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
@@ -688,11 +688,14 @@ def main():
         sys.exit(1)
 
     #agent.console.print(f"VaultAI AI agent started with goal: \n\n{user_input}\n")
-    runner = VaultAIAgentRunner(agent, user_input, user=user, host=host)
+    runner = VaultAIAgentRunner(agent, user_input_text, user=user, host=host)
     try:
         runner.run()
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
+        sys.exit(1)
+    except Exception as e:
+        agent.console.print(f"[red][Vault 3000] ERROR: Unexpected error: {e}[/]")
         sys.exit(1)
 
 if __name__ == "__main__":

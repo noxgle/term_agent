@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import subprocess
 import time
+from prompt_toolkit import prompt
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -20,8 +21,10 @@ class VaultAIAgentRunner:
         self.linux_version = None
 
         if host is None:
+            self.input_text = "local"
             self.linux_distro, self.linux_version = terminal.local_linux_distro
         else:
+            self.input_text = f"{user+'@' if user else ''}{host}"
             self.linux_distro, self.linux_version = terminal.remote_linux_distro
 
         if self.linux_distro == "Unknown":
@@ -585,9 +588,18 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                continue_choice = input("Agent finished the task. Do you want to provide a new goal? [y/N]: ").lower().strip()
+                continue_choice = input("Agent finished the task. Do you want continue this thread? [y/N]: ").lower().strip()
                 if continue_choice == 'y':
-                    new_instruction = input("Please provide your next instruction: ")
+                    #new_instruction = input("Please provide your next instruction: ")
+                    terminal.console.print("Prompt your next goal or questoin and press [cyan]Ctrl+S[/] to start!")
+                    user_input= prompt(
+                        f"{self.input_text}> ", 
+                        multiline=True,
+                        prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
+                        enable_system_prompt=True,
+                        key_bindings=terminal.create_keybindings()
+                    )
+                    new_instruction = terminal.process_input(user_input)
                     
                     # Partially reset context
                     original_system_prompt = self.context[0]
