@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  term-agent:
+    build: .
+    image: vault3000/term-agent:latest
+    container_name: term-agent-container
+    ports:
+      - "2222:22"  # Map SSH port to host port 2222 to avoid conflicts
+    volumes:
+      - ./.env:/app/.env:ro  # Mount .env file read-only
+      - ./logs:/app/logs  # Volume for logs
+      - ./goal:/app/goal  # Volume for goal files
+      - ./prompt:/app/prompt  # Volume for prompt files
+    environment:
+      - TZ=Europe/Warsaw  # Set timezone
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+
+volumes:
+  logs:
+  goal:
+  prompt:

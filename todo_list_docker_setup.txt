@@ -1,0 +1,16 @@
+- [x] Analyze term_ag.py code and requirements
+- [x] Review install_term_agent.sh for setup patterns
+- [x] Create Dockerfile with Ubuntu base, SSH server, Python environment
+- [x] Create docker-compose.yml for easy container management
+- [x] Create .dockerignore file
+- [x] Create entrypoint.sh with SSH setup and aliases
+- [x] Create comprehensive Docker_README.md with usage instructions
+- [x] Test Docker build process and rebuild with updated packages
+- [x] Run the Docker container using docker-compose
+- [x] Verify container is running and accessible via SSH
+- [x] Force Python 3.10 installation and verify it works
+- [x] Rebuild container with default Python 3 (Ubuntu 3.12)
+- [x] Remove SSH volume mounting from docker-compose.yml
+- [x] Add .ssh directory to .dockerignore
+- [x] Restart container with updated configuration
+- [x] Update Docker_README.md to remove SSH volume references
