@@ -487,7 +487,7 @@ class term_agent:
             while True:
                 i = child.expect([
                     r"[Pp]assword:",
-                    r"\(yes/no\)\?",
+                    r"Are you sure you want to continue connecting \(yes/no/\[fingerprint]\)\?",
                     r"\[sudo\] password for .*:",
                     r"\[Yy]es/[Nn]o",
                     pexpect.EOF,
@@ -506,7 +506,9 @@ class term_agent:
                         self.ssh_password = password_prompted  # Cache the password
                         password = password_prompted
                         child.sendline(password)
-                elif i == 1:
+                elif i == 1:  # Host key verification
+                    # Display the fingerprint to the user
+                    self.print_console(child.before + child.after)
                     child.sendline("yes")
                 elif i == 2:  # Sudo password prompt
                     if password:
