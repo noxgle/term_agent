@@ -1,48 +1,59 @@
-# Użyj oficjalnego obrazu Python jako obrazu bazowego
-FROM python:3.9-slim-bullseye
+FROM ubuntu:24.04
 
-# Ustaw etykiety informacyjne
-LABEL maintainer="Cline"
-LABEL description="Obraz Docker dla terminal agent z serwerem SSH."
-
-# Ustaw zmienne środowiskowe, aby uniknąć interaktywnych pytań podczas instalacji
+# Avoid prompts from apt
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Zainstaluj serwer OpenSSH i inne potrzebne narzędzia
-RUN apt-get update && \
-    apt-get install -y openssh-server sudo git python3-venv && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# Update system and install basic packages
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y \
+        openssh-server \
+        python3 \
+        python3-pip \
+        python3-venv \
+        curl \
+        git \
+        vim \
+        sudo \
+        && rm -rf /var/lib/apt/lists/*
 
-# Utwórz katalog dla serwera SSH
-RUN mkdir /var/run/sshd
+# Create SSH directory
+RUN mkdir -p /var/run/sshd
 
-# Ustaw katalog roboczy
+# Set SSH to allow root login with password
+RUN echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+RUN echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
+
+# Set root password
+RUN echo 'root:123456' | chpasswd
+
+# Create application directory
 WORKDIR /app
 
-# Skopiuj cały projekt do katalogu roboczego w kontenerze
+# Copy all term_agent files
 COPY . /app/
 
-# Nadaj uprawnienia do wykonania skryptu instalacyjnego
-RUN chmod +x /app/install_term_agent.sh
+# Create virtual environment
+RUN python3 -m venv /app/.venv
 
-# Uruchom skrypt instalacyjny w trybie nieinteraktywnym (automatyczne 'y' dla aliasów)
-RUN echo "y" | /app/install_term_agent.sh
+# Activate virtual environment and install dependencies
+RUN /app/.venv/bin/pip install --upgrade pip && \
+    /app/.venv/bin/pip install --upgrade google-genai && \
+    if [ -f /app/requirements.txt ]; then \
+        /app/.venv/bin/pip install -r /app/requirements.txt; \
+    fi
 
-# Utwórz użytkownika 'agent' z hasłem 'agent' i dodaj go do grupy sudo
-RUN useradd -m -s /bin/bash agent && \
-    echo "agent:agent" | chpasswd && \
-    adduser agent sudo
+# Generate SSH keys
+RUN ssh-keygen -A
 
-# Skonfiguruj SSH, aby zezwolić na logowanie hasłem
-RUN sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config && \
-    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+# Generate SSH key pair for root
+RUN mkdir -p /root/.ssh && ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
 
-# Dodaj polecenie uruchamiające agenta do .bashrc użytkownika 'agent'
-RUN echo '\n# Uruchom agenta po zalogowaniu\nsource /app/.venv/bin/activate && ag' >> /home/agent/.bashrc
+# Copy entrypoint script and make it executable
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Wystaw port 22 na zewnątrz kontenera
+# Expose SSH port
 EXPOSE 22
 
-# Uruchom serwer SSH jako główne polecenie kontenera
-CMD ["/usr/sbin/sshd", "-D"]
+# Set entrypoint script as entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -5,5 +5,4 @@ tmp/
 .env
 app.log
 test_*
-Dockerfile
 .dockerignore
