@@ -591,7 +591,7 @@ class VaultAIAgentRunner:
                 continue_choice = input("Agent finished the task. Do you want continue this thread? [y/N]: ").lower().strip()
                 if continue_choice == 'y':
                     #new_instruction = input("Please provide your next instruction: ")
-                    terminal.console.print("Prompt your next goal or questoin and press [cyan]Ctrl+S[/] to start!")
+                    terminal.console.print("Prompt your next goal or question and press [cyan]Ctrl+S[/] to start!")
                     user_input= prompt(
                         f"{self.input_text}> ", 
                         multiline=True,
