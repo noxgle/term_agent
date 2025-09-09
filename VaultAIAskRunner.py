@@ -70,7 +70,7 @@ class VaultAIAskRunner:
         while True:
             try:
                 user_input = prompt(
-                    "> ", 
+                    "local> ", 
                     multiline=True,
                     prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
                     enable_system_prompt=True,
