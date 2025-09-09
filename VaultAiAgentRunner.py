@@ -37,7 +37,7 @@ class VaultAIAgentRunner:
             if cot:
                 self.system_prompt_agent = (
                     f"Solve the following problem. Think step-by-step before providing the final answer."
-                    "You are an autonomous AI agent with access to a {self.linux_distro} {self.linux_version} terminal. "
+                    f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal. "
                     "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                     "Your first task is to analyze the user's goal and decide what to do next. "
                     "For each step, always reply in JSON: "
