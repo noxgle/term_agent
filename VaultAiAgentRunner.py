@@ -588,10 +588,10 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                continue_choice = input("Agent finished the task. Do you want continue this thread? [y/N]: ").lower().strip()
+                continue_choice = input("\nDo you want continue this thread? [y/N]: ").lower().strip()
                 if continue_choice == 'y':
                     #new_instruction = input("Please provide your next instruction: ")
-                    terminal.console.print("Prompt your next goal or question and press [cyan]Ctrl+S[/] to start!")
+                    terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!\n")
                     user_input= prompt(
                         f"{self.input_text}> ", 
                         multiline=True,
