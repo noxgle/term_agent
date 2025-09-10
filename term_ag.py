@@ -671,6 +671,7 @@ def main():
         agent.user = None
         agent.host = None
         input_text = "local"
+        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     
     #agent.console.print("\n")
     try:
