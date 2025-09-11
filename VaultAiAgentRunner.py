@@ -113,7 +113,7 @@ class VaultAIAgentRunner:
         self.steps = []
         self.summary = ""
 
-    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=3, delay=60):
+    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=3, delay=10):
         for attempt in range(retries):
             ai_reply = None
             try:
