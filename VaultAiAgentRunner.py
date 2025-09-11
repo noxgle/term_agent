@@ -402,6 +402,8 @@ class VaultAIAgentRunner:
                     
                     elif tool == "write_file":
                         file_path = action_item.get("path")
+                        if file_path and not file_path.startswith("/"):
+                            file_path = os.path.join(os.getcwd(), file_path)
                         file_content = action_item.get("content")
                         if not file_path or file_content is None:
                             terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")
