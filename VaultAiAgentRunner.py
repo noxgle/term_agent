@@ -113,33 +113,60 @@ class VaultAIAgentRunner:
         self.steps = []
         self.summary = ""
 
-    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=3, delay=60):
-        for attempt in range(retries):
-            ai_reply = None
-            try:
-                if terminal.ai_engine == "ollama":
-                    ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
-                elif terminal.ai_engine == "google":
-                    ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
-                elif terminal.ai_engine == "openai":
-                    ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
-                else:
-                    terminal.print_console("Invalid AI engine specified. Stopping agent.")
-                    self.summary = "Agent stopped: Invalid AI engine specified."
-                    return None
+    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
+        if retries == 0:
+            attempt = 0
+            while True:
+                attempt += 1
+                ai_reply = None
+                try:
+                    if terminal.ai_engine == "ollama":
+                        ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
+                    elif terminal.ai_engine == "google":
+                        ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
+                    elif terminal.ai_engine == "openai":
+                        ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
+                    else:
+                        terminal.print_console("Invalid AI engine specified. Stopping agent.")
+                        self.summary = "Agent stopped: Invalid AI engine specified."
+                        return None
 
-                if ai_reply and "503" not in ai_reply:
-                    return ai_reply
-                else:
-                    terminal.print_console(f"AI returned an error or empty response (Attempt {attempt + 1}/{retries}). Retrying in {delay}s...")
+                    if ai_reply and "503" not in ai_reply:
+                        return ai_reply
+                    else:
+                        terminal.print_console(f"AI returned an error or empty response (Attempt {attempt}). Retrying in {delay}s...")
+                        time.sleep(delay)
+
+                except Exception as e:
+                    terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt}): {e}. Retrying in {delay}s...")
                     time.sleep(delay)
+        else:
+            for attempt in range(retries):
+                ai_reply = None
+                try:
+                    if terminal.ai_engine == "ollama":
+                        ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
+                    elif terminal.ai_engine == "google":
+                        ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
+                    elif terminal.ai_engine == "openai":
+                        ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
+                    else:
+                        terminal.print_console("Invalid AI engine specified. Stopping agent.")
+                        self.summary = "Agent stopped: Invalid AI engine specified."
+                        return None
 
-            except Exception as e:
-                terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s...")
-                time.sleep(delay)
-        
-        terminal.print_console("Failed to get a valid response from AI after multiple retries.")
-        return None
+                    if ai_reply and "503" not in ai_reply:
+                        return ai_reply
+                    else:
+                        terminal.print_console(f"AI returned an error or empty response (Attempt {attempt + 1}/{retries}). Retrying in {delay}s...")
+                        time.sleep(delay)
+
+                except Exception as e:
+                    terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+            
+            terminal.print_console("Failed to get a valid response from AI after multiple retries.")
+            return None
 
     def _sliding_window_context(self):
         # Always include the first two messages (system + user goal)
@@ -375,6 +402,8 @@ class VaultAIAgentRunner:
                     
                     elif tool == "write_file":
                         file_path = action_item.get("path")
+                        if file_path and not file_path.startswith("/"):
+                            file_path = os.path.join(os.getcwd(), file_path)
                         file_content = action_item.get("content")
                         if not file_path or file_content is None:
                             terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")

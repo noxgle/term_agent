@@ -406,42 +406,43 @@ class term_agent:
                 self.logger.error(f"Remote command execution failed: {e}")
                 return 1, '', str(e)
 
-    def run_local(self):
-        while True:
-            command = self.console.input("[bold yellow]Enter command to run locally (or 'exit' to quit): [/] ")
-            if command.strip().lower() == 'exit':
-                break
-            if not command.strip():
-                continue
-            confirm = self.console.input(f"[bold yellow]Are you sure you want to run: '{command}' locally? (y/n): [/] ")
-            if confirm.lower() == 'y':
-                result = subprocess.run(command, shell=True, capture_output=True, text=True)
-                self.console.print(f"[green]Command output:[/]")
-                self.console.print(result.stdout)
-                if result.stderr:
-                    self.console.print(f"[red]Error output:[/]")
-                    self.console.print(result.stderr)
-            else:
-                self.console.print("[red]Command cancelled.[/]")
-
-    def run_remote(self, remote):
-        while True:
-            command = self.console.input(f"[bold yellow]Enter command to run on {remote} (or 'exit' to quit): [/] ")
-            if command.strip().lower() == 'exit':
-                break
-            if not command.strip():
-                continue
-            confirm = self.console.input(f"[bold yellow]Are you sure you want to run: '{command}' on {remote}? (y/n): [/] ")
-            if confirm.lower() == 'y':
-                ssh_command = ["ssh", remote, command]
-                result = subprocess.run(ssh_command, capture_output=True, text=True)
-                self.console.print(f"[green]Command output:[/]")
-                self.console.print(result.stdout)
-                if result.stderr:
-                    self.console.print(f"[red]Error output:[/]")
-                    self.console.print(result.stderr)
-            else:
-                self.console.print("[red]Command cancelled.[/]")
+    # to remove
+    # def run_local(self):
+    #     while True:
+    #         command = self.console.input("[bold yellow]Enter command to run locally (or 'exit' to quit): [/] ")
+    #         if command.strip().lower() == 'exit':
+    #             break
+    #         if not command.strip():
+    #             continue
+    #         confirm = self.console.input(f"[bold yellow]Are you sure you want to run: '{command}' locally? (y/n): [/] ")
+    #         if confirm.lower() == 'y':
+    #             result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    #             self.console.print(f"[green]Command output:[/]")
+    #             self.console.print(result.stdout)
+    #             if result.stderr:
+    #                 self.console.print(f"[red]Error output:[/]")
+    #                 self.console.print(result.stderr)
+    #         else:
+    #             self.console.print("[red]Command cancelled.[/]")
+    # to remove
+    # def run_remote(self, remote):
+    #     while True:
+    #         command = self.console.input(f"[bold yellow]Enter command to run on {remote} (or 'exit' to quit): [/] ")
+    #         if command.strip().lower() == 'exit':
+    #             break
+    #         if not command.strip():
+    #             continue
+    #         confirm = self.console.input(f"[bold yellow]Are you sure you want to run: '{command}' on {remote}? (y/n): [/] ")
+    #         if confirm.lower() == 'y':
+    #             ssh_command = ["ssh", remote, command]
+    #             result = subprocess.run(ssh_command, capture_output=True, text=True)
+    #             self.console.print(f"[green]Command output:[/]")
+    #             self.console.print(result.stdout)
+    #             if result.stderr:
+    #                 self.console.print(f"[red]Error output:[/]")
+    #                 self.console.print(result.stderr)
+    #         else:
+    #             self.console.print("[red]Command cancelled.[/]")
 
     def print_console(self, text,color=None):
         if color:
@@ -456,20 +457,21 @@ class term_agent:
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
         return result.stdout, result.returncode
 
-    def execute_remote(self, command):
-        """
-        Wykonuje komendę zdalnie przez SSH i zwraca (stdout, returncode)
-        """
-        remote = getattr(self, 'remote_host', None)
-        if not remote:
-            return '', 1
-        ssh_command = ["ssh", remote, command]
-        try:
-            result = subprocess.run(ssh_command, capture_output=True, text=True)
-            return result.stdout, result.returncode
-        except Exception as e:
-            self.logger.error(f"SSH execution failed: {e}")
-            return '', 1
+    # to remove
+    # def execute_remote(self, command):
+    #     """
+    #     Wykonuje komendę zdalnie przez SSH i zwraca (stdout, returncode)
+    #     """
+    #     remote = getattr(self, 'remote_host', None)
+    #     if not remote:
+    #         return '', 1
+    #     ssh_command = ["ssh", remote, command]
+    #     try:
+    #         result = subprocess.run(ssh_command, capture_output=True, text=True)
+    #         return result.stdout, result.returncode
+    #     except Exception as e:
+    #         self.logger.error(f"SSH execution failed: {e}")
+    #         return '', 1
     
         
     def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):

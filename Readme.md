@@ -119,6 +119,46 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+### Docker Installation
+
+This project can also be installed and run using Docker for a containerized environment with SSH access.
+
+#### Prerequisites
+
+- Docker installed on your system
+- Docker Compose installed
+- Your `.env` file with API keys (copy from .env.copy and fill in your keys)
+
+#### Quick Setup
+
+```bash
+# Copy and configure your .env file
+cp .env.copy .env
+# Edit .env with your API keys (OpenAI, Google, etc.)
+
+# Build the container
+docker-compose up -d
+
+# Alternative: build manually
+docker build -t vault3000/term-agent .
+docker run -d -p 2222:22 --name term-agent vault3000/term-agent
+```
+
+#### Connect and Use
+
+```bash
+# Connect to the container via SSH
+ssh root@localhost -p 2222
+# Password: 123456 (change this in production)
+
+# Once connected, use the same commands as regular installation
+ag      # Start the AI agent
+ask     # Start chat mode
+prom    # Start prompt creator
+```
+
+For detailed Docker setup instructions, including advanced usage, troubleshooting, and security notes, see [Docker_README.md](Docker_README.md).
+
 ## `.env` Configuration
 
 Copy `.env.copy` to `.env` and paste your API key(s).
@@ -214,6 +254,11 @@ Usage:
 - Start agent:  
   ```bash
   ag
+  ```
+
+- Start agent and work on remote machine:  
+  ```bash
+  ag testuser@X.X.X.X
   ```
 
 > **Tip:** For the best experience with remote agent mode (SSH), set up SSH key-based authentication on your target servers.  
