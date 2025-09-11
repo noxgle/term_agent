@@ -216,6 +216,11 @@ Usage:
   ag
   ```
 
+- Start agent and work on remote machine:  
+  ```bash
+  ag testuser@X.X.X.X
+  ```
+
 > **Tip:** For the best experience with remote agent mode (SSH), set up SSH key-based authentication on your target servers.  
 > This allows the agent to execute commands without repeatedly prompting for a password and improves both security and usability.
 
