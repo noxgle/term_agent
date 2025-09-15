@@ -44,9 +44,11 @@
  ..................find me on: https://www.linkedin.com/in/sebastian-wielgosz-linux-admin
  ........................................................................................  
 ```
+
 ## Table of Contents
 
 - [Features](#features)
+- [Terminal Agent Capabilities](#terminal-agent-capabilities)
 - [Prompt Creator](#prompt-creator)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -67,6 +69,16 @@
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
 
+## Terminal Agent Capabilities
+
+The main terminal agent is a powerful tool designed to streamline your command-line operations. It allows you to perform a wide range of tasks, including:
+- **Linux Administration**: Manage your system with ease.
+- **Security**: Implement and maintain security measures.
+- **Log Analysis**: Monitor and analyze system logs effectively.
+- **Script Creation**: Develop custom scripts for automation.
+- **Configuration Files**: Manage configuration files, such as those for Ansible.
+- **Software Development**: Build and deploy applications.
+
 ## Prompt Creator
 
 The **Prompt Creator** is an interactive assistant that helps you build high-quality prompts for AI agents.
@@ -78,10 +90,7 @@ The **Prompt Creator** is an interactive assistant that helps you build high-qua
 - Lets you confirm or add more details at each step with Enter or Ctrl+S.
 - Ensures your final prompt is precise, actionable, and ready for use with any supported AI engine.
 
-**To use the Prompt Creator, run:**
-```bash
-python PromptCreator.py
-```
+
 
 ## Requirements
 
@@ -229,7 +238,10 @@ The agent will read the file and use its contents as your goal or question.
 - `VaultAiAgentRunner.py` – agent logic.
 - `PromptCreator.py` – interactive prompt builder.
 
-## Aliases
+
+The agent will read the file and use its contents as your goal or question.
+
+### Aliases
 
 Add short aliases to your `~/.bashrc` (or `~/.zshrc`):
 
@@ -245,36 +257,17 @@ Reload aliases:
 source ~/.bashrc
 ```
 
-Usage:
-
-- Start chat:  
-  ```bash
-  ask
-  ```
-- Start agent:  
-  ```bash
-  ag
-  ```
-
-- Start agent and work on remote machine:  
-  ```bash
-  ag testuser@X.X.X.X
-  ```
-
-> **Tip:** For the best experience with remote agent mode (SSH), set up SSH key-based authentication on your target servers.  
-> This allows the agent to execute commands without repeatedly prompting for a password and improves both security and usability.
-
+> **Tip:** For the best experience with remote agent mode (SSH), set up SSH key-based authentication on your target servers. This allows the agent to execute commands without repeatedly prompting for a password and improves both security and usability.
 > **Tip:** Change the path `/home/username/term_agent` to your own if the project is in a different location.
 
-> **Warning:**  
-> The agent can execute arbitrary shell commands (locally or remotely via SSH) based on user input or AI suggestions.  
-> **Always review and understand the commands before running the agent.**  
-> Using this tool may be unsafe on production systems or with sensitive data.  
+> **Warning:**
+> The agent can execute arbitrary shell commands (locally or remotely via SSH) based on user input or AI suggestions.
+> **Always review and understand the commands before running the agent.**
+> Using this tool may be unsafe on production systems or with sensitive data.
 > You are responsible for any actions performed by the agent on your system.
 
-> **Note:**  
-> The larger and more advanced the AI model you use (e.g., GPT-4, Gemini 1.5, or large Ollama models), the better and more reliable the agent's results will be.  
-> Smaller or older models may not handle complex tasks or multi-step automation as effectively.
+> **Note:**
+> The larger and more advanced the AI model you use (e.g., GPT-4, Gemini 1.5, or large Ollama models), the better and more reliable the agent's results will be. Smaller or older models may not handle complex tasks or multi-step automation as effectively.
 
 ## License
 
