@@ -13,7 +13,6 @@ def main():
     
     if ai_status:
         agent.console.print(f"""VaultAI: {ai_model} is online.\n""")
-        agent.console.print("Ask your questions? Press [cyan]Ctrl+S[/] to start!\n")
     else:
         agent.console.print("[red]VaultAI is offline.[/]\n")
         agent.console.print("[red][Vault 3000] Please check your API key and network connection.[/]\n")

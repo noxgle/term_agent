@@ -69,6 +69,7 @@ class VaultAIAskRunner:
         self.history = context.copy()
         while True:
             try:
+                self.agent.console.print("\nAsk your questions? Press [cyan]Ctrl+S[/] to start!\n")
                 user_input = prompt(
                     "local> ", 
                     multiline=True,
