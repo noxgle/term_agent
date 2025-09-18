@@ -8,7 +8,6 @@ This repository contains Docker setup files to run the Vault 3000 terminal AI ag
 - `docker-compose.yml` - Container orchestration
 - `entrypoint.sh` - Container startup script
 - `.dockerignore` - Docker build exclusions
-- `.github/workflows/docker.yml` - GitHub Actions CI/CD pipeline
 
 ## Features
 
@@ -39,16 +38,18 @@ cp .env.copy .env
 The project includes GitHub Actions CI/CD pipeline that automatically builds and pushes Docker images to GHCR (GitHub Container Registry).
 
 ```bash
-# Login to GitHub Container Registry (requires GitHub Personal Access Token)
-export GHCR_TOKEN=your_github_personal_access_token
-echo $GHCR_TOKEN | docker login ghcr.io -u noxgle --password-stdin
-
-# Run container
-docker-compose up -d
-
-# Alternative: use directly
 docker pull ghcr.io/noxgle/term_agent:latest
-docker run -d -p 2222:22 --name term-agent ghcr.io/noxgle/term_agent:latest
+docker run -d \
+  --name term-agent-container \
+  -p 2222:22 \
+  -v $(pwd)/.env:/app/.env:ro \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/goal:/app/goal \
+  -v $(pwd)/prompt:/app/prompt \
+  -e TZ=Europe/Warsaw \
+  --restart unless-stopped \
+  -it \
+  ghcr.io/noxgle/term_agent:latest
 ```
 
 ### Alternative: Build Locally
@@ -218,23 +219,6 @@ services:
 # Deploy to swarm
 docker stack deploy -c docker-compose.yml vault3000
 ```
-
-## GitHub Actions CI/CD
-
-The repository includes automated CI/CD pipeline using GitHub Actions:
-
-### Workflow Triggers
-
-- **Push to main branch**: Builds and pushes `latest` tag to GHCR
-- **Release tags (v*)**: Builds and pushes versioned tags to GHCR
-
-### Pipeline Features
-
-- Automatic Docker image building
-- Multi-platform support (amd64)
-- Cache optimization for faster builds
-- Push to GitHub Container Registry with proper tagging
-- Automatic cleanup of old images
 
 ### Accessing Built Images
 
