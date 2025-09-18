@@ -3,7 +3,7 @@ version: '3.8'
 services:
   term-agent:
     build: .
-    image: vault3000/term-agent:latest
+    image: ghcr.io/noxgle/term_agent:latest
     container_name: term-agent-container
     ports:
       - "2222:22"  # Map SSH port to host port 2222 to avoid conflicts

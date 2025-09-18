@@ -8,6 +8,7 @@ This repository contains Docker setup files to run the Vault 3000 terminal AI ag
 - `docker-compose.yml` - Container orchestration
 - `entrypoint.sh` - Container startup script
 - `.dockerignore` - Docker build exclusions
+- `.github/workflows/docker.yml` - GitHub Actions CI/CD pipeline
 
 ## Features
 
@@ -33,15 +34,29 @@ cp .env.copy .env
 # Edit .env with your API keys (OpenAI, Google, etc.)
 ```
 
-### 2. Build and Run
+### 2. Use Pre-built Image from GitHub Container Registry
+
+The project includes GitHub Actions CI/CD pipeline that automatically builds and pushes Docker images to GHCR (GitHub Container Registry).
 
 ```bash
-# Build the container
+# Login to GitHub Container Registry (requires GitHub Personal Access Token)
+export GHCR_TOKEN=your_github_personal_access_token
+echo $GHCR_TOKEN | docker login ghcr.io -u noxgle --password-stdin
+
+# Run container
 docker-compose up -d
 
-# Alternative: build manually
-docker build -t vault3000/term-agent .
-docker run -d -p 2222:22 --name term-agent vault3000/term-agent
+# Alternative: use directly
+docker pull ghcr.io/noxgle/term_agent:latest
+docker run -d -p 2222:22 --name term-agent ghcr.io/noxgle/term_agent:latest
+```
+
+### Alternative: Build Locally
+
+```bash
+# Build the container locally
+docker-compose build
+docker-compose up -d
 ```
 
 ### 3. Connect via SSH
@@ -203,6 +218,33 @@ services:
 # Deploy to swarm
 docker stack deploy -c docker-compose.yml vault3000
 ```
+
+## GitHub Actions CI/CD
+
+The repository includes automated CI/CD pipeline using GitHub Actions:
+
+### Workflow Triggers
+
+- **Push to main branch**: Builds and pushes `latest` tag to GHCR
+- **Release tags (v*)**: Builds and pushes versioned tags to GHCR
+
+### Pipeline Features
+
+- Automatic Docker image building
+- Multi-platform support (amd64)
+- Cache optimization for faster builds
+- Push to GitHub Container Registry with proper tagging
+- Automatic cleanup of old images
+
+### Accessing Built Images
+
+Images are published to: `ghcr.io/noxgle/term_agent` with tags:
+- `latest` - Latest main branch build
+- `v1.0.0`, `v1.1.0`, etc. - Version releases
+
+### Manual Trigger
+
+Workflow can be triggered manually from GitHub Actions tab if needed.
 
 ## License
 
