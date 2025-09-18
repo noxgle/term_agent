@@ -12,6 +12,7 @@
 - [Files](#files)
 - [Aliases](#aliases)
 - [Examples](#example-chat)
+- [TODO](#todo)
 - [License](#license)
 
 ## Features
@@ -224,6 +225,10 @@ source ~/.bashrc
 
 > **Note:**
 > The larger and more advanced the AI model you use (e.g., GPT-4, Gemini 1.5, or large Ollama models), the better and more reliable the agent's results will be. Smaller or older models may not handle complex tasks or multi-step automation as effectively.
+
+## TODO
+
+- SSH connections to non-standard ports
 
 ## License
 
