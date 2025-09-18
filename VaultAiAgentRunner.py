@@ -180,7 +180,6 @@ class VaultAIAgentRunner:
     def run(self):
         terminal = self.terminal
         keep_running = True
-        #terminal.print_console(f"[Vault-Tec] AI agent started with goal: {self.user_goal}")
 
         while keep_running:
             task_finished_successfully = False
@@ -203,8 +202,6 @@ class VaultAIAgentRunner:
                     agent_should_stop_this_turn = True
                     break
                 
-                #terminal.print_console(f"AI agent step {step_count + 1}: {ai_reply}")
-
                 data = None
                 ai_reply_json_string = None
                 corrected_ai_reply_string = None # Stores the string of a successfully parsed corrected reply
