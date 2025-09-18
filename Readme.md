@@ -1,4 +1,4 @@
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/UeDNO0pWK9c/0.jpg)](https://www.youtube.com/embed/UeDNO0pWK9c)
+[![LINUX TERMINAL AGENT](https://img.youtube.com/vi/UeDNO0pWK9c/0.jpg)](https://www.youtube.com/embed/UeDNO0pWK9c)
 
 ## Table of Contents
 
