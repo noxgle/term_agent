@@ -51,6 +51,7 @@ class VaultAIAgentRunner:
                     "Use the 'write_file' tool to create or overwrite files with specific content. "
                     "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
                     "At the end, always summarize what you have done in the 'summary' field of the finish message. "
+                    "Please remember that in this environment, each command is executed in a separate shell process (subprocess). This means that changing the directory using the `cd` command will not persist between subsequent command invocations. If you need to operate on files within a specific directory, ensure you provide the full path to those files in each command, or consider performing all related operations in a single invocation (if possible) with appropriately nested commands. "
                     "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
                     "You can also use the 'edit_file' tool to modify existing files in a structured way. "
                     "The 'edit_file' tool supports actions such as: "
