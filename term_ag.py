@@ -128,6 +128,7 @@ class term_agent:
         self.ollama_temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.5"))
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
+        self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
@@ -450,11 +451,13 @@ class term_agent:
         else:
             self.console.print(text)
 
-    def execute_local(self, command):
+    def execute_local(self, command,timeout=None):
         """
         Wykonuje komendę lokalnie i zwraca (stdout, returncode)
         """
-        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        if timeout:
+            timeout = self.local_command_timeout
+        result = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=timeout)
         return result.stdout, result.returncode
 
     # to remove
