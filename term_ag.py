@@ -462,6 +462,8 @@ class term_agent:
 
         self.logger.info(f"Executing local command: {command}")
         try:
+            if timeout == 0:
+                timeout = None  # No timeout
             result = subprocess.run(
                 command,
                 shell=True,
