@@ -453,8 +453,8 @@ class term_agent:
 
     def execute_local(self, command, timeout=None):
         """
-        Execute a command locally and return (returncode, stdout, stderr).
-        Returns tuple: (returncode, stdout, stderr)
+        Execute a command locally and return (output, exit_code).
+        Returns tuple: (output, exit_code)
         """
         # Fix timeout logic - use default timeout when none provided
         if timeout is None:
@@ -472,13 +472,13 @@ class term_agent:
             self.logger.debug(f"Local command output: {result.stdout}")
             if result.stderr:
                 self.logger.warning(f"Local command stderr: {result.stderr}")
-            return result.returncode, result.stdout, result.stderr
+            return result.stdout, result.returncode
         except subprocess.TimeoutExpired as e:
             self.logger.error(f"Local command timed out after {timeout}s: {command}")
-            return 124, '', f'Command timed out after {timeout} seconds'
+            return f'Command timed out after {timeout} seconds', 124
         except Exception as e:
             self.logger.error(f"Local command execution failed: {e}")
-            return 1, '', str(e)
+            return str(e), 1
 
     # to remove
     # def execute_remote(self, command):
