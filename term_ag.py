@@ -91,12 +91,13 @@ FALLOUT_FINDINGS = [
 
 class term_agent:
     def __init__(self):
-        # check if .env file exists
-        if not os.path.isfile('.env'):
-            print("ERROR: .env file not found. Please create one based on .env.copy.")
+        
+        self.basedir = os.path.dirname(os.path.abspath(__file__))
+        # check if .env file exists in the basedir
+        if not os.path.isfile(os.path.join(self.basedir, '.env')):
+            print(f"[Vault 3000] ERROR: .env file not found in {self.basedir}. Please create one based on .env.copy.")
             sys.exit(1)
         load_dotenv()
-        self.basedir = os.path.dirname(os.path.abspath(__file__))
         # --- Logging config from .env ---
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         log_file = os.getenv("LOG_FILE", "")
