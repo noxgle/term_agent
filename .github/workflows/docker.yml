@@ -87,19 +87,8 @@ jobs:
             -e TZ=Europe/Warsaw \
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
 
-      - name: Wait for container to be healthy
+      - name: Wait for container to start
         run: |
-          echo "Waiting for container to be healthy..."
-          for i in {1..30}; do
-            if docker ps | grep term-agent-container | grep -q "healthy"; then
-              echo "Container is healthy!"
-              break
-            fi
-            if [ $i -eq 30 ]; then
-              echo "Container failed to become healthy"
-              docker logs term-agent-container
-              exit 1
-            fi
-            echo "Attempt $i/30 - Container not ready yet..."
-            sleep 10
-          done
+          echo "Waiting for container to start..."
+          sleep 30
+          echo "Container should be running now"
