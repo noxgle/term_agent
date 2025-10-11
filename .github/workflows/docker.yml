@@ -49,3 +49,57 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull new image
+        run: docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Stop existing container
+        run: docker stop term-agent-container || true
+
+      - name: Remove existing container
+        run: docker rm term-agent-container || true
+
+      - name: Run new container
+        run: |
+          docker run -d \
+            --name term-agent-container \
+            -p 2222:22 \
+            -v ${{ github.workspace }}/.env:/app/.env:ro \
+            -v ${{ github.workspace }}/logs:/app/logs \
+            -v ${{ github.workspace }}/goal:/app/goal \
+            -v ${{ github.workspace }}/prompt:/app/prompt \
+            -e TZ=Europe/Warsaw \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+      - name: Wait for container to be healthy
+        run: |
+          echo "Waiting for container to be healthy..."
+          for i in {1..30}; do
+            if docker ps | grep term-agent-container | grep -q "healthy"; then
+              echo "Container is healthy!"
+              break
+            fi
+            if [ $i -eq 30 ]; then
+              echo "Container failed to become healthy"
+              docker logs term-agent-container
+              exit 1
+            fi
+            echo "Attempt $i/30 - Container not ready yet..."
+            sleep 10
+          done
