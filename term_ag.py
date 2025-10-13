@@ -449,17 +449,20 @@ class term_agent:
             self.logger.error(f"Local command execution failed: {e}")
             return str(e), 1    
         
-    def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False):
+    def execute_remote_pexpect(self, command, remote, password=None, auto_yes=False, timeout=None):
         # Use cached password if available
         if self.ssh_password:
             password = self.ssh_password
+
+        if timeout is None:
+            timeout = self.ssh_remote_timeout
 
         # Dodaj znacznik exit code na końcu polecenia
         marker = "__EXITCODE:"
         command = command.replace("'", "'\\''")
         command_with_exit = f"{command}; echo {marker}$?__"
         ssh_cmd = f"ssh {remote} '{command_with_exit}'"
-        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=self.ssh_remote_timeout)
+        child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=timeout)
         output = ""
         try:
             while True:
