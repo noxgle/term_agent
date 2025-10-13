@@ -41,7 +41,7 @@ class VaultAIAgentRunner:
                     "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                     "Your first task is to analyze the user's goal and decide what to do next. "
                     "For each step, always reply in JSON: "
-                    "{'tool': 'bash', 'command': '...'} "
+                    "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds} "
                     "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
                     "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                     "or {'tool': 'ask_user', 'question': '...'} "
@@ -71,7 +71,7 @@ class VaultAIAgentRunner:
                     "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                     "Your first task is to analyze the user's goal and decide what to do next. "
                     "For each step, always reply in JSON: "
-                    "{'tool': 'bash', 'command': '...'} "
+                    "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds} "
                     "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
                     "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                     "or {'tool': 'ask_user', 'question': '...'} "
@@ -329,17 +329,22 @@ class VaultAIAgentRunner:
                     
                     elif tool == "bash":
                         command = action_item.get("command")
+                        timeout = action_item.get("timeout")
+                        if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
+                            terminal.print_console(f"Invalid timeout value in bash action: {timeout}. Must be a positive number. Skipping.")
+                            self.context.append({"role": "user", "content": f"You provided an invalid timeout: {timeout} in {action_item}. Timeout must be a positive number. I am skipping it."})
+                            continue
                         if not command:
                             terminal.print_console(f"No command provided in bash action: {action_item}. Skipping.")
                             self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
                             continue
-                        
+
                         if not terminal.auto_accept:
 
                             confirm_prompt_text = f"ValutAI> '{command}'. Execute? [y/N]: "
                             if len(actions_to_process) > 1:
                                 confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
-                            
+
                             confirm = input(f"{confirm_prompt_text}").lower().strip()
                             if confirm != 'y':
                                 terminal.print_console("Command execution cancelled by user. Stopping agent.")
@@ -348,13 +353,13 @@ class VaultAIAgentRunner:
                                 break
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
-                        out, code = "", 1 
+                        out, code = "", 1
                         if self.terminal.ssh_connection:
                             remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
                             password = getattr(self.terminal, "ssh_password", None)
-                            out, code = self.terminal.execute_remote_pexpect(command, remote, password=password)
+                            out, code = self.terminal.execute_remote_pexpect(command, remote, password=password, timeout=timeout)
                         else:
-                            out, code = self.terminal.execute_local(command) # Corrected method call
+                            out, code = self.terminal.execute_local(command, timeout=timeout) # Corrected method call
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
                         terminal.print_console(f"Result (code {code}):\n{out}")
