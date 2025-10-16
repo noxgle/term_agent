@@ -425,10 +425,10 @@ class VaultAIAgentRunner:
 
                             remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
 
-                            # Usuń istniejący plik docelowy na zdalnym hoście, jeśli istnieje
+                            # Remove existing file on remote host if exists
                             rm_cmd = f"rm -f '{file_path}'"
                             self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
-                            # Usuń istniejący plik tymczasowy na zdalnym hoście, jeśli istnieje
+                            # Remove existing temp file on remote host if exists
                             rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
                             self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
 
@@ -463,7 +463,7 @@ class VaultAIAgentRunner:
                         else:
                             try:
                                 os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                                # Usuń lokalny plik jeśli istnieje
+                                # Remove existing file if it exists
                                 if os.path.exists(file_path):
                                     os.remove(file_path)
                                 with open(file_path, "w", encoding="utf-8") as f:
@@ -545,31 +545,31 @@ class VaultAIAgentRunner:
                                 return False
 
                         if self.terminal.ssh_connection:
-                            # Pobierz plik zdalnie, edytuj lokalnie, odeślij z powrotem
+                            # Get the file from remote, edit locally, then send back
                             remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
                             password = getattr(self.terminal, "ssh_password", None)
                             with tempfile.TemporaryDirectory() as tmpdir:
                                 local_tmp_path = os.path.join(tmpdir, os.path.basename(file_path))
                                 remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
-                                # Pobierz plik do katalogu tymczasowego
+                                # Get remote file
                                 scp_get = ["scp", f"{remote}:{file_path}", local_tmp_path]
                                 result = subprocess.run(scp_get, capture_output=True, text=True)
                                 if result.returncode != 0:
                                     terminal.print_console(f"Failed to fetch remote file '{file_path}': {result.stderr}")
                                     self.context.append({"role": "user", "content": f"Failed to fetch remote file '{file_path}': {result.stderr}"})
                                     continue
-                                # Edytuj lokalnie
+                                # Edit locally
                                 file_path_backup = file_path
                                 file_path = local_tmp_path
                                 ok = edit_file_local()
                                 file_path = file_path_backup
                                 if ok:
-                                   # Usuń istniejący plik docelowy i tymczasowy na zdalnym hoście
+                                   # Remove existing target file on remote if it exists
                                     rm_cmd = f"rm -f '{file_path}'"
                                     self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
                                     rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
                                     self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
-                                    # Odeślij plik do /tmp na zdalnym hoście
+                                    # Send back edited file
                                     scp_put = ["scp", local_tmp_path, f"{remote}:{remote_tmp_path}"]
                                     result = subprocess.run(scp_put, capture_output=True, text=True)
                                     if result.returncode == 0:
@@ -622,7 +622,6 @@ class VaultAIAgentRunner:
             if task_finished_successfully:
                 continue_choice = input("\nDo you want continue this thread? [y/N]: ").lower().strip()
                 if continue_choice == 'y':
-                    #new_instruction = input("Please provide your next instruction: ")
                     terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!\n")
                     user_input= prompt(
                         f"{self.input_text}> ", 
