@@ -91,7 +91,6 @@ FALLOUT_FINDINGS = [
 
 class term_agent:
     def __init__(self):
-        
         self.basedir = os.path.dirname(os.path.abspath(__file__))
         # check if .env file exists in the basedir
         if not os.path.isfile(os.path.join(self.basedir, '.env')):
@@ -200,7 +199,7 @@ class term_agent:
         """
         ssh_prefix = f"{user}@{remote_host}" if user else remote_host
 
-        # 1. Spróbuj /etc/os-release
+        # 1. Check /etc/os-release
         try:
             cmd = "cat /etc/os-release"
             stdout, returncode = self.execute_remote_pexpect(cmd, ssh_prefix)
@@ -217,7 +216,7 @@ class term_agent:
         except Exception as e:
             self.logger.warning(f"detect_remote_linux_distribution: /etc/os-release failed: {e}")
 
-        # 2. Spróbuj lsb_release
+        # 2. Check lsb_release
         try:
             name_stdout, name_returncode = self.execute_remote_pexpect("lsb_release -si", ssh_prefix)
             version_stdout, version_returncode = self.execute_remote_pexpect("lsb_release -sr", ssh_prefix)
@@ -457,7 +456,7 @@ class term_agent:
         if timeout is None:
             timeout = self.ssh_remote_timeout
 
-        # Dodaj znacznik exit code na końcu polecenia
+        # Ensure command is properly escaped
         marker = "__EXITCODE:"
         command = command.replace("'", "'\\''")
         command_with_exit = f"{command}; echo {marker}$?__"
@@ -516,12 +515,12 @@ class term_agent:
         except Exception as e:
             output += f"\n[pexpect error] {e}"
 
-        # Parsowanie kodu wyjścia z outputu
+        # Parase the exit code from the output
         exit_code = 1
         match = re.search(rf"{marker}(\d+)__", output)
         if match:
             exit_code = int(match.group(1))
-            # Usuń marker z outputu
+            # Clean the marker from the output 
             output = re.sub(rf"{marker}\d+__\s*", "", output)
         return output, exit_code
 
@@ -599,7 +598,6 @@ def main():
     
     if ai_status:
         agent.console.print(f"""ValutAI: {ai_model} is online.\n""")
-        #agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
     else:
         agent.console.print("[red]AgentAI: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
