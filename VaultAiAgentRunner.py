@@ -100,7 +100,7 @@ class VaultAIAgentRunner:
         self.terminal = terminal
         self.user = user
         self.host = host
-        self.widow_size=window_size
+        self.window_size=window_size
 
         if self.user == "root":
             self.system_prompt_agent = f"{self.system_prompt_agent} You dont need sudo, you are root."
@@ -174,8 +174,8 @@ class VaultAIAgentRunner:
         # plus the last WINDOW_SIZE messages from the rest of the context
         base = self.context[:2]
         tail = self.context[2:]
-        if len(tail) > self.widow_size:
-            tail = tail[-self.widow_size:]
+        if len(tail) > self.window_size:
+            tail = tail[-self.window_size:]
         return base + tail
 
     def run(self):
