@@ -1,35 +1,34 @@
-You are a Proxmox expert and an Ansible automation specialist. Your task is to create 10 Debian LXC containers on a Proxmox host. These containers should be configured to be ready for Ansible management.
+You are a Proxmox expert and an Ansible automation specialist. Your task is to create one Debian LXC container and create 9 clones on a Proxmox host. These containers should be configured to be ready for Ansible management.
 
-Detailed configuration for each container:
-* **Operating System:** Debian 12 (LXC), based on the `debian-12-standard` template.
-* **Number of containers:** 10
-* **Container IDs (CTIDs):** Starting from `2000` for the first container, then sequentially incrementing for subsequent containers (e.g., `2000`, `2001`, ..., `2009`).
-* **Root user:** login `root`, password `123456`
-* **Ansible user:**
- * login `ans`, password `123456`
- * User `ans` should be added to the `sudo` group and have permissions to execute `sudo` commands without a password (NOPASSWD).
-* **Network bridge:** `vmbr0`
-* **Hostnames:** From `ansible-base-template-01` to `ansible-base-template-10`.
-* **LXC configuration (`pct create` parameters):**
- * Unprivileged container: `--unprivileged 1`
- * CPU cores: `--cores 1`
- * RAM memory: `--memory 512` (MB)
- * Autostart: `--start 1`
- * Network interface: `net0 name=eth0,bridge=vmbr0`
- * **Root Filesystem:** Size `8G`, stored on `local-lvm` (e.g., `--rootfs local-lvm:8G`).
-* **In-container network configuration:**
- * IP addresses: Static, starting from `192.168.200.30/24` for the first container, then sequentially for subsequent ones.
- * Gateway: `192.168.200.1`
- * DNS server: `192.168.202.2`
-* **In-container SSH configuration:**
- * SSH access should be available on the standard port 22.
- * SSH login for the `root` user should be blocked.
-* **Required packages in container:** The `sudo` package must be installed inside each container.
+### Detailed configuration for each container:
 
-**Expected output:** A complete Bash script that step-by-step implements the above requirements on the Proxmox host, including creating containers, network configuration, setting up users and their permissions 
-(including sudo NOPASSWD for 'ans' user), installing necessary packages (like sudo), and SSH configuration.
-
-**Script details:**
-* The script should NOT be idempotent (it does not need to check for existing containers or users).
-* The script should primarily use Proxmox CLI tools (e.g., `pct create`, `pct exec`, `pvesh`).
-* The script should include basic error handling (e.g., checking command exit codes).
+*   **Operating System:** Debian 12 (LXC), based on the `debian-12-standard` template.
+*   **Number of containers:** 10
+*   **Root user:**
+    *   login `root`
+    *   password `123456`
+*   **Ansible user:**
+    *   login `ans`
+    *   password `123456`
+*   **Network bridge:** `vmbr0`
+*   **Hostnames:** From `ansible-base-template-01` to `ansible-base-template-10`.
+*   **LXC configuration (`pct create` parameters):**
+    *   Unprivileged container: `--unprivileged 1`
+    *   CPU cores: `--cores 1`
+    *   RAM memory: `--memory 512` (MB)
+    *   Autostart: `--start 1`
+    *   Network interface: `net0 name=eth0,bridge=vmbr0`
+    *   **Root Filesystem:** Size `8192`, stored on `local-lvm`
+    *   **Container IDs (CTIDs):** Starting from `4000` for the first container (`ansible-base-template-01`), and incrementing sequentially up to `4009` for the tenth container (`ansible-base-template-10`).
+*   **In-container network configuration:**
+    *   IP addresses: Static, starting from `192.168.200.30/24` for the first container, then sequentially for subsequent ones.
+    *   Gateway: `192.168.200.1`
+    *   DNS server: `192.168.202.2`
+*   **Initial container setup (inside each container, after creation and start):**
+    *   Perform `apt update`.
+    *   Install the `sudo` package.
+    *   Install packages necessary for Ansible management (e.g., `python3`, `python3-apt`).
+    *   User `ans` should be added to the `sudo` group and have permissions to execute `sudo` commands without a password (NOPASSWD).
+*   **In-container SSH configuration:**
+    *   SSH access should be available on the standard port 22.
+    *   SSH login for the `root` user should be blocked.
