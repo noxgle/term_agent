@@ -282,7 +282,7 @@ class term_agent:
 
     # --- ChatGPT Function ---
     def connect_to_chatgpt(self, role_system_content, prompt,
-                           model=None, max_tokens=None, temperature=None, format='json'):
+                           model=None, max_tokens=None, temperature=None, format='json_object'):
         if model is None:
             model = self.default_model
         if max_tokens is None:
@@ -300,7 +300,7 @@ class term_agent:
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    response_format={"type": "json"}
+                    response_format={"type": "json_object"}
                 )
             else:
                 response = client.chat.completions.create(
