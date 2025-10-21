@@ -365,7 +365,9 @@ class VaultAIAgentRunner:
                         terminal.print_console(f"Result (code {code}):\n{out}")
 
                         # Check for SSH connection error (code 255)
-                        if self.terminal.ssh_connection and code == 255:
+                        # Note: code 255 may also occur due to remote command failures or traps,
+                        # so we only stop for true connection issues when output indicates connection problems
+                        if self.terminal.ssh_connection and code == 255 and ("Connection refused" in out or "No route to host" in out or "Connection timed out" in out or "Permission denied" in out or "Operation timed out" in out):
                             terminal.print_console(
                                 "[ERROR] SSH connection failed (host may be offline or unreachable). "
                                 "Agent is stopping."
@@ -373,6 +375,12 @@ class VaultAIAgentRunner:
                             self.summary = "Agent stopped: SSH connection failed (host offline or unreachable)."
                             agent_should_stop_this_turn = True
                             break
+                        elif self.terminal.ssh_connection and code == 255:
+                            # Likely a command failure misinterpreted as connection error, continue
+                            terminal.print_console(
+                                "[WARNING] Received exit code 255 from remote command, "
+                                "but no connection error detected. Treating as command failure."
+                            )
 
                         user_feedback_content = (
                             f"Command '{command}' executed with exit code {code}.\n"
