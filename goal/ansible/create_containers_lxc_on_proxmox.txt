@@ -1,34 +1,49 @@
-You are a Proxmox expert and an Ansible automation specialist. Your task is to create one Debian LXC container and create 9 clones on a Proxmox host. These containers should be configured to be ready for Ansible management.
+You are an expert in Proxmox and an Ansible automation specialist. Your objective is to create a Debian LXC container and subsequently clone it nine times on a Proxmox host. Ensure that all containers are configured for Ansible management.
 
-### Detailed configuration for each container:
+### Configuration Details:
 
-*   **Operating System:** Debian 12 (LXC), based on the `debian-12-standard` template.
-*   **Number of containers:** 10
-*   **Root user:**
-    *   login `root`
-    *   password `123456`
-*   **Ansible user:**
-    *   login `ans`
-    *   password `123456`
-*   **Network bridge:** `vmbr0`
-*   **Hostnames:** From `ansible-base-template-01` to `ansible-base-template-10`.
-*   **LXC configuration (`pct create` parameters):**
-    *   Unprivileged container: `--unprivileged 1`
-    *   CPU cores: `--cores 1`
-    *   RAM memory: `--memory 512` (MB)
-    *   Autostart: `--start 1`
-    *   Network interface: `net0 name=eth0,bridge=vmbr0`
-    *   **Root Filesystem:** Size `8192`, stored on `local-lvm`
-    *   **Container IDs (CTIDs):** Starting from `4000` for the first container (`ansible-base-template-01`), and incrementing sequentially up to `4009` for the tenth container (`ansible-base-template-10`).
-*   **In-container network configuration:**
-    *   IP addresses: Static, starting from `192.168.200.30/24` for the first container, then sequentially for subsequent ones.
-    *   Gateway: `192.168.200.1`
-    *   DNS server: `192.168.202.2`
-*   **Initial container setup (inside each container, after creation and start):**
-    *   Perform `apt update`.
-    *   Install the `sudo` package.
-    *   Install packages necessary for Ansible management (e.g., `python3`, `python3-apt`).
-    *   User `ans` should be added to the `sudo` group and have permissions to execute `sudo` commands without a password (NOPASSWD).
-*   **In-container SSH configuration:**
-    *   SSH access should be available on the standard port 22.
-    *   SSH login for the `root` user should be blocked.
+1. **Operating System:** 
+   - Debian 12 (LXC), using the `debian-12-standard` template.
+
+2. **Container Specifications:**
+   - **Total Containers:** 10
+   - **Root User:**
+     - Login: `root`
+     - Password: `123456`
+   - **Ansible User:**
+     - Login: `ans`
+     - Password: `123456`
+   - **Network Bridge:** `vmbr0`
+   - **Hostnames:** 
+     - From `ansible-base-template-01` to `ansible-base-template-10`.
+
+3. **LXC Configuration (`pct create` parameters):**
+   - Unprivileged Container: `--unprivileged 1`
+   - CPU Cores: `--cores 1`
+   - RAM Memory: `--memory 512` (MB)
+   - Autostart: `--start 1`
+   - Network Interface: `net0 name=eth0,bridge=vmbr0`
+   - **Root Filesystem:**
+     - Size: `8192`, stored on `local-lvm`
+   - **Container IDs (CTIDs):**
+     - Starting from `4000` for the first container and incrementing sequentially up to `4009`.
+
+4. **In-Container Network Configuration:**
+   - **IP Addresses:** Static, starting from `192.168.200.30/24` for the first container, incrementing for subsequent containers.
+   - **Gateway:** `192.168.200.1`
+   - **DNS Server:** `192.168.202.2`
+
+5. **Initial Container Setup (to be executed inside each container after creation and start):**
+   - Run: `apt update`
+   - Install necessary packages:
+     - `sudo`
+     - `python3`
+     - `python3-apt`
+   - Add user `ans` to the `sudo` group with NOPASSWD permissions.
+
+6. **SSH Configuration:**
+   - Enable SSH access on port 22.
+   - Block SSH login for the `root` user.
+
+### Deliverables:
+Provide a script or series of commands to accomplish the above tasks on the Proxmox host.
