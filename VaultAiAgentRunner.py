@@ -647,9 +647,10 @@ class VaultAIAgentRunner:
                     self.context = [
                         original_system_prompt,
                         original_user_goal,
-                        {"role": "assistant", "content": f"Task previously finished with summary: {self.summary}"},
-                        {"role": "user", "content": new_instruction}
+                        {"role": "assistant", "content": f"Previous task completed successfully. Summary: {self.summary}"},
+                        {"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"}
                     ]
+
                     self.steps = []
                     self.summary = ""
                     # Continue the while loop
