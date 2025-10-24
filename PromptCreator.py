@@ -1,6 +1,6 @@
 from term_ag import term_agent, PIPBOY_ASCII
 from rich.console import Console
-from prompt_toolkit import prompt
+
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.formatted_text import HTML
 import json
@@ -112,29 +112,27 @@ class PromptCreator:
                     reply_json = json.loads(ai_reply)
                     prompt_draft = reply_json.get("prompt_draft")
                     question = reply_json.get("question")
-                    if prompt_draft:
+                    if prompt_draft and question is not None:
                         self.console.print("Current prompt draft:")
                         self.console.print(prompt_draft)
                     if question is None or question == "" or str(question).lower() == "null":
-                        self.console.print("Prompt is ready!")
-                        self.console.print_json(data=prompt_draft)
-                        # Acceptance with Enter (single-line prompt)
-                        add_more = prompt(HTML("Do you want to add anything else to the prompt? (y/n): "))
+                        self.console.print("Final prompt:")
+                        self.console.print(prompt_draft)
+                        # Acceptance with Ctrl+S (using session)
+                        add_more = self.session.prompt(HTML("\nPress Ctrl+S to submit\nDo you want to add anything else to the prompt? (y/n): "))
                         if add_more.strip().lower() == 'y':
-                            user_extra = self.session.prompt(HTML("Add your extra details and press Ctrl+S to start!n\nlocal>"))
+                            user_extra = self.session.prompt(HTML("\nPress Ctrl+S to submit\nAdd your extra details\nlocal>"))
                             self.prompt_history.append({"user": user_extra})
                             current_prompt += "\n" + user_extra
                             continue
                         else:
                             self.final_prompt = prompt_draft
-                            self.console.print("Final prompt:")
-                            self.console.print_json(data=self.final_prompt)
                             self.save_prompt_option()
                             break
                     else:
-                        self.console.print(f"AI asks: {question}")
-                        # Acceptance with Enter (single-line prompt)
-                        user_answer = prompt(HTML("Your answer: "))
+                        self.console.print(f"\nAI asks: {question}")
+                        # Acceptance with Ctrl+S (using session)
+                        user_answer = self.session.prompt(HTML("\nPress Ctrl+S to submit\nYour answer: "))
                         self.prompt_history.append({"ai": ai_reply, "user": user_answer})
                         current_prompt += "\n" + user_answer
                 except json.JSONDecodeError:
@@ -183,9 +181,9 @@ class PromptCreator:
         """
         Offer to save the final prompt to a file.
         """
-        save_option = prompt(HTML("Do you want to save the prompt to a file? (y/n): "))
+        save_option = self.session.prompt(HTML("Press Ctrl+S to submit\nDo you want to save the prompt to a file? (y/n): "))
         if save_option.strip().lower() == 'y':
-            filename = prompt(HTML("Enter filename (e.g., prompt.txt): "))
+            filename = self.session.prompt(HTML("Press Ctrl+S to submit\nEnter filename (e.g., prompt.txt): "))
             if not filename.strip():
                 filename = "prompt.txt"
             try:
