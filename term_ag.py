@@ -594,6 +594,7 @@ def main():
     agent.console.print(f"{agent.print_vault_tip()}\n")
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
+    agent.console.print("Mode: Linux Terminal AI Agent.") 
     agent.console.print(f"Your local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     
     if ai_status:
