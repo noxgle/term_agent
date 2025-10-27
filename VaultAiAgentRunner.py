@@ -347,10 +347,10 @@ class VaultAIAgentRunner:
 
                             confirm = input(f"{confirm_prompt_text}").lower().strip()
                             if confirm != 'y':
-                                terminal.print_console("Command execution cancelled by user. Stopping agent.")
-                                self.summary = "Agent stopped: Command execution cancelled by user."
-                                agent_should_stop_this_turn = True
-                                break
+                                justification = input("Provide justification for refusing the command: ").strip()
+                                terminal.print_console(f"Command refused by user. Justification: {justification}\n")
+                                self.context.append({"role": "user", "content": f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?"})
+                                continue
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
                         out, code = "", 1
