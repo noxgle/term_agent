@@ -391,8 +391,8 @@ class VaultAIAgentRunner:
                         if not agent_should_stop_this_turn:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                                 user_feedback_content += "\nI will now proceed to the next action you provided."
-                            else: 
-                                user_feedback_content += "\nWhat is the next step?"
+                            # else: 
+                            #     user_feedback_content += "\nWhat is the next step?"
                         
                         self.context.append({"role": "user", "content": user_feedback_content})
 
@@ -630,7 +630,7 @@ class VaultAIAgentRunner:
             if task_finished_successfully:
                 continue_choice = input("\nDo you want continue this thread? [y/N]: ").lower().strip()
                 if continue_choice == 'y':
-                    terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!\n")
+                    terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!")
                     user_input= prompt(
                         f"{self.input_text}> ", 
                         multiline=True,
