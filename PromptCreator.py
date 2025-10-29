@@ -1,5 +1,6 @@
 from term_ag import term_agent, PIPBOY_ASCII
 from rich.console import Console
+from rich.markup import escape
 
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -139,7 +140,7 @@ class PromptCreator:
                     self.console.print(f"[red]Error: Invalid JSON response from AI: {ai_reply}[/]")
                     break
                 except Exception as e:
-                    self.console.print(f"[red]Unexpected error: {e}[/]")
+                    self.console.print("[red]Unexpected error:", e, "[/]")
                     break
             if iteration_count >= MAX_ITERATIONS:
                 self.console.print("[red]Maximum iterations reached. Prompt creation stopped.[/]")
@@ -191,7 +192,7 @@ class PromptCreator:
                     f.write(self.final_prompt)
                 self.console.print(f"[green]Prompt saved to {filename}[/]")
             except Exception as e:
-                self.console.print(f"[red]Error saving prompt: {e}[/]")
+                self.console.print("[red]Error saving prompt:", e, "[/]")
 
 if __name__ == "__main__":
     creator = PromptCreator(prompt_for_agent=True)

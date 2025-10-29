@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
 from rich.console import Console
+from rich.markup import escape
 from VaultAiAgentRunner import VaultAIAgentRunner
 import pexpect
 import re
@@ -412,10 +413,7 @@ class term_agent:
                 return 1, '', str(e)
 
     def print_console(self, text,color=None):
-        if color:
-            self.console.print(f"[{color}]{text}[/]")
-        else:
-            self.console.print(text)
+        self.console.print(text, style=color, markup=False)
 
     def execute_local(self, command, timeout=None):
         """
@@ -571,7 +569,7 @@ class term_agent:
             with open(clean_path, 'r') as file:
                 return file.read().strip()
         except Exception as e:
-            self.print_console(f"[Vault 3000] ERROR Could not load goal from file '{filepath}': {e}")
+            self.print_console(f"[Vault 3000] ERROR Could not load goal from file '{escape(filepath)}': {escape(str(e))}")
             sys.exit(1)
 
     def process_input(self, text):
@@ -622,9 +620,9 @@ def main():
                         subprocess.run(["ssh-copy-id", remote], check=True)
                         agent.console.print(f"[green][Vault 3000] Passwordless SSH login set up successfully.[/]")
                     except subprocess.CalledProcessError as e:
-                        agent.console.print(f"[red][Vault 3000] ERROR: ssh-copy-id failed: {e}[/]")
+                        agent.console.print(f"[Vault 3000] ERROR: ssh-copy-id failed: {e}", style="red", markup=False)
                     except Exception as e:
-                        agent.console.print(f"[red][Vault 3000] ERROR: Unexpected error during ssh-copy-id: {e}[/]")
+                        agent.console.print(f"[Vault 3000] ERROR: Unexpected error during ssh-copy-id: {e}", style="red", markup=False)
             if returncode != 0:
                 agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
                 agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
@@ -635,7 +633,7 @@ def main():
             agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
             sys.exit(1)
         except Exception as e:
-            agent.console.print(f"[red][Vault 3000] ERROR: SSH connection to {remote} failed: {e}[/]")
+            agent.console.print(f"[Vault 3000] ERROR: SSH connection to {remote} failed: {e}", style="red", markup=False)
             sys.exit(1)
 
         agent.console.print(f"Your remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
@@ -676,7 +674,7 @@ def main():
         agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
         sys.exit(1)
     except Exception as e:
-        agent.console.print(f"[red][Vault 3000] ERROR: Unexpected error: {e}[/]")
+        agent.console.print(f"[Vault 3000] ERROR: Unexpected error: {e}", style="red", markup=False)
         sys.exit(1)
 
 if __name__ == "__main__":
