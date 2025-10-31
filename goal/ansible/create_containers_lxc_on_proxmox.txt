@@ -7,7 +7,7 @@ configured for Ansible management.
     - Debian 12 (LXC), using the `debian-12-standard` template.
 
 2.  **Container Specifications:**
-    - **Total Containers:** 10
+    - **Total Containers:** 3
     - **Root User:**
       - Login: `root`
       - Password: `123456`
@@ -16,7 +16,7 @@ configured for Ansible management.
       - Password: `123456`
     - **Network Bridge:** `vmbr0`
     - **Hostnames:** 
-      - From `ansible-base-template-01` to `ansible-base-template-10`.
+      - From `ansible-base-template-01` to `ansible-base-template-03`.
 
 3.  **LXC Configuration (`pct create` parameters):**
     - Unprivileged Container: `--unprivileged 1`
@@ -48,6 +48,6 @@ configured for Ansible management.
 
 ### Deliverables:
 Provide a script or series of commands to accomplish the above tasks on the Proxmox host.
-Include a final verification step to confirm that all 10 containers are successfully created, are running, and have their expected CTIDs and hostnames. Specifically, use the `pct list` command to verify the 
+Include a final verification step to confirm that all 3 containers are successfully created, are running, and have their expected CTIDs and hostnames. Specifically, use the `pct list` command to verify the 
 presence, running status, and correct CTIDs and names for containers `4000` through `4009` named `ansible-base-template-01` through `ansible-base-template-10` respectively. Additionally, perform network 
 reachability checks (e.g., using `ping`) to confirm that each container's assigned static IP address (`192.168.200.30` through `192.168.200.39`) is accessible from the Proxmox host.
