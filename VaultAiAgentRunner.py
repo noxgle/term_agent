@@ -67,9 +67,16 @@ class VaultAIAgentRunner:
             self.system_prompt_agent = system_prompt_agent
 
         self.terminal = terminal
+        # Use the provided terminal logger for consistent logging across the app
+        try:
+            self.logger = terminal.logger
+        except Exception:
+            import logging
+            self.logger = logging.getLogger("VaultAIAgentRunner")
+
         self.user = user
         self.host = host
-        self.window_size=window_size
+        self.window_size = window_size
 
         if self.user == "root":
             self.system_prompt_agent = f"{self.system_prompt_agent} You dont need sudo, you are root."
@@ -84,12 +91,22 @@ class VaultAIAgentRunner:
         self.summary = ""
 
     def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
+        # Log entry into retry helper
+        try:
+            self.logger.debug("_get_ai_reply_with_retry called; retries=%s", retries)
+        except Exception:
+            pass
+
         if retries == 0:
             attempt = 0
             while True:
                 attempt += 1
                 ai_reply = None
                 try:
+                    try:
+                        self.logger.debug("Contacting AI (attempt %s). Engine=%s", attempt, getattr(terminal, 'ai_engine', None))
+                    except Exception:
+                        pass
                     if terminal.ai_engine == "ollama":
                         ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
                     elif terminal.ai_engine == "google":
@@ -102,18 +119,34 @@ class VaultAIAgentRunner:
                         return None
 
                     if ai_reply and "503" not in ai_reply:
+                        try:
+                            self.logger.debug("Received AI reply (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
+                        except Exception:
+                            pass
                         return ai_reply
                     else:
                         terminal.print_console(f"AI returned an error or empty response (Attempt {attempt}). Retrying in {delay}s...")
+                        try:
+                            self.logger.warning("AI returned empty/error response on attempt %s", attempt)
+                        except Exception:
+                            pass
                         time.sleep(delay)
 
                 except Exception as e:
                     terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt}): {e}. Retrying in {delay}s...")
+                    try:
+                        self.logger.exception("Exception while contacting AI on attempt %s: %s", attempt, e)
+                    except Exception:
+                        pass
                     time.sleep(delay)
         else:
             for attempt in range(retries):
                 ai_reply = None
                 try:
+                    try:
+                        self.logger.debug("Contacting AI (retry attempt %s/%s). Engine=%s", attempt + 1, retries, getattr(terminal, 'ai_engine', None))
+                    except Exception:
+                        pass
                     if terminal.ai_engine == "ollama":
                         ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
                     elif terminal.ai_engine == "google":
@@ -126,13 +159,25 @@ class VaultAIAgentRunner:
                         return None
 
                     if ai_reply and "503" not in ai_reply:
+                        try:
+                            self.logger.debug("Received AI reply on retry (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
+                        except Exception:
+                            pass
                         return ai_reply
                     else:
                         terminal.print_console(f"AI returned an error or empty response (Attempt {attempt + 1}/{retries}). Retrying in {delay}s...")
+                        try:
+                            self.logger.warning("AI returned empty/error response on retry %s/%s", attempt + 1, retries)
+                        except Exception:
+                            pass
                         time.sleep(delay)
 
                 except Exception as e:
                     terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s...")
+                    try:
+                        self.logger.exception("Exception while contacting AI on retry %s/%s: %s", attempt + 1, retries, e)
+                    except Exception:
+                        pass
                     time.sleep(delay)
             
             terminal.print_console("Failed to get a valid response from AI after multiple retries.")
@@ -171,6 +216,11 @@ class VaultAIAgentRunner:
             # If there is anything to summarize, create one system summary message
             if messages_to_summarize:
                 try:
+                    # Log summarization activity
+                    try:
+                        self.logger.debug("Summarizing %s older messages into one summary.", len(messages_to_summarize))
+                    except Exception:
+                        pass
                     summary_text = self._summarize(messages_to_summarize)
                     summary_message = {
                         "role": "system",
@@ -179,6 +229,10 @@ class VaultAIAgentRunner:
                     working.append(summary_message)
                 except Exception:
                     # If summarization fails for any reason, append a short fallback note
+                    try:
+                        self.logger.exception("Failed to summarize older messages.")
+                    except Exception:
+                        pass
                     working.append({
                         "role": "system",
                         "content": "[Summary of earlier conversation could not be generated.]"
@@ -195,6 +249,10 @@ class VaultAIAgentRunner:
                 working.append(state_message)
         except Exception:
             # If serializing state fails, include a basic representation
+            try:
+                self.logger.exception("Failed to serialize agent state for context injection.")
+            except Exception:
+                pass
             working.append({"role": "system", "content": f"Current agent state: {str(self.state)}"})
 
         return working
@@ -218,6 +276,12 @@ class VaultAIAgentRunner:
         Returns:
             str: concise multi-line summary.
         """
+        # Log summarization request
+        try:
+            self.logger.debug("_summarize called for %s messages", len(messages))
+        except Exception:
+            pass
+
         # Build a compact textual representation of the messages
         joined = []
         for m in messages:
@@ -238,6 +302,7 @@ class VaultAIAgentRunner:
         )
 
         try:
+            self.logger.debug("Attempting AI summarization via _get_ai_reply_with_retry")
             ai_reply = self._get_ai_reply_with_retry(self.terminal, summarizer_system, prompt_text, retries=1)
             if ai_reply:
                 # If AI returns a JSON-wrapped or fenced block, strip fences
@@ -245,10 +310,17 @@ class VaultAIAgentRunner:
                 # Remove markdown code fences if present
                 ai_reply = re.sub(r'```\w*', '', ai_reply)
                 ai_reply = ai_reply.replace('```', '').strip()
+                try:
+                    self.logger.debug("AI summarization succeeded (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
+                except Exception:
+                    pass
                 return ai_reply
         except Exception:
             # fall through to heuristic
-            pass
+            try:
+                self.logger.exception("AI summarization attempt failed, falling back to heuristic summarization.")
+            except Exception:
+                pass
 
         # Fallback heuristic summarization: simple extraction by keywords
         completed = []
@@ -281,11 +353,20 @@ class VaultAIAgentRunner:
         terminal = self.terminal
         keep_running = True
 
+        try:
+            self.logger.info("Starting VaultAIAgentRunner.run for goal: %s", self.user_goal)
+        except Exception:
+            pass
+
         while keep_running:
             task_finished_successfully = False
             agent_should_stop_this_turn = False
 
             for step_count in range(100):  # Limit steps to avoid infinite loops
+                try:
+                    self.logger.debug("Step %s starting; current context len=%s", step_count, len(self.context))
+                except Exception:
+                    pass
                 window_context = self._sliding_window_context()
 
                 prompt_text_parts = []
@@ -296,6 +377,11 @@ class VaultAIAgentRunner:
                 prompt_text = "\n".join(prompt_text_parts)
 
                 ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, prompt_text)
+
+                try:
+                    self.logger.debug("AI reply received (nil? %s)", ai_reply is None)
+                except Exception:
+                    pass
 
                 if ai_reply is None:
                     self.summary = "Agent stopped: Failed to get response from AI after multiple retries."
@@ -325,6 +411,10 @@ class VaultAIAgentRunner:
                     except json.JSONDecodeError as e:
                         terminal.print_console(f"AI did not return valid JSON (attempt 1): {e}. Asking for correction...")
                         terminal.logger.warning(f"Invalid JSON from AI (attempt 1): {ai_reply}")
+                        try:
+                            self.logger.warning("JSON decode error from AI on attempt 1: %s", e)
+                        except Exception:
+                            pass
                         self.context.append({"role": "assistant", "content": ai_reply})
                         
                         correction_prompt_content = (
@@ -362,6 +452,10 @@ class VaultAIAgentRunner:
                                     terminal.logger.debug("Successfully parsed corrected JSON from full reply.")
                                 
                                 terminal.print_console("Successfully parsed corrected JSON.")
+                                try:
+                                    self.logger.debug("Successfully parsed corrected JSON for assistant reply.")
+                                except Exception:
+                                    pass
                                 self.context.pop()  # Remove user's correction request
                                 self.context.pop()  # Remove assistant's failed reply
                                 ai_reply_json_string = corrected_ai_reply_string # This is now the primary response string
@@ -376,12 +470,20 @@ class VaultAIAgentRunner:
                         else: # No corrected reply
                             terminal.print_console("AI did not provide a correction. Stopping agent.")
                             self.summary = "Agent stopped: AI did not respond to correction request."
+                            try:
+                                self.logger.error("AI did not respond with corrected JSON to correction request.")
+                            except Exception:
+                                pass
                             agent_should_stop_this_turn = True
                             break
                 
                 if data is None:
                     terminal.print_console("Internal error: JSON data is None after parsing attempts. Stopping agent.")
                     self.summary = "Agent stopped: Internal error during JSON parsing."
+                    try:
+                        self.logger.error("Data is None after parsing attempts. ai_reply=%s", ai_reply)
+                    except Exception:
+                        pass
                     if ai_reply and not ai_reply_json_string and not corrected_ai_reply_string: # If original reply exists but wasn't parsed
                         self.context.append({"role": "assistant", "content": ai_reply})
                         self.context.append({"role": "user", "content": "Your response could not be parsed as JSON and no correction was successful. Stopping."})
@@ -424,6 +526,10 @@ class VaultAIAgentRunner:
                         self.summary = summary_text
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
+                        try:
+                            self.logger.info("Agent signaled finish with summary: %s", summary_text)
+                        except Exception:
+                            pass
                         break 
                     
                     elif tool == "bash":
@@ -452,6 +558,10 @@ class VaultAIAgentRunner:
                                 continue
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
+                        try:
+                            self.logger.info("Executing bash command: %s", command)
+                        except Exception:
+                            pass
                         out, code = "", 1
                         if self.terminal.ssh_connection:
                             remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
@@ -462,6 +572,10 @@ class VaultAIAgentRunner:
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
                         terminal.print_console(f"Result (code {code}):\n{out}")
+                        try:
+                            self.logger.debug("Command result: code=%s, out_len=%s", code, len(out) if isinstance(out, str) else 0)
+                        except Exception:
+                            pass
 
                         # Check for SSH connection error (code 255)
                         # Note: code 255 may also occur due to remote command failures or traps,
