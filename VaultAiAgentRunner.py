@@ -5,6 +5,7 @@ import tempfile
 import shutil
 import subprocess
 import time
+import uuid
 from prompt_toolkit import prompt
 
 class VaultAIAgentRunner:
@@ -89,6 +90,8 @@ class VaultAIAgentRunner:
         ]
         self.steps = []
         self.summary = ""
+        # Keep a history of assistant responses mapped to request IDs for tracing
+        self.request_history = []
 
     def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
         # Log entry into retry helper
@@ -364,7 +367,9 @@ class VaultAIAgentRunner:
 
             for step_count in range(100):  # Limit steps to avoid infinite loops
                 try:
-                    self.logger.debug("Step %s starting; current context len=%s", step_count, len(self.context))
+                    # Generate a unique request id for this step to trace the flow
+                    request_id = uuid.uuid4().hex
+                    self.logger.debug("Step %s starting; request_id=%s; current context len=%s", step_count, request_id, len(self.context))
                 except Exception:
                     pass
                 window_context = self._sliding_window_context()
@@ -379,7 +384,7 @@ class VaultAIAgentRunner:
                 ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, prompt_text)
 
                 try:
-                    self.logger.debug("AI reply received (nil? %s)", ai_reply is None)
+                    self.logger.debug("AI reply received (nil? %s) request_id=%s", ai_reply is None, request_id)
                 except Exception:
                     pass
 
@@ -410,9 +415,9 @@ class VaultAIAgentRunner:
                     
                     except json.JSONDecodeError as e:
                         terminal.print_console(f"AI did not return valid JSON (attempt 1): {e}. Asking for correction...")
-                        terminal.logger.warning(f"Invalid JSON from AI (attempt 1): {ai_reply}")
+                        terminal.logger.warning("Invalid JSON from AI (attempt 1): %s; request_id=%s", ai_reply, request_id)
                         try:
-                            self.logger.warning("JSON decode error from AI on attempt 1: %s", e)
+                            self.logger.warning("JSON decode error from AI on attempt 1: %s; request_id=%s", e, request_id)
                         except Exception:
                             pass
                         self.context.append({"role": "assistant", "content": ai_reply})
@@ -453,7 +458,7 @@ class VaultAIAgentRunner:
                                 
                                 terminal.print_console("Successfully parsed corrected JSON.")
                                 try:
-                                    self.logger.debug("Successfully parsed corrected JSON for assistant reply.")
+                                    self.logger.debug("Successfully parsed corrected JSON for assistant reply. request_id=%s", request_id)
                                 except Exception:
                                     pass
                                 self.context.pop()  # Remove user's correction request
@@ -471,7 +476,7 @@ class VaultAIAgentRunner:
                             terminal.print_console("AI did not provide a correction. Stopping agent.")
                             self.summary = "Agent stopped: AI did not respond to correction request."
                             try:
-                                self.logger.error("AI did not respond with corrected JSON to correction request.")
+                                self.logger.error("AI did not respond with corrected JSON to correction request. request_id=%s", request_id)
                             except Exception:
                                 pass
                             agent_should_stop_this_turn = True
@@ -492,6 +497,15 @@ class VaultAIAgentRunner:
 
                 if ai_reply_json_string: # This is the string of the successfully parsed JSON (original or corrected)
                     self.context.append({"role": "assistant", "content": ai_reply_json_string})
+                    # Record the assistant response with the request id for tracing
+                    try:
+                        self.request_history.append({"request_id": request_id, "step": step_count, "assistant_json": ai_reply_json_string})
+                        self.logger.debug("Recorded assistant response in request_history; request_id=%s", request_id)
+                    except Exception:
+                        try:
+                            self.logger.exception("Failed to record request_history for request_id=%s", request_id)
+                        except Exception:
+                            pass
                 else:
                     terminal.logger.error("Logic error: data is not None, but no JSON string was stored for context.")
                     self.summary = "Agent stopped: Internal logic error in response handling for context."
@@ -527,7 +541,8 @@ class VaultAIAgentRunner:
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
                         try:
-                            self.logger.info("Agent signaled finish with summary: %s", summary_text)
+                            # Log finish along with the request id for traceability
+                            self.logger.info("Agent signaled finish with summary: %s; request_id=%s", summary_text, request_id)
                         except Exception:
                             pass
                         break 
@@ -559,7 +574,7 @@ class VaultAIAgentRunner:
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
                         try:
-                            self.logger.info("Executing bash command: %s", command)
+                            self.logger.info("Executing bash command: %s; request_id=%s", command, request_id)
                         except Exception:
                             pass
                         out, code = "", 1
@@ -573,7 +588,7 @@ class VaultAIAgentRunner:
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
                         terminal.print_console(f"Result (code {code}):\n{out}")
                         try:
-                            self.logger.debug("Command result: code=%s, out_len=%s", code, len(out) if isinstance(out, str) else 0)
+                            self.logger.debug("Command result: code=%s, out_len=%s; request_id=%s", code, len(out) if isinstance(out, str) else 0, request_id)
                         except Exception:
                             pass
 
