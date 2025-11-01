@@ -40,7 +40,7 @@ class VaultAIAgentRunner:
                 "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                 "Your first task is to analyze the user's goal and decide what to do next. "
                 "For each step, always reply in JSON: "
-                "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds} "
+                "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
                 "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
@@ -550,6 +550,7 @@ class VaultAIAgentRunner:
                     elif tool == "bash":
                         command = action_item.get("command")
                         timeout = action_item.get("timeout")
+                        explain = action_item.get("explain", "")
                         if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
                             terminal.print_console(f"Invalid timeout value in bash action: {timeout}. Must be a positive number. Skipping.")
                             self.context.append({"role": "user", "content": f"You provided an invalid timeout: {timeout} in {action_item}. Timeout must be a positive number. I am skipping it."})
@@ -560,10 +561,10 @@ class VaultAIAgentRunner:
                             continue
 
                         if not terminal.auto_accept:
-
-                            confirm_prompt_text = f"ValutAI> '{command}'. Execute? [y/N]: "
-                            if len(actions_to_process) > 1:
-                                confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
+                            if explain:
+                                confirm_prompt_text = f"ValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
+                            else:
+                                confirm_prompt_text = f"ValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
 
                             confirm = input(f"{confirm_prompt_text}").lower().strip()
                             if confirm != 'y':
