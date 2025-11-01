@@ -860,24 +860,17 @@ class VaultAIAgentRunner:
                 if continue_choice == 'y':
                     terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!")
                     user_input= prompt(
-                        f"{self.input_text}> ", 
+                        f"{self.input_text}> ",
                         multiline=True,
                         prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
                         enable_system_prompt=True,
                         key_bindings=terminal.create_keybindings()
                     )
                     new_instruction = terminal.process_input(user_input)
-                    
-                    # Partially reset context
-                    original_system_prompt = self.context[0]
-                    original_user_goal = self.context[1]
-                    
-                    self.context = [
-                        original_system_prompt,
-                        original_user_goal,
-                        {"role": "assistant", "content": f"Previous task completed successfully. Summary: {self.summary}"},
-                        {"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"}
-                    ]
+
+                    # Append to existing context instead of resetting to preserve conversation history
+                    self.context.append({"role": "assistant", "content": f"Previous task completed successfully. Summary: {self.summary}"})
+                    self.context.append({"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"})
 
                     self.steps = []
                     self.summary = ""
