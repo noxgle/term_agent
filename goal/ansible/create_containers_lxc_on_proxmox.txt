@@ -1,49 +1,53 @@
-You are an expert in Proxmox and an Ansible automation specialist. Your objective is to create a Debian LXC container and subsequently clone it nine times on a Proxmox host. Ensure that all containers are configured for Ansible management.
+ou are an expert in Proxmox and an Ansible automation specialist. Your objective is to create a Debian LXC container and subsequently clone it nine times on a Proxmox host. Ensure that all containers are 
+configured for Ansible management.
 
 ### Configuration Details:
 
-1. **Operating System:** 
-   - Debian 12 (LXC), using the `debian-12-standard` template.
+1.  **Operating System:** 
+    - Debian 12 (LXC), using the `debian-12-standard` template.
 
-2. **Container Specifications:**
-   - **Total Containers:** 10
-   - **Root User:**
-     - Login: `root`
-     - Password: `123456`
-   - **Ansible User:**
-     - Login: `ans`
-     - Password: `123456`
-   - **Network Bridge:** `vmbr0`
-   - **Hostnames:** 
-     - From `ansible-base-template-01` to `ansible-base-template-10`.
+2.  **Container Specifications:**
+    - **Total Containers:** 3
+    - **Root User:**
+      - Login: `root`
+      - Password: `123456`
+    - **Ansible User:**
+      - Login: `ans`
+      - Password: `123456`
+    - **Network Bridge:** `vmbr0`
+    - **Hostnames:** 
+      - From `ansible-base-template-01` to `ansible-base-template-03`.
 
-3. **LXC Configuration (`pct create` parameters):**
-   - Unprivileged Container: `--unprivileged 1`
-   - CPU Cores: `--cores 1`
-   - RAM Memory: `--memory 512` (MB)
-   - Autostart: `--start 1`
-   - Network Interface: `net0 name=eth0,bridge=vmbr0`
-   - **Root Filesystem:**
-     - Size: `8192`, stored on `local-lvm`
-   - **Container IDs (CTIDs):**
-     - Starting from `4000` for the first container and incrementing sequentially up to `4009`.
+3.  **LXC Configuration (`pct create` parameters):**
+    - Unprivileged Container: `--unprivileged 1`
+    - CPU Cores: `--cores 1`
+    - RAM Memory: `--memory 512` (MB)
+    - Autostart: `--start 1`
+    - Network Interface: `net0 name=eth0,bridge=vmbr0`
+    - **Root Filesystem:**
+      - Size: `8192`, stored on `local-lvm`
+    - **Container IDs (CTIDs):**
+      - Starting from `4000` for the first container and incrementing sequentially up to `4009`.
 
-4. **In-Container Network Configuration:**
-   - **IP Addresses:** Static, starting from `192.168.200.30/24` for the first container, incrementing for subsequent containers.
-   - **Gateway:** `192.168.200.1`
-   - **DNS Server:** `192.168.202.2`
+4.  **In-Container Network Configuration:**
+    - **IP Addresses:** Static, starting from `192.168.200.30/24` for the first container, incrementing for subsequent containers.
+    - **Gateway:** `192.168.200.1`
+    - **DNS Server:** `192.168.202.2`
 
-5. **Initial Container Setup (to be executed inside each container after creation and start):**
-   - Run: `apt update`
-   - Install necessary packages:
-     - `sudo`
-     - `python3`
-     - `python3-apt`
-   - Add user `ans` to the `sudo` group with NOPASSWD permissions.
+5.  **Initial Container Setup (to be executed inside each container after creation and start):**
+    - Run: `apt update`
+    - Install necessary packages:
+      - `sudo`
+      - `python3`
+      - `python3-apt`
+    - Add user `ans` to the `sudo` group with NOPASSWD permissions.
 
-6. **SSH Configuration:**
-   - Enable SSH access on port 22.
-   - Block SSH login for the `root` user.
+6.  **SSH Configuration:**
+    - Enable SSH access on port 22.
+    - Block SSH login for the `root` user.
 
 ### Deliverables:
 Provide a script or series of commands to accomplish the above tasks on the Proxmox host.
+Include a final verification step to confirm that all 3 containers are successfully created, are running, and have their expected CTIDs and hostnames. Specifically, use the `pct list` command to verify the 
+presence, running status, and correct CTIDs and names for containers `4000` through `4009` named `ansible-base-template-01` through `ansible-base-template-10` respectively. Additionally, perform network 
+reachability checks (e.g., using `ping`) to confirm that each container's assigned static IP address (`192.168.200.30` through `192.168.200.39`) is accessible from the Proxmox host.
