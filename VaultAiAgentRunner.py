@@ -93,6 +93,29 @@ class VaultAIAgentRunner:
         # Keep a history of assistant responses mapped to request IDs for tracing
         self.request_history = []
 
+    def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
+        """
+        Unified input helper that uses prompt_toolkit so Ctrl+S (configured in
+        the terminal keybindings) can be used to submit input consistently.
+
+        Returns the entered text (empty string on cancel/EOF).
+        """
+        try:
+            user_input = prompt(
+                prompt_text,
+                multiline=multiline,
+                prompt_continuation=(lambda width, line_number, is_soft_wrap: "... ") if multiline else None,
+                enable_system_prompt=True,
+                key_bindings=self.terminal.create_keybindings(),
+            )
+            return user_input
+        except (EOFError, KeyboardInterrupt):
+            try:
+                self.terminal.print_console("\nInput cancelled by user.")
+            except Exception:
+                pass
+            return ""
+
     def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
         # Log entry into retry helper
         try:
@@ -566,9 +589,9 @@ class VaultAIAgentRunner:
                             else:
                                 confirm_prompt_text = f"ValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
 
-                            confirm = input(f"{confirm_prompt_text}").lower().strip()
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = input("Provide justification for refusing the command: ").strip()
+                                justification = self._get_user_input("Provide justification for refusing the command: ", multiline=True).strip()
                                 terminal.print_console(f"Command refused by user. Justification: {justification}\n")
                                 self.context.append({"role": "user", "content": f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?"})
                                 continue
@@ -633,7 +656,7 @@ class VaultAIAgentRunner:
                             continue
                         
                         terminal.print_console(f"Agent asks: {question}")
-                        user_answer = input(f"Your answer: ")
+                        user_answer = self._get_user_input("Your answer: ", multiline=True)
                         self.context.append({"role": "user", "content": f"User answer to '{question}': {user_answer}"})
 
                         if not agent_should_stop_this_turn:
@@ -857,20 +880,14 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                continue_choice = input("\nDo you want continue this thread? [y/N]: ").lower().strip()
+                continue_choice = self._get_user_input("\nDo you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
                     terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!")
-                    user_input= prompt(
-                        f"{self.input_text}> ",
-                        multiline=True,
-                        prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
-                        enable_system_prompt=True,
-                        key_bindings=terminal.create_keybindings()
-                    )
+                    user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
                     # Append to existing context instead of resetting to preserve conversation history
-                    self.context.append({"role": "assistant", "content": f"Previous task completed successfully. Summary: {self.summary}"})
+                    self.context.append({"role": "assistant", "content": f"Previous task summary: {self.summary}"})
                     self.context.append({"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"})
 
                     self.steps = []
