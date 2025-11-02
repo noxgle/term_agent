@@ -109,12 +109,14 @@ class VaultAIAgentRunner:
                 key_bindings=self.terminal.create_keybindings(),
             )
             return user_input
-        except (EOFError, KeyboardInterrupt):
-            try:
-                self.terminal.print_console("\nInput cancelled by user.")
-            except Exception:
-                pass
-            return ""
+        # except (EOFError, KeyboardInterrupt):
+        #     try:
+        #         self.terminal.print_console("\nInput cancelled by user.")
+        #     except Exception:
+        #         pass
+        #     return ""
+        except Exception as e:
+            pass
 
     def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
         # Log entry into retry helper
@@ -559,7 +561,7 @@ class VaultAIAgentRunner:
 
                     if tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
-                        terminal.print_console(f"Agent finished its task. Summary: {summary_text}")
+                        terminal.print_console(f"\nValutAI> Agent finished its task.\nSummary: {summary_text}")
                         self.summary = summary_text
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
@@ -584,21 +586,21 @@ class VaultAIAgentRunner:
                             continue
 
                         if not terminal.auto_accept:
-                            if explain:
-                                confirm_prompt_text = f"ValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
+                            if self.terminal.auto_explain_command and explain:
+                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
                             else:
-                                confirm_prompt_text = f"ValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
+                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
 
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input("Provide justification for refusing the command: ", multiline=True).strip()
-                                terminal.print_console(f"Command refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the command and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Command refused by user. Justification: {justification}\n")
                                 self.context.append({"role": "user", "content": f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?"})
                                 continue
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
                         try:
-                            self.logger.info("Executing bash command: %s; request_id=%s", command, request_id)
+                            self.logger.info("\nValutAI> Executing bash command: %s; request_id=%s", command, request_id)
                         except Exception:
                             pass
                         out, code = "", 1
@@ -880,9 +882,9 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                continue_choice = self._get_user_input("\nDo you want continue this thread? [y/N]: ", multiline=False).lower().strip()
+                continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
-                    terminal.console.print("\nPrompt your next goal and press [cyan]Ctrl+S[/] to start!")
+                    terminal.console.print("\nValutAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
                     user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
