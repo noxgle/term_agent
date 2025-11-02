@@ -40,7 +40,7 @@ class VaultAIAgentRunner:
                 "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
                 "Your first task is to analyze the user's goal and decide what to do next. "
                 "For each step, always reply in JSON: "
-                "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds} "
+                "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
                 "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
@@ -92,6 +92,31 @@ class VaultAIAgentRunner:
         self.summary = ""
         # Keep a history of assistant responses mapped to request IDs for tracing
         self.request_history = []
+
+    def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
+        """
+        Unified input helper that uses prompt_toolkit so Ctrl+S (configured in
+        the terminal keybindings) can be used to submit input consistently.
+
+        Returns the entered text (empty string on cancel/EOF).
+        """
+        try:
+            user_input = prompt(
+                prompt_text,
+                multiline=multiline,
+                prompt_continuation=(lambda width, line_number, is_soft_wrap: "... ") if multiline else None,
+                enable_system_prompt=True,
+                key_bindings=self.terminal.create_keybindings(),
+            )
+            return user_input
+        # except (EOFError, KeyboardInterrupt):
+        #     try:
+        #         self.terminal.print_console("\nInput cancelled by user.")
+        #     except Exception:
+        #         pass
+        #     return ""
+        except Exception as e:
+            pass
 
     def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
         # Log entry into retry helper
@@ -536,7 +561,7 @@ class VaultAIAgentRunner:
 
                     if tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
-                        terminal.print_console(f"Agent finished its task. Summary: {summary_text}")
+                        terminal.print_console(f"\nValutAI> Agent finished its task.\nSummary: {summary_text}")
                         self.summary = summary_text
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
@@ -550,6 +575,7 @@ class VaultAIAgentRunner:
                     elif tool == "bash":
                         command = action_item.get("command")
                         timeout = action_item.get("timeout")
+                        explain = action_item.get("explain", "")
                         if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
                             terminal.print_console(f"Invalid timeout value in bash action: {timeout}. Must be a positive number. Skipping.")
                             self.context.append({"role": "user", "content": f"You provided an invalid timeout: {timeout} in {action_item}. Timeout must be a positive number. I am skipping it."})
@@ -560,21 +586,21 @@ class VaultAIAgentRunner:
                             continue
 
                         if not terminal.auto_accept:
+                            if self.terminal.auto_explain_command and explain:
+                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
+                            else:
+                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
 
-                            confirm_prompt_text = f"ValutAI> '{command}'. Execute? [y/N]: "
-                            if len(actions_to_process) > 1:
-                                confirm_prompt_text = f"Agent suggests action {action_item_idx + 1}/{len(actions_to_process)}: '{command}'. Execute? [y/N]: "
-
-                            confirm = input(f"{confirm_prompt_text}").lower().strip()
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = input("Provide justification for refusing the command: ").strip()
-                                terminal.print_console(f"Command refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the command and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Command refused by user. Justification: {justification}\n")
                                 self.context.append({"role": "user", "content": f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?"})
                                 continue
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
                         try:
-                            self.logger.info("Executing bash command: %s; request_id=%s", command, request_id)
+                            self.logger.info("\nValutAI> Executing bash command: %s; request_id=%s", command, request_id)
                         except Exception:
                             pass
                         out, code = "", 1
@@ -632,7 +658,7 @@ class VaultAIAgentRunner:
                             continue
                         
                         terminal.print_console(f"Agent asks: {question}")
-                        user_answer = input(f"Your answer: ")
+                        user_answer = self._get_user_input("Your answer: ", multiline=True)
                         self.context.append({"role": "user", "content": f"User answer to '{question}': {user_answer}"})
 
                         if not agent_should_stop_this_turn:
@@ -856,20 +882,14 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                continue_choice = input("\nDo you want continue this thread? [y/N]: ").lower().strip()
+                continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
-                    terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!")
-                    user_input= prompt(
-                        f"{self.input_text}> ",
-                        multiline=True,
-                        prompt_continuation=lambda width, line_number, is_soft_wrap: "... ",
-                        enable_system_prompt=True,
-                        key_bindings=terminal.create_keybindings()
-                    )
+                    terminal.console.print("\nValutAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
+                    user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
                     # Append to existing context instead of resetting to preserve conversation history
-                    self.context.append({"role": "assistant", "content": f"Previous task completed successfully. Summary: {self.summary}"})
+                    self.context.append({"role": "assistant", "content": f"Previous task summary: {self.summary}"})
                     self.context.append({"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"})
 
                     self.steps = []

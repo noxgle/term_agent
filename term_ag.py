@@ -135,6 +135,7 @@ class term_agent:
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
+        self.auto_explain_command = True if os.getenv("AUTO_EXPLAIN_COMMAND", "false").lower() == "true" else False
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
         self.ssh_password = None
@@ -557,8 +558,7 @@ class term_agent:
         
         @kb.add('c-s')
         def _(event):
-            event.current_buffer.validate_and_handle()
-        
+            event.current_buffer.validate_and_handle()        
         return kb
 
     def load_data_from_file(self, filepath):
@@ -596,9 +596,9 @@ def main():
     agent.console.print(f"Your local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     
     if ai_status:
-        agent.console.print(f"""ValutAI: {ai_model} is online.\n""")
+        agent.console.print(f"""Model: {ai_model} is online.\n""")
     else:
-        agent.console.print("[red]AgentAI: is offline.[/]\n")
+        agent.console.print("[red]Model: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
 
@@ -637,7 +637,7 @@ def main():
             sys.exit(1)
 
         agent.console.print(f"Your remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
-        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
         input_text = f"{user}@{host}" if user else host
     else:
         remote = None
@@ -648,7 +648,7 @@ def main():
         agent.user = None
         agent.host = None
         input_text = "local"
-        agent.console.print("What can I do for you today? Prompt your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("ValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
     
     try:
         user_input = prompt(
