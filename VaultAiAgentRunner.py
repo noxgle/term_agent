@@ -882,7 +882,7 @@ class VaultAIAgentRunner:
             if task_finished_successfully:
                 continue_choice = self._get_user_input("\nDo you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
-                    terminal.console.print("\nPrompt your text and press [cyan]Ctrl+S[/] to start!")
+                    terminal.console.print("\nPrompt your next goal and press [cyan]Ctrl+S[/] to start!")
                     user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
