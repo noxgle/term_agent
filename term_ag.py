@@ -689,6 +689,7 @@ Controls:
     runner = VaultAIAgentRunner(agent, user_input_text, user=user, host=host)
     try:
         runner.run()
+        agent.console.print(f"\n{agent.maybe_print_finding()}")
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
         sys.exit(1)
