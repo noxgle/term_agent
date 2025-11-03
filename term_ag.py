@@ -593,10 +593,10 @@ def main():
     ai_status, mode_owner, ai_model = agent.check_ai_online()    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print("Mode: Linux Terminal AI Agent.") 
-    agent.console.print(f"Your local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
+    agent.console.print(f"Local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     
     if ai_status:
-        agent.console.print(f"""Model: {ai_model} is online.\n""")
+        agent.console.print(f"""Model: {ai_model} is online.""")
     else:
         agent.console.print("[red]Model: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
@@ -636,8 +636,8 @@ def main():
             agent.console.print(f"[Vault 3000] ERROR: SSH connection to {remote} failed: {e}", style="red", markup=False)
             sys.exit(1)
 
-        agent.console.print(f"Your remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
-        agent.console.print("What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print(f"Remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
+        agent.console.print("\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
         input_text = f"{user}@{host}" if user else host
     else:
         remote = None
@@ -648,7 +648,7 @@ def main():
         agent.user = None
         agent.host = None
         input_text = "local"
-        agent.console.print("ValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
     
     try:
         user_input = prompt(
