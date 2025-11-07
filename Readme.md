@@ -131,24 +131,39 @@ Copy `.env.copy` to `.env` and paste your API key(s).
 
 Example `.env` file:
 ```
-AI_ENGINE=openai
-OPENAI_API_KEY=sk-...
+# engine options: openai, ollama, google
+AI_ENGINE=ollama
+
+# openai configuration
+OPENAI_API_KEY=openai_api_key_here
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.5
 OPENAI_MAX_TOKENS=1000
 
-GOOGLE_API_KEY=...
-GOOGLE_MODEL=gemini-2.0-flash
-
-OLLAMA_URL=http://localhost:11434/api/chat
-OLLAMA_MODEL=granite3.3:8b
+# ollama configuration
+# granite3.3:8b,gemma3.3:12b,cogito:8b,qwen3:8b
+OLLAMA_URL=http://192.168.200.202:11434/api/generate
+OLLAMA_MODEL=cogito:8b
 OLLAMA_TEMPERATURE=0.5
 
-SSH_REMOTE_TIMEOUT=360
-AUTO_ACCEPT=false
+# google configuration
+# gemini-2.5-pro-exp-03-25,gemini-2.0-flash
+GOOGLE_MODEL=gemini-2.5-flash-preview-05-20
+GOOGLE_API_KEY=google_api_key_here
 
+# local timeout in seconds for command execution, 0 means no timeout
+LOCAL_COMMAND_TIMEOUT=300
+# remote ssh timeout in seconds for command execution, 0 means no timeout
+SSH_REMOTE_TIMEOUT=300
+# auto accept commands without confirmation
+AUTO_ACCEPT=false
+# auto explain generated commands before execution
+AUTO_EXPLAIN_COMMAND=true
+
+ # logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO
-LOG_TO_CONSOLE=true
+LOG_FILE=app.log
+LOG_TO_CONSOLE=false
 ```
 
 ## Usage
