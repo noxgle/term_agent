@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import random
+import argparse
 from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
@@ -587,14 +588,32 @@ class term_agent:
         return ' '.join(result)    
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Vault 3000 - Linux Terminal AI Agent",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Usage:
+  term_ag.py                    # Run locally
+  term_ag.py user@host          # Run remotely via SSH
+  term_ag.py --help             # Show this help message
+
+Controls:
+  Ctrl+S    Submit input
+  Ctrl+C    Exit program
+        """
+    )
+    parser.add_argument('remote', nargs='?', help='Remote host in format user@host (optional)')
+
+    args = parser.parse_args()
+
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
     agent.console.print(f"{agent.print_vault_tip()}\n")
-    ai_status, mode_owner, ai_model = agent.check_ai_online()    
+    ai_status, mode_owner, ai_model = agent.check_ai_online()
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
-    agent.console.print("Mode: Linux Terminal AI Agent.") 
+    agent.console.print("Mode: Linux Terminal AI Agent.")
     agent.console.print(f"Local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
-    
+
     if ai_status:
         agent.console.print(f"""Model: {ai_model} is online.""")
     else:
@@ -602,8 +621,8 @@ def main():
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
 
-    if len(sys.argv) == 2:
-        remote = sys.argv[1]
+    if args.remote:
+        remote = args.remote
         user = remote.split('@')[0] if '@' in remote else None
         host = remote.split('@')[1] if '@' in remote else remote
         agent.ssh_connection = True
@@ -670,6 +689,7 @@ def main():
     runner = VaultAIAgentRunner(agent, user_input_text, user=user, host=host)
     try:
         runner.run()
+        agent.console.print(f"\n{agent.maybe_print_finding()}")
     except KeyboardInterrupt:
         agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
         sys.exit(1)
