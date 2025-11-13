@@ -1,5 +1,6 @@
 import sys
 import json
+import time
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
 
@@ -32,6 +33,74 @@ class VaultAIAskRunner:
         self.user = user
         self.host = host
         self.history = []
+
+    def _get_ai_reply_with_retry(self, system_prompt, prompt, retries=0, delay=10):
+        """
+        Get AI reply with retry logic for handling 503 errors and other failures.
+        If retries=0, retry indefinitely until success.
+        """
+        if retries == 0:
+            attempt = 0
+            while True:
+                attempt += 1
+                try:
+                    if self.agent.ai_engine == "ollama":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
+                    elif self.agent.ai_engine == "google":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)
+                    elif self.agent.ai_engine == "openai":
+                        # OpenAI supports full chat context
+                        response = self.agent.connect_to_chatgpt(system_prompt, prompt, format=None)
+                    else:
+                        self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
+                        return None
+
+                    if response and "503" not in str(response):
+                        return response
+                    else:
+                        self.agent.console.print(f"AI returned an error or empty response (Attempt {attempt}). Retrying in {delay}s...")
+                        time.sleep(delay)
+
+                except Exception as e:
+                    self.agent.console.print(f"An exception occurred while contacting AI (Attempt {attempt}): {e}. Retrying in {delay}s...")
+                    time.sleep(delay)
+        else:
+            for attempt in range(retries + 1):  # +1 for initial attempt
+                try:
+                    if self.agent.ai_engine == "ollama":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
+                    elif self.agent.ai_engine == "google":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)
+                    elif self.agent.ai_engine == "openai":
+                        # OpenAI supports full chat context
+                        response = self.agent.connect_to_chatgpt(system_prompt, prompt, format=None)
+                    else:
+                        self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
+                        return None
+
+                    if response and "503" not in str(response):
+                        return response
+                    else:
+                        if attempt < retries:
+                            self.agent.console.print(f"AI returned an error or empty response (Attempt {attempt + 1}). Retrying in {delay}s...")
+                            time.sleep(delay)
+                        else:
+                            self.agent.console.print("[red]Failed to get a valid response from AI after all retries.[/]")
+                            return None
+
+                except Exception as e:
+                    if attempt < retries:
+                        self.agent.console.print(f"An exception occurred while contacting AI (Attempt {attempt + 1}): {e}. Retrying in {delay}s...")
+                        time.sleep(delay)
+                    else:
+                        self.agent.console.print(f"[red]Failed to get response from AI after all retries: {e}[/]")
+                        return None
+
+            return None
 
     def load_data_from_file(self, filepath):
         """Load content from a file given its path."""
@@ -91,18 +160,10 @@ class VaultAIAskRunner:
             self.history.append({"role": "user", "content": processed_input})
             # Prepare prompt with memory (last 10 exchanges)
             prompt_context = self.history[-20:] if len(self.history) > 20 else self.history
-            # Compose prompt for LLM
-            if self.agent.ai_engine == "ollama":
-                prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
-                response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
-            elif self.agent.ai_engine == "google":
-                prompt_text = "\n".join(f"{m['role']}: {m['content']}" for m in prompt_context if m["role"] != "system")
-                response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)
-            elif self.agent.ai_engine == "openai":
-                # OpenAI supports full chat context
-                response = self.agent.connect_to_chatgpt(system_prompt, user_input if len(self.history) <= 2 else self.history[1:], format=None)
-            else:
-                self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
+            # Get AI response with retry logic
+            response = self._get_ai_reply_with_retry(system_prompt, prompt_context)
+            if response is None:
+                self.agent.console.print("[red]Failed to get response from AI after retries. Stopping chat.[/]")
                 break
             if response:
                 try:
