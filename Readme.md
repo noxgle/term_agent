@@ -19,7 +19,7 @@
 
 - **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
 - **Task automation**: The agent can perform tasks and commands based on user goals.
-- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama.
+- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud).
 - **Local and remote execution (SSH)**: Run commands on your machine or remote hosts.
 - **Configurable via `.env`**: Easily switch engines and settings.
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
@@ -131,7 +131,7 @@ Copy `.env.copy` to `.env` and paste your API key(s).
 
 Example `.env` file:
 ```
-# engine options: openai, ollama, google
+# engine options: openai, ollama, ollama-cloud, google
 AI_ENGINE=ollama
 
 # openai configuration
@@ -145,6 +145,11 @@ OPENAI_MAX_TOKENS=1000
 OLLAMA_URL=http://192.168.200.202:11434/api/generate
 OLLAMA_MODEL=cogito:8b
 OLLAMA_TEMPERATURE=0.5
+
+# ollama cloud configuration (hosted service at https://ollama.com)
+OLLAMA_CLOUD_TOKEN=ollama_cloud_token_here
+OLLAMA_CLOUD_MODEL=gpt-oss:120b
+OLLAMA_CLOUD_TEMPERATURE=0.5
 
 # google configuration
 # gemini-2.5-pro-exp-03-25,gemini-2.0-flash
