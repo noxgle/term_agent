@@ -47,6 +47,9 @@ class VaultAIAskRunner:
                     if self.agent.ai_engine == "ollama":
                         prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
                         response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
+                    elif self.agent.ai_engine == "ollama-cloud":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_ollama_cloud(system_prompt, prompt_text, format=None)
                     elif self.agent.ai_engine == "google":
                         prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
                         response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)
@@ -72,6 +75,9 @@ class VaultAIAskRunner:
                     if self.agent.ai_engine == "ollama":
                         prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
                         response = self.agent.connect_to_ollama(system_prompt, prompt_text, format=None)
+                    elif self.agent.ai_engine == "ollama-cloud":
+                        prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
+                        response = self.agent.connect_to_ollama_cloud(system_prompt, prompt_text, format=None)
                     elif self.agent.ai_engine == "google":
                         prompt_text = prompt if isinstance(prompt, str) else "\n".join(f"{m['role']}: {m['content']}" for m in prompt if m["role"] != "system")
                         response = self.agent.connect_to_gemini(f"{system_prompt}\n{prompt_text}", format=None)

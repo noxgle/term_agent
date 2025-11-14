@@ -137,6 +137,8 @@ class VaultAIAgentRunner:
                         pass
                     if terminal.ai_engine == "ollama":
                         ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
+                    elif terminal.ai_engine == "ollama-cloud":
+                        ai_reply = terminal.connect_to_ollama_cloud(system_prompt, prompt_text, format="json")
                     elif terminal.ai_engine == "google":
                         ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
                     elif terminal.ai_engine == "openai":
@@ -177,6 +179,8 @@ class VaultAIAgentRunner:
                         pass
                     if terminal.ai_engine == "ollama":
                         ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
+                    elif terminal.ai_engine == "ollama-cloud":
+                        ai_reply = terminal.connect_to_ollama_cloud(system_prompt, prompt_text, format="json")
                     elif terminal.ai_engine == "google":
                         ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
                     elif terminal.ai_engine == "openai":

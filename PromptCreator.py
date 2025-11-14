@@ -168,6 +168,8 @@ class PromptCreator:
         terminal = self.agent
         if terminal.ai_engine == "ollama":
             ai_reply = terminal.connect_to_ollama(self.system_prompt_agent, full_prompt, format="json")
+        elif terminal.ai_engine == "ollama-cloud":
+            ai_reply = terminal.connect_to_ollama_cloud(self.system_prompt_agent, full_prompt, format="json")
         elif terminal.ai_engine == "google":
             ai_reply = terminal.connect_to_gemini(f"{self.system_prompt_agent}\n{full_prompt}")
         elif terminal.ai_engine == "openai":
