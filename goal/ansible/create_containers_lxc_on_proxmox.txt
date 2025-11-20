@@ -1,4 +1,4 @@
-ou are an expert in Proxmox and an Ansible automation specialist. Your objective is to create a Debian LXC container and subsequently clone it nine times on a Proxmox host. Ensure that all containers are 
+You are an expert in Proxmox and an Ansible automation specialist. Your objective is to create a Debian LXC container and subsequently clone it three times on a Proxmox host. Ensure that all containers are 
 configured for Ansible management.
 
 ### Configuration Details:
@@ -25,9 +25,9 @@ configured for Ansible management.
     - Autostart: `--start 1`
     - Network Interface: `net0 name=eth0,bridge=vmbr0`
     - **Root Filesystem:**
-      - Size: `8192`, stored on `local-lvm`
+      - Size: `8192` (MB), stored on `local-lvm`
     - **Container IDs (CTIDs):**
-      - Starting from `4000` for the first container and incrementing sequentially up to `4009`.
+      - Starting from `4000` for the first container and incrementing sequentially up to `4002`.
 
 4.  **In-Container Network Configuration:**
     - **IP Addresses:** Static, starting from `192.168.200.30/24` for the first container, incrementing for subsequent containers.
@@ -49,5 +49,5 @@ configured for Ansible management.
 ### Deliverables:
 Provide a script or series of commands to accomplish the above tasks on the Proxmox host.
 Include a final verification step to confirm that all 3 containers are successfully created, are running, and have their expected CTIDs and hostnames. Specifically, use the `pct list` command to verify the 
-presence, running status, and correct CTIDs and names for containers `4000` through `4009` named `ansible-base-template-01` through `ansible-base-template-10` respectively. Additionally, perform network 
-reachability checks (e.g., using `ping`) to confirm that each container's assigned static IP address (`192.168.200.30` through `192.168.200.39`) is accessible from the Proxmox host.
+presence, running status, and correct CTIDs and names for containers `4000` through `4002` named `ansible-base-template-01` through `ansible-base-template-3` respectively. Additionally, perform network 
+reachability checks (e.g., using `ping`) to confirm that each container's assigned static IP address (`192.168.200.30` through `192.168.200.2`) is accessible from the Proxmox host.
