@@ -141,6 +141,8 @@ class term_agent:
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
+        # interactive_mode is the inverse of auto_accept; kept for clarity
+        self.interactive_mode = not self.auto_accept
         self.auto_explain_command = True if os.getenv("AUTO_EXPLAIN_COMMAND", "false").lower() == "true" else False
         self.console = Console()
         self.ssh_connection = False  # Dodane do obsługi trybu lokalnego/zdalnego
@@ -627,7 +629,31 @@ class term_agent:
         
         @kb.add('c-s')
         def _(event):
-            event.current_buffer.validate_and_handle()        
+            event.current_buffer.validate_and_handle()
+
+        @kb.add('c-a')
+        def _(event):
+            """
+            One-way: switch from interactive -> automatic.
+            If already automatic, do nothing (inform user).
+            """
+            try:
+                # Only switch to automatic mode; do not toggle back
+                if not self.auto_accept:
+                    self.auto_accept = True
+                    try:
+                        self.interactive_mode = not self.auto_accept
+                    except Exception:
+                        pass
+                    #self.console.print("[Vault 3000] Mode set to: automatic")
+                else:
+                    pass
+                    # Already automatic; inform user but do not change state
+                    # self.console.print("[Vault 3000] Mode is already automatic")
+            except Exception:
+                # Swallow any unexpected errors in key handler to avoid breaking prompt
+                pass
+
         return kb
 
     def load_data_from_file(self, filepath):
@@ -667,6 +693,7 @@ Usage:
 
 Controls:
   Ctrl+S    Submit input
+  Ctrl+A    Toggle automatic mode (one-way)
   Ctrl+C    Exit program
         """
     )
