@@ -25,6 +25,8 @@
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
 
+- **Interactive -> Automatic mode**: Press Ctrl+A at the prompt to switch the agent from interactive mode (agent asks for confirmation before running suggested bash commands) to automatic mode (agent executes suggested commands without asking). This shortcut is one-way: it only switches from interactive to automatic during a session.
+
 ## Terminal Agent Capabilities
 
 The main terminal agent is a powerful tool designed to streamline your command-line operations. It allows you to perform a wide range of tasks, including:
@@ -160,7 +162,7 @@ GOOGLE_API_KEY=google_api_key_here
 LOCAL_COMMAND_TIMEOUT=300
 # remote ssh timeout in seconds for command execution, 0 means no timeout
 SSH_REMOTE_TIMEOUT=300
-# auto accept commands without confirmation
+# interactive mode or auto (accept commands without confirmation)
 AUTO_ACCEPT=false
 # auto explain generated commands before execution
 AUTO_EXPLAIN_COMMAND=true
