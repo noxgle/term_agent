@@ -19,7 +19,7 @@
 
 - **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
 - **Task automation**: The agent can perform tasks and commands based on user goals.
-- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud).
+- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud), OpenRouter (unified API for multiple models).
 - **Local and remote execution (SSH)**: Run commands on your machine or remote hosts.
 - **Configurable via `.env`**: Easily switch engines and settings.
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
@@ -53,7 +53,7 @@ The **Prompt Creator** is an interactive assistant that helps you build high-qua
 ## Requirements
 
 - Python 3.9+
-- API key for the selected AI engine (OpenAI, Google Gemini, Ollama)
+- API key for the selected AI engine
 - `.env` configuration file (see below)
 - Linux or macOS
 
@@ -133,7 +133,7 @@ Copy `.env.copy` to `.env` and paste your API key(s).
 
 Example `.env` file:
 ```
-# engine options: openai, ollama, ollama-cloud, google
+# engine options: openai, ollama, ollama-cloud, google, openrouter
 AI_ENGINE=ollama
 
 # openai configuration
@@ -157,6 +157,12 @@ OLLAMA_CLOUD_TEMPERATURE=0.5
 # gemini-2.5-pro-exp-03-25,gemini-2.0-flash
 GOOGLE_MODEL=gemini-2.5-flash-preview-05-20
 GOOGLE_API_KEY=google_api_key_here
+
+# openrouter configuration (unified API for multiple AI models)
+OPENROUTER_API_KEY=openrouter_api_key_here
+OPENROUTER_MODEL=openrouter/llama-3.1-70b-instruct:free
+OPENROUTER_TEMPERATURE=0.5
+OPENROUTER_MAX_TOKENS=1000
 
 # local timeout in seconds for command execution, 0 means no timeout
 LOCAL_COMMAND_TIMEOUT=300
