@@ -143,6 +143,8 @@ class VaultAIAgentRunner:
                         ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
                     elif terminal.ai_engine == "openai":
                         ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
+                    elif terminal.ai_engine == "openrouter":
+                        ai_reply = terminal.connect_to_openrouter(system_prompt, prompt_text)
                     else:
                         terminal.print_console("Invalid AI engine specified. Stopping agent.")
                         self.summary = "Agent stopped: Invalid AI engine specified."
@@ -185,6 +187,8 @@ class VaultAIAgentRunner:
                         ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
                     elif terminal.ai_engine == "openai":
                         ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
+                    elif terminal.ai_engine == "openrouter":
+                        ai_reply = terminal.connect_to_openrouter(system_prompt, prompt_text)
                     else:
                         terminal.print_console("Invalid AI engine specified. Stopping agent.")
                         self.summary = "Agent stopped: Invalid AI engine specified."

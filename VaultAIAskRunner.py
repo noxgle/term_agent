@@ -56,6 +56,9 @@ class VaultAIAskRunner:
                     elif self.agent.ai_engine == "openai":
                         # OpenAI supports full chat context
                         response = self.agent.connect_to_chatgpt(system_prompt, prompt, format=None)
+                    elif self.agent.ai_engine == "openrouter":
+                        # OpenRouter supports full chat context
+                        response = self.agent.connect_to_openrouter(system_prompt, prompt, format=None)
                     else:
                         self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
                         return None
@@ -84,6 +87,9 @@ class VaultAIAskRunner:
                     elif self.agent.ai_engine == "openai":
                         # OpenAI supports full chat context
                         response = self.agent.connect_to_chatgpt(system_prompt, prompt, format=None)
+                    elif self.agent.ai_engine == "openrouter":
+                        # OpenRouter supports full chat context
+                        response = self.agent.connect_to_openrouter(system_prompt, prompt, format=None)
                     else:
                         self.agent.console.print("[red]Unknown AI engine. Stopping chat.[/]")
                         return None

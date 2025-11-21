@@ -123,9 +123,11 @@ class term_agent:
             self.api_key = os.getenv("GOOGLE_API_KEY", "")
         elif self.ai_engine == "ollama-cloud":
             self.api_key = os.getenv("OLLAMA_CLOUD_TOKEN", "")
+        elif self.ai_engine == "openrouter":
+            self.api_key = os.getenv("OPENROUTER_API_KEY", "")
         else:
             self.api_key = None
-        if self.ai_engine in ["openai", "google", "ollama-cloud"] and not self.api_key:
+        if self.ai_engine in ["openai", "google", "ollama-cloud", "openrouter"] and not self.api_key:
             self.logger.critical(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
             raise RuntimeError(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
         
@@ -138,6 +140,9 @@ class term_agent:
         self.ollama_cloud_model = os.getenv("OLLAMA_CLOUD_MODEL", "gpt-oss:120b")
         self.ollama_cloud_temperature = float(os.getenv("OLLAMA_CLOUD_TEMPERATURE", "0.5"))
         self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
+        self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openrouter/llama-3.1-70b-instruct:free")
+        self.openrouter_temperature = float(os.getenv("OPENROUTER_TEMPERATURE", "0.5"))
+        self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
@@ -441,6 +446,55 @@ class term_agent:
             self.print_console(f"Ollama Cloud connection error: {e}")
             return None
 
+    # --- OpenRouter Function ---
+    def connect_to_openrouter(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object'):
+        """
+        Send a prompt to OpenRouter API using OpenAI-compatible interface.
+        OpenRouter provides access to multiple AI models through a unified API.
+        """
+        if model is None:
+            model = self.openrouter_model
+        if max_tokens is None:
+            max_tokens = self.openrouter_max_tokens
+        if temperature is None:
+            temperature = self.openrouter_temperature
+            
+        # OpenRouter uses the same API format as OpenAI
+        client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://openrouter.ai/api/v1"
+        )
+        
+        try:
+            if format == 'json':
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format={"type": "json_object"}
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+            self.logger.info(f"OpenRouter prompt: {prompt}")
+            self.logger.debug(f"OpenRouter raw response: {response}")
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            self.logger.error(f"OpenRouter connection error: {e}")
+            self.print_console(f"OpenRouter connection error: {e}")
+            return None
+
     def run(self, command, remote=None):
         """
         Run a shell command locally or remotely (via SSH).
@@ -621,6 +675,16 @@ class term_agent:
                     return False, "Google Gemini API returned no models.", self.gemini_model
             except Exception as e:
                 return False, f"Google Gemini API unavailable: {e}", self.gemini_model
+        elif self.ai_engine == "openrouter":
+            try:
+                client = OpenAI(
+                    api_key=self.api_key,
+                    base_url="https://openrouter.ai/api/v1"
+                )
+                client.models.list()
+                return True, "OpenRouter API is online.", self.openrouter_model
+            except Exception as e:
+                return False, f"OpenRouter API unavailable: {e}", self.openrouter_model
         else:
             return False, f"Unknown AI engine: {self.ai_engine}", None
 
