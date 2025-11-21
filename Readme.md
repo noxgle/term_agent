@@ -3,6 +3,7 @@
 ## Table of Contents
 
 - [Features](#features)
+- [AI Model Comparison](#ai-model-comparison)
 - [Terminal Agent Capabilities](#terminal-agent-capabilities)
 - [Prompt Creator](#prompt-creator)
 - [Requirements](#requirements)
@@ -26,6 +27,10 @@
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
 
 - **Interactive -> Automatic mode**: Press Ctrl+A at the prompt to switch the agent from interactive mode (agent asks for confirmation before running suggested bash commands) to automatic mode (agent executes suggested commands without asking). This shortcut is one-way: it only switches from interactive to automatic during a session.
+
+## AI Model Comparison
+
+Before configuring your AI engine, check out the comprehensive comparison of AI models at [Artificial Analysis](https://artificialanalysis.ai/models). This independent analysis covers intelligence benchmarks, performance metrics, and pricing across 337+ models from major providers including OpenAI, Google, Anthropic, and others. It's an invaluable resource for choosing the right AI model for your specific needs and budget.
 
 ## Terminal Agent Capabilities
 
@@ -427,5 +432,4 @@ Pull requests are welcome! For major changes, please open an issue first to disc
  ........................................................................................ 
  ........................................................................................ 
  ..................find me on: https://www.linkedin.com/in/sebastian-wielgosz-linux-admin
- ........................................................................................  
-```
+ ........................................................................................
