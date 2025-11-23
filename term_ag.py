@@ -465,13 +465,14 @@ class term_agent:
             base_url="https://openrouter.ai/api/v1"
         )
         
+        full_prompt = f"{role_system_content}\n\n{prompt}"
+
         try:
             if format == 'json':
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": role_system_content},
-                        {"role": "user",   "content": prompt}
+                        {"role": "user",   "content": full_prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -481,8 +482,7 @@ class term_agent:
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": role_system_content},
-                        {"role": "user",   "content": prompt}
+                        {"role": "user",   "content": full_prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature
