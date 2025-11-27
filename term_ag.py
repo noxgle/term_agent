@@ -789,7 +789,7 @@ Controls:
         agent.user = user
         agent.host = host
         try:
-            output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept)
+            output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept, timeout=5)
             if agent.ssh_password is not None:
                 ask_input= input("Do you want to use passwordless SSH login in the future? (y/n): ")
                 if ask_input.lower() == 'y':
@@ -803,7 +803,8 @@ Controls:
                         agent.console.print(f"[Vault 3000] ERROR: Unexpected error during ssh-copy-id: {e}", style="red", markup=False)
             if returncode != 0:
                 agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
-                agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
+                if output:
+                    agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
                 sys.exit(1)
 
             agent.remote_linux_distro = agent.detect_remote_linux_distribution(host, user=user)
