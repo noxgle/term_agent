@@ -217,7 +217,7 @@ class term_agent:
         # 1. Check /etc/os-release
         try:
             cmd = "cat /etc/os-release"
-            stdout, returncode = self.execute_remote_pexpect(cmd, ssh_prefix)
+            stdout, returncode = self.execute_remote_pexpect(cmd, ssh_prefix,timeout=10)
             if returncode == 0:
                 info = {}
                 for line in stdout.splitlines():
@@ -233,8 +233,8 @@ class term_agent:
 
         # 2. Check lsb_release
         try:
-            name_stdout, name_returncode = self.execute_remote_pexpect("lsb_release -si", ssh_prefix)
-            version_stdout, version_returncode = self.execute_remote_pexpect("lsb_release -sr", ssh_prefix)
+            name_stdout, name_returncode = self.execute_remote_pexpect("lsb_release -si", ssh_prefix,timeout=10)
+            version_stdout, version_returncode = self.execute_remote_pexpect("lsb_release -sr", ssh_prefix,timeout=10)
             if name_returncode == 0 and version_returncode == 0:
                 return (name_stdout.strip(), version_stdout.strip())
         except Exception as e:
@@ -242,8 +242,8 @@ class term_agent:
 
         # 3. Fallback do uname
         try:
-            name_stdout, name_returncode = self.execute_remote_pexpect("uname -s", ssh_prefix)
-            version_stdout, version_returncode = self.execute_remote_pexpect("uname -r", ssh_prefix)
+            name_stdout, name_returncode = self.execute_remote_pexpect("uname -s", ssh_prefix,timeout=10)
+            version_stdout, version_returncode = self.execute_remote_pexpect("uname -r", ssh_prefix,timeout=10)
             if name_returncode == 0 and version_returncode == 0:
                 return (name_stdout.strip(), version_stdout.strip())
         except Exception as e:
