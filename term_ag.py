@@ -573,6 +573,7 @@ class term_agent:
         ssh_cmd = f"ssh {remote} '{command_with_exit}'"
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=timeout)
         output = ""
+        last_expect = None
         try:
             while True:
                 i = child.expect([
@@ -614,8 +615,13 @@ class term_agent:
                     else:
                         answer = input("Remote command asks [yes/no]: ")
                         child.sendline(answer)
-                elif i == 4 or i == 5:
+                elif i == 4:  # EOF
                     output += child.before
+                    last_expect = "EOF"
+                    break
+                elif i == 5:  # TIMEOUT
+                    output += child.before
+                    last_expect = "TIMEOUT"
                     break
                 elif i in [6, 7, 8, 9, 10]:
                     output += child.before
@@ -625,13 +631,23 @@ class term_agent:
         except Exception as e:
             output += f"\n[pexpect error] {e}"
 
-        # Parase the exit code from the output
-        exit_code = 1
+        # Parse the exit code from the output
+        exit_code = None
         match = re.search(rf"{marker}(\d+)__", output)
         if match:
             exit_code = int(match.group(1))
-            # Clean the marker from the output 
+            # Clean the marker from the output
             output = re.sub(rf"{marker}\d+__\s*", "", output)
+
+        # If no marker, map last_expect -> distinct exit codes
+        if exit_code is None:
+            if last_expect == "TIMEOUT":
+                exit_code = 252
+            elif last_expect == "EOF":
+                exit_code = 254
+            else:
+                exit_code = 1
+
         return output, exit_code
 
     def check_ai_online(self):
