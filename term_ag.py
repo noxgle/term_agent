@@ -790,10 +790,18 @@ Controls:
     parser.add_argument('remote', nargs='?', help='Remote host in format user@host (optional)')
 
     args = parser.parse_args()
-
+    
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
     agent.console.print(f"{agent.print_vault_tip()}\n")
+
+    agent.console.print("""
+Controls:
+  Ctrl+S    Submit input
+  Ctrl+A    Toggle automatic mode (one-way)
+  Ctrl+C    Exit program
+        """)
+
     ai_status, mode_owner, ai_model = agent.check_ai_online()
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print("Mode: Linux Terminal AI Agent.")
@@ -801,8 +809,7 @@ Controls:
     if agent.auto_accept:
         agent.console.print("Working mode: [green]automatic[/]")
     else:
-        agent.console.print("Working mode: [yellow]cooperative[/] (you can switch to automatic anytime with [cyan]Ctrl+A[/])")
-
+        agent.console.print("Working mode: [yellow]cooperative.[/]")
     if ai_status:
         agent.console.print(f"""Model: {ai_model} is online.""")
     else:
