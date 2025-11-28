@@ -798,6 +798,10 @@ Controls:
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print("Mode: Linux Terminal AI Agent.")
     agent.console.print(f"Local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
+    if agent.auto_accept:
+        agent.console.print("Working mode: [green]automatic[/]")
+    else:
+        agent.console.print("Working mode: [yellow]cooperative[/] (you can switch to automatic anytime with [cyan]Ctrl+A[/])")
 
     if ai_status:
         agent.console.print(f"""Model: {ai_model} is online.""")
