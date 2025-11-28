@@ -25,7 +25,7 @@ class VaultAIAgentRunner:
             self.input_text = "local"
             self.linux_distro, self.linux_version = terminal.local_linux_distro
         else:
-            self.input_text = f"{user+'@' if user else ''}{host}"
+            self.input_text = f"{user+'@' if user else ''}{host}{':'+str(terminal.port) if terminal.port else ''}"
             self.linux_distro, self.linux_version = terminal.remote_linux_distro
 
         if self.linux_distro == "Unknown":
@@ -702,7 +702,7 @@ class VaultAIAgentRunner:
                             rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
                             self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
 
-                            scp_cmd = ["scp", tmpf_path, f"{remote}:{remote_tmp_path}"]
+                            scp_cmd = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [tmpf_path, f"{remote}:{remote_tmp_path}"]
                             try:
                                 result = subprocess.run(scp_cmd, capture_output=True, text=True)
                                 if result.returncode == 0:
@@ -822,7 +822,7 @@ class VaultAIAgentRunner:
                                 local_tmp_path = os.path.join(tmpdir, os.path.basename(file_path))
                                 remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
                                 # Get remote file
-                                scp_get = ["scp", f"{remote}:{file_path}", local_tmp_path]
+                                scp_get = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [f"{remote}:{file_path}", local_tmp_path]
                                 result = subprocess.run(scp_get, capture_output=True, text=True)
                                 if result.returncode != 0:
                                     terminal.print_console(f"Failed to fetch remote file '{file_path}': {result.stderr}")
@@ -840,7 +840,7 @@ class VaultAIAgentRunner:
                                     rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
                                     self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
                                     # Send back edited file
-                                    scp_put = ["scp", local_tmp_path, f"{remote}:{remote_tmp_path}"]
+                                    scp_put = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [local_tmp_path, f"{remote}:{remote_tmp_path}"]
                                     result = subprocess.run(scp_put, capture_output=True, text=True)
                                     if result.returncode == 0:
                                         needs_sudo = not (self.user == "root" or file_path.startswith(f"/home/{self.user}") or file_path.startswith("/tmp"))

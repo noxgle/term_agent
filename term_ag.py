@@ -155,6 +155,7 @@ class term_agent:
         self.remote_host = None
         self.user = None
         self.host = None
+        self.port = None
 
         self.local_linux_distro = self.detect_linux_distribution()
         self.remote_linux_distro = None
@@ -566,11 +567,20 @@ class term_agent:
         if timeout is None:
             timeout = self.ssh_remote_timeout
 
+        # Strip port from remote if present (since we use -p flag)
+        if ':' in remote:
+            remote, _ = remote.rsplit(':', 1)
+
         # Ensure command is properly escaped
         marker = "__EXITCODE:"
         command = command.replace("'", "'\\''")
         command_with_exit = f"{command}; echo {marker}$?__"
-        ssh_cmd = f"ssh {remote} '{command_with_exit}'"
+        ssh_cmd_parts = ["ssh"]
+        if self.port:
+            ssh_cmd_parts.extend(["-p", str(self.port)])
+        ssh_cmd_parts.append(remote)
+        ssh_cmd_parts.append(f"'{command_with_exit}'")
+        ssh_cmd = " ".join(ssh_cmd_parts)
         child = pexpect.spawn(ssh_cmd, encoding='utf-8', timeout=timeout)
         output = ""
         last_expect = None
@@ -798,12 +808,28 @@ Controls:
 
     if args.remote:
         remote = args.remote
-        user = remote.split('@')[0] if '@' in remote else None
-        host = remote.split('@')[1] if '@' in remote else remote
+        if '@' in remote:
+            user_part, host_part = remote.split('@', 1)
+            user = user_part
+            if ':' in host_part:
+                host, port_str = host_part.split(':', 1)
+                port = int(port_str)
+            else:
+                host = host_part
+                port = None
+        else:
+            user = None
+            if ':' in remote:
+                host, port_str = remote.split(':', 1)
+                port = int(port_str)
+            else:
+                host = remote
+                port = None
         agent.ssh_connection = True
         agent.remote_host = remote
         agent.user = user
         agent.host = host
+        agent.port = port
         try:
             output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept, timeout=5)
             if agent.ssh_password is not None:
@@ -811,7 +837,14 @@ Controls:
                 if ask_input.lower() == 'y':
                     agent.console.print(f"[yellow][Vault 3000] Setting up passwordless SSH login to {remote}...[/]")
                     try:
-                        subprocess.run(["ssh-copy-id", remote], check=True)
+                        cmd = ["ssh-copy-id"]
+                        if agent.port:
+                            cmd.extend(["-p", str(agent.port)])
+                        clean_remote = remote
+                        if ':' in clean_remote:
+                            clean_remote, _ = clean_remote.rsplit(':', 1)
+                        cmd.append(clean_remote)
+                        subprocess.run(cmd, check=True)
                         agent.console.print(f"[green][Vault 3000] Passwordless SSH login set up successfully.[/]")
                     except subprocess.CalledProcessError as e:
                         agent.console.print(f"[Vault 3000] ERROR: ssh-copy-id failed: {e}", style="red", markup=False)
@@ -833,7 +866,7 @@ Controls:
 
         agent.console.print(f"Remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
         agent.console.print("\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
-        input_text = f"{user}@{host}" if user else host
+        input_text = f"{user}@{host}:{port}" if port else f"{user}@{host}" if user else f"{host}:{port}" if port else host
     else:
         remote = None
         user = None
