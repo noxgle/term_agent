@@ -146,6 +146,7 @@ class term_agent:
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
+        self.block_dangerous_commands = True if os.getenv("BLOCK_DANGEROUS_COMMANDS", "false").lower() == "true" else False
         # interactive_mode is the inverse of auto_accept; kept for clarity
         self.interactive_mode = not self.auto_accept
         self.auto_explain_command = True if os.getenv("AUTO_EXPLAIN_COMMAND", "false").lower() == "true" else False

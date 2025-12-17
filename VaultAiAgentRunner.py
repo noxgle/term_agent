@@ -93,6 +93,105 @@ class VaultAIAgentRunner:
         # Keep a history of assistant responses mapped to request IDs for tracing
         self.request_history = []
 
+        # Security: Dangerous commands that should be blocked
+        self.dangerous_commands = {
+            'rm -rf /', 'rm -rf /*', 'rm -rf /home', 'rm -rf /etc', 'rm -rf /var',
+            'dd if=', 'mkfs', 'fdisk', 'format', 'wipefs', 'shred',
+            'passwd root', 'usermod -p', 'chpasswd',
+            'sudo su', 'su root', 'sudo -i', 'sudo -s',
+            'crontab -r', 'history -c', 'unset HISTFILE',
+            '> /dev/null', '>/dev/null', '2>/dev/null', '&>/dev/null',
+            'curl -s', 'wget -q', 'curl -O', 'wget -O',
+            'chmod 777', 'chmod +x', 'chmod u+s', 'chmod g+s',
+            'chown root', 'chown 0', 'chgrp root', 'chgrp 0',
+            'iptables -F', 'iptables -X', 'ufw --force disable',
+            'systemctl stop', 'systemctl disable', 'service stop',
+            'pkill -9', 'killall -9', 'kill -9',
+            'reboot', 'shutdown', 'halt', 'poweroff',
+            'mount /dev', 'umount /', 'mount -t nfs',
+            'ssh-keygen', 'ssh-copy-id', 'scp',
+            'mysql -e', 'psql -c', 'sqlite3',
+            'python -c', 'python3 -c', 'perl -e', 'ruby -e',
+            'eval', 'exec', 'source', 'bash -c', 'sh -c',
+            'nohup', 'screen', 'tmux', 'at', 'batch', 'cron',
+            'find / -exec', 'find / -delete', 'find / -print0 | xargs',
+            'tar -xzf /dev/null', 'gzip -dc /dev/null',
+            'base64 -d', 'openssl enc', 'gpg --decrypt'
+        }
+
+        # Security: Allowed paths for file operations
+        self.allowed_paths = ['/tmp', '/var/tmp', '/home', '/usr/local', '/opt']
+
+    def _validate_command(self, command: str) -> tuple[bool, str]:
+        """
+        Validate a command for security before execution.
+
+        Args:
+            command: The command string to validate
+
+        Returns:
+            tuple: (is_valid, reason_if_invalid)
+        """
+        if not command or not isinstance(command, str):
+            return False, "Command must be a non-empty string"
+
+        # Check for dangerous command patterns
+        cmd_lower = command.lower().strip()
+        for dangerous in self.dangerous_commands:
+            if dangerous in cmd_lower:
+                return False, f"Command contains dangerous pattern: '{dangerous}'"
+
+        # Check for shell injection attempts
+        # Allow legitimate command chaining with &&, || when properly separated
+        dangerous_patterns = [';', '`', '$(', '${', '>', '<', '2>', '&>', '&>>']
+        for pattern in dangerous_patterns:
+            if pattern in command and not (pattern in ['>', '2>'] and ' ' in command.split(pattern)[0]):  # Allow redirection after commands
+                return False, f"Command contains potential shell injection: '{pattern}'"
+
+        # Special handling for && and || - allow when used for legitimate command chaining
+        # Check if && appears to be used for command injection vs legitimate chaining
+        if '&&' in command:
+            # Split by && and check if each part looks like a separate command
+            parts = command.split('&&')
+            for part in parts:
+                part = part.strip()
+                if not part:  # Empty part suggests malformed command
+                    return False, "Command contains malformed '&&' usage"
+                # If any part contains suspicious patterns, block it
+                if any(suspicious in part for suspicious in ['$(', '${', '`', ';']):
+                    return False, f"Command contains suspicious pattern near '&&': '{part}'"
+
+        if '||' in command:
+            # Similar logic for ||
+            parts = command.split('||')
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    return False, "Command contains malformed '||' usage"
+                if any(suspicious in part for suspicious in ['$(', '${', '`', ';']):
+                    return False, f"Command contains suspicious pattern near '||': '{part}'"
+
+        # Check for interactive commands
+        interactive_cmds = ['vi', 'vim', 'nano', 'emacs', 'less', 'more', 'top', 'htop', 'mc', 'passwd', 'su', 'sudo -i', 'sudo -s']
+        cmd_parts = command.split()
+        if cmd_parts and any(cmd_parts[0].endswith(interactive) for interactive in interactive_cmds):
+            return False, f"Interactive command not allowed: '{cmd_parts[0]}'"
+
+        return True, ""
+
+    def _cleanup_request_history(self, max_entries: int = 1000):
+        """
+        Clean up request history to prevent memory leaks.
+        Keep only the most recent entries.
+        """
+        if len(self.request_history) > max_entries:
+            # Keep only the most recent entries
+            self.request_history = self.request_history[-max_entries:]
+            try:
+                self.logger.debug("Cleaned up request_history; kept %s most recent entries", max_entries)
+            except Exception:
+                pass
+
     def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
         """
         Unified input helper that uses prompt_toolkit so Ctrl+S (configured in
@@ -539,6 +638,9 @@ class VaultAIAgentRunner:
                             self.logger.exception("Failed to record request_history for request_id=%s", request_id)
                         except Exception:
                             pass
+
+                    # Clean up request history to prevent memory leaks
+                    self._cleanup_request_history()
                 else:
                     terminal.logger.error("Logic error: data is not None, but no JSON string was stored for context.")
                     self.summary = "Agent stopped: Internal logic error in response handling for context."
@@ -593,6 +695,14 @@ class VaultAIAgentRunner:
                             self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
                             continue
 
+                        # Security: Validate command before execution
+                        if terminal.block_dangerous_commands:
+                            is_valid, reason = self._validate_command(command)
+                            if not is_valid:
+                                terminal.print_console(f"Command validation failed: {reason}. Skipping.")
+                                self.context.append({"role": "user", "content": f"Command '{command}' failed security validation: {reason}. I am skipping it."})
+                                continue
+
                         if not terminal.auto_accept:
                             if self.terminal.auto_explain_command and explain:
                                 confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
@@ -644,11 +754,9 @@ class VaultAIAgentRunner:
                                 "but no connection error detected. Treating as command failure."
                             )
 
-                        user_feedback_content = (
-                            f"Command '{command}' executed with exit code {code}.\n"
-                            f"Output:\n```\n{out}\n```\n"
-                            "Based on this, what should be the next step?"
-                        )
+                        user_feedback_content = f"Command '{command}' executed with exit code {code}.\n" \
+                                                f"Output:\n```\n{out}\n```\n" \
+                                                "Based on this, what should be the next step?"
 
                         if not agent_should_stop_this_turn:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
