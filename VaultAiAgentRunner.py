@@ -41,8 +41,8 @@ class VaultAIAgentRunner:
                 "Your first task is to analyze the user's goal and decide what to do next. "
                 "For each step, always reply in JSON: "
                 "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
-                "or {'tool': 'write_file', 'path': '...', 'content': '...'} "
-                "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...'} "
+                "or {'tool': 'write_file', 'path': '...', 'content': '...', 'explain' : 'short explain what are doing'} "
+                "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...', 'explain' : 'short explain what are doing'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
                 "or {'tool': 'finish', 'summary': '...'} when done. "
                 "At the last step, always provide a detailed summary and analysis of the entire task you performed. The summary should clearly explain what was achieved, what actions were taken, and any important results or issues encountered. "
@@ -783,6 +783,7 @@ class VaultAIAgentRunner:
                     
                     elif tool == "write_file":
                         file_path = action_item.get("path")
+                        explain = action_item.get("explain", "")
                         if file_path and not file_path.startswith("/"):
                             file_path = os.path.join(os.getcwd(), file_path)
                         file_content = action_item.get("content")
@@ -790,6 +791,15 @@ class VaultAIAgentRunner:
                             terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")
                             self.context.append({"role": "user", "content": f"You provided a 'write_file' tool action but no 'path' or 'content': {action_item}. I am skipping it."})
                             continue
+
+                        if not terminal.auto_accept:
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to write file: '{file_path}' which is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to write the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> File write refused by user. Justification: {justification}\n")
+                                self.context.append({"role": "user", "content": f"User refused to write file '{file_path}' with justification: {justification}. Based on this, what should be the next step?"})
+                                continue
 
                         preview = file_content[:100] + ("..." if len(file_content) > 100 else "")
 
@@ -859,11 +869,31 @@ class VaultAIAgentRunner:
                         search = action_item.get("search")
                         replace = action_item.get("replace")
                         line = action_item.get("line")
+                        explain = action_item.get("explain", "")
 
                         if not file_path or not action:
                             terminal.print_console(f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping.")
                             self.context.append({"role": "user", "content": f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping."})
                             continue
+
+                        if not terminal.auto_accept:
+                            if action == "replace" and search is not None and replace is not None:
+                                desc = f"replace '{search}' with '{replace}'"
+                            elif action == "insert_after" and search is not None and line is not None:
+                                desc = f"insert '{line}' after '{search}'"
+                            elif action == "insert_before" and search is not None and line is not None:
+                                desc = f"insert '{line}' before '{search}'"
+                            elif action == "delete_line" and search is not None:
+                                desc = f"delete lines containing '{search}'"
+                            else:
+                                desc = f"perform {action} action"
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to edit file '{file_path}' with action: {desc}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to edit the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> File edit refused by user. Justification: {justification}\n")
+                                self.context.append({"role": "user", "content": f"User refused to edit file '{file_path}' with justification: {justification}. Based on this, what should be the next step?"})
+                                continue
 
                         def edit_file_local():
                             try:
