@@ -8,6 +8,7 @@ import time
 import uuid
 from prompt_toolkit import prompt
 from security.SecurityValidator import SecurityValidator
+from context.ContextManager import ContextManager
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -83,16 +84,15 @@ class VaultAIAgentRunner:
         if self.user == "root":
             self.system_prompt_agent = f"{self.system_prompt_agent} You dont need sudo, you are root."
 
-        self.context = [
-            {"role": "system", "content": self.system_prompt_agent},
-            {"role": "user", "content": (
-                f"Your goal: {user_goal}."
-            )}
-        ]
+        # Initialize ContextManager for conversation context and sliding window functionality
+        self.context_manager = ContextManager(window_size=window_size, logger=self.logger)
+
+        # Initialize context with system prompt and user goal
+        self.context_manager.add_system_message(self.system_prompt_agent)
+        self.context_manager.add_user_message(f"Your goal: {user_goal}.")
+
         self.steps = []
         self.summary = ""
-        # Keep a history of assistant responses mapped to request IDs for tracing
-        self.request_history = []
 
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
@@ -103,13 +103,7 @@ class VaultAIAgentRunner:
         Clean up request history to prevent memory leaks.
         Keep only the most recent entries.
         """
-        if len(self.request_history) > max_entries:
-            # Keep only the most recent entries
-            self.request_history = self.request_history[-max_entries:]
-            try:
-                self.logger.debug("Cleaned up request_history; kept %s most recent entries", max_entries)
-            except Exception:
-                pass
+        self.context_manager.cleanup_request_history(max_entries)
 
     def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
         """
@@ -251,65 +245,9 @@ class VaultAIAgentRunner:
         Returns:
             list: messages to pass to the model.
         """
-        # If context is small, return it (plus state injection)
-        if len(self.context) <= 2 + self.window_size:
-            working = list(self.context)
-        else:
-            # Keep first two messages (system + user goal)
-            initial = self.context[:2]
-
-            # Messages eligible for summarization: everything between the first two
-            # and the recent window (exclusive).
-            messages_to_summarize = self.context[2:-self.window_size]
-
-            # Keep the most recent `window_size` messages
-            recent = self.context[-self.window_size:]
-
-            working = list(initial)
-
-            # If there is anything to summarize, create one system summary message
-            if messages_to_summarize:
-                try:
-                    # Log summarization activity
-                    try:
-                        self.logger.debug("Summarizing %s older messages into one summary.", len(messages_to_summarize))
-                    except Exception:
-                        pass
-                    summary_text = self._summarize(messages_to_summarize)
-                    summary_message = {
-                        "role": "system",
-                        "content": f"[Summary of earlier conversation]\n{summary_text}"
-                    }
-                    working.append(summary_message)
-                except Exception:
-                    # If summarization fails for any reason, append a short fallback note
-                    try:
-                        self.logger.exception("Failed to summarize older messages.")
-                    except Exception:
-                        pass
-                    working.append({
-                        "role": "system",
-                        "content": "[Summary of earlier conversation could not be generated.]"
-                    })
-
-            # Append the recent messages (the sliding window)
-            working.extend(recent)
-
-        # Finally, inject the persistent agent state so the model knows current progress
-        try:
-            if hasattr(self, "state") and isinstance(self.state, dict) and self.state:
-                state_repr = json.dumps(self.state, ensure_ascii=False)
-                state_message = {"role": "system", "content": f"Current agent state: {state_repr}"}
-                working.append(state_message)
-        except Exception:
-            # If serializing state fails, include a basic representation
-            try:
-                self.logger.exception("Failed to serialize agent state for context injection.")
-            except Exception:
-                pass
-            working.append({"role": "system", "content": f"Current agent state: {str(self.state)}"})
-
-        return working
+        # Get the sliding window context from the ContextManager
+        state = getattr(self, "state", None)
+        return self.context_manager.get_sliding_window_context(state)
 
     def _summarize(self, messages: list) -> str:
         """
@@ -420,7 +358,7 @@ class VaultAIAgentRunner:
                 try:
                     # Generate a unique request id for this step to trace the flow
                     request_id = uuid.uuid4().hex
-                    self.logger.debug("Step %s starting; request_id=%s; current context len=%s", step_count, request_id, len(self.context))
+                    self.logger.debug("Step %s starting; request_id=%s; current context len=%s", step_count, request_id, self.context_manager.get_context_length())
                 except Exception:
                     pass
                 window_context = self._sliding_window_context()
@@ -471,7 +409,7 @@ class VaultAIAgentRunner:
                         corrected_successfully = False
 
                         # Add original invalid response to context
-                        self.context.append({"role": "assistant", "content": ai_reply})
+                        self.context_manager.add_assistant_message(ai_reply)
 
                         while correction_attempt < max_correction_attempts and not corrected_successfully:
                             correction_attempt += 1
@@ -487,7 +425,7 @@ class VaultAIAgentRunner:
                                 f"Please correct it and reply ONLY with the valid JSON object or list of objects. "
                                 f"Do not include any explanations or introductory text."
                             )
-                            self.context.append({"role": "user", "content": correction_prompt_content})
+                            self.context_manager.add_user_message(correction_prompt_content)
 
                             correction_window_for_prompt = self._sliding_window_context()
                             correction_llm_prompt_parts = []
@@ -522,8 +460,8 @@ class VaultAIAgentRunner:
                                     except Exception:
                                         pass
                                     # Remove the correction request and original failed reply from context
-                                    self.context.pop()  # Remove user's correction request
-                                    self.context.pop()  # Remove assistant's failed reply
+                                    self.context_manager.context.pop()  # Remove user's correction request
+                                    self.context_manager.context.pop()  # Remove assistant's failed reply
                                     ai_reply_json_string = corrected_ai_reply_string # This is now the primary response string
                                     corrected_successfully = True
                                     break  # Exit the correction loop on success
@@ -554,8 +492,8 @@ class VaultAIAgentRunner:
                             terminal.print_console(f"AI failed to provide valid JSON after {max_correction_attempts} correction attempts. Continuing with task using alternative approach.")
                             self.summary = f"Agent continued: AI failed to provide valid JSON after {max_correction_attempts} correction attempts, trying alternative approach."
                             # Add the last failed response to context
-                            self.context.append({"role": "assistant", "content": ai_reply or ""})
-                            self.context.append({"role": "user", "content": f"Your response could not be corrected after {max_correction_attempts} attempts. Please provide a new response with valid JSON format."})
+                            self.context_manager.add_assistant_message(ai_reply or "")
+                            self.context_manager.add_user_message(f"Your response could not be corrected after {max_correction_attempts} attempts. Please provide a new response with valid JSON format.")
                             # Set data to None to trigger the fallback behavior
                             data = None
                             continue
@@ -568,16 +506,16 @@ class VaultAIAgentRunner:
                     except Exception:
                         pass
                     if ai_reply and not ai_reply_json_string and not corrected_ai_reply_string: # If original reply exists but wasn't parsed
-                        self.context.append({"role": "assistant", "content": ai_reply})
-                        self.context.append({"role": "user", "content": "Your response could not be parsed as JSON. Please provide a new response with valid JSON format."})
+                        self.context_manager.add_assistant_message(ai_reply)
+                        self.context_manager.add_user_message("Your response could not be parsed as JSON. Please provide a new response with valid JSON format.")
                     # Continue with the loop instead of breaking
                     continue
 
                 if ai_reply_json_string: # This is the string of the successfully parsed JSON (original or corrected)
-                    self.context.append({"role": "assistant", "content": ai_reply_json_string})
+                    self.context_manager.add_assistant_message(ai_reply_json_string)
                     # Record the assistant response with the request id for tracing
                     try:
-                        self.request_history.append({"request_id": request_id, "step": step_count, "assistant_json": ai_reply_json_string})
+                        self.context_manager.record_request(request_id, step_count, ai_reply_json_string)
                         self.logger.debug("Recorded assistant response in request_history; request_id=%s", request_id)
                     except Exception:
                         try:
@@ -601,7 +539,7 @@ class VaultAIAgentRunner:
                 else:
                     terminal.print_console(f"AI response was not a list or dictionary after parsing: {type(data)}. Stopping agent.")
                     self.summary = f"Agent stopped: AI response type was {type(data)} after successful JSON parsing."
-                    self.context.append({"role": "user", "content": f"Your response was a {type(data)}, but I expected a list or a dictionary of actions. I am stopping."})
+                    self.context_manager.add_user_message(f"Your response was a {type(data)}, but I expected a list or a dictionary of actions. I am stopping.")
                     agent_should_stop_this_turn = True
                     break
 
@@ -610,7 +548,7 @@ class VaultAIAgentRunner:
 
                     if not isinstance(action_item, dict):
                         terminal.print_console(f"Action item {action_item_idx + 1}/{len(actions_to_process)} is not a dictionary: {action_item}. Skipping.")
-                        self.context.append({"role": "user", "content": f"Action item {action_item_idx + 1} in your list was not a dictionary: {action_item}. I am skipping it."})
+                        self.context_manager.add_user_message(f"Action item {action_item_idx + 1} in your list was not a dictionary: {action_item}. I am skipping it.")
                         continue
 
                     tool = action_item.get("tool")
@@ -634,11 +572,11 @@ class VaultAIAgentRunner:
                         explain = action_item.get("explain", "")
                         if timeout is not None and (not isinstance(timeout, (int, float)) or timeout <= 0):
                             terminal.print_console(f"Invalid timeout value in bash action: {timeout}. Must be a positive number. Skipping.")
-                            self.context.append({"role": "user", "content": f"You provided an invalid timeout: {timeout} in {action_item}. Timeout must be a positive number. I am skipping it."})
+                            self.context_manager.add_user_message(f"You provided an invalid timeout: {timeout} in {action_item}. Timeout must be a positive number. I am skipping it.")
                             continue
                         if not command:
                             terminal.print_console(f"No command provided in bash action: {action_item}. Skipping.")
-                            self.context.append({"role": "user", "content": f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it."})
+                            self.context_manager.add_user_message(f"You provided a 'bash' tool action but no command: {action_item}. I am skipping it.")
                             continue
 
                         # Security: Validate command before execution
@@ -646,7 +584,7 @@ class VaultAIAgentRunner:
                             is_valid, reason = self.security_validator.validate_command(command)
                             if not is_valid:
                                 terminal.print_console(f"Command validation failed: {reason}. Skipping.")
-                                self.context.append({"role": "user", "content": f"Command '{command}' failed security validation: {reason}. I am skipping it."})
+                                self.context_manager.add_user_message(f"Command '{command}' failed security validation: {reason}. I am skipping it.")
                                 continue
 
                         if not terminal.auto_accept:
@@ -659,7 +597,7 @@ class VaultAIAgentRunner:
                             if confirm != 'y':
                                 justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the command and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
                                 terminal.print_console(f"\nValutAI> Command refused by user. Justification: {justification}\n")
-                                self.context.append({"role": "user", "content": f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?"})
+                                self.context_manager.add_user_message(f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
                         terminal.print_console(f"\nValutAI> Executing: {command}")
@@ -710,22 +648,22 @@ class VaultAIAgentRunner:
                             # else: 
                             #     user_feedback_content += "\nWhat is the next step?"
                         
-                        self.context.append({"role": "user", "content": user_feedback_content})
+                        self.context_manager.add_user_message(user_feedback_content)
 
                     elif tool == "ask_user":
                         question = action_item.get("question")
                         if not question:
                             terminal.print_console(f"No question provided in ask_user action: {action_item}. Skipping.")
-                            self.context.append({"role": "user", "content": f"You provided an 'ask_user' action but no question: {action_item}. I am skipping it."})
+                            self.context_manager.add_user_message(f"You provided an 'ask_user' action but no question: {action_item}. I am skipping it.")
                             continue
                         
                         terminal.print_console(f"Agent asks: {question}")
                         user_answer = self._get_user_input("Your answer: ", multiline=True)
-                        self.context.append({"role": "user", "content": f"User answer to '{question}': {user_answer}"})
+                        self.context_manager.add_user_message(f"User answer to '{question}': {user_answer}")
 
                         if not agent_should_stop_this_turn:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
-                                self.context.append({"role": "user", "content": "I will now proceed to the next action you provided."})
+                                self.context_manager.add_user_message("I will now proceed to the next action you provided.")
                     
                     elif tool == "write_file":
                         file_path = action_item.get("path")
@@ -735,7 +673,7 @@ class VaultAIAgentRunner:
                         file_content = action_item.get("content")
                         if not file_path or file_content is None:
                             terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")
-                            self.context.append({"role": "user", "content": f"You provided a 'write_file' tool action but no 'path' or 'content': {action_item}. I am skipping it."})
+                            self.context_manager.add_user_message(f"You provided a 'write_file' tool action but no 'path' or 'content': {action_item}. I am skipping it.")
                             continue
 
                         if not terminal.auto_accept:
@@ -744,7 +682,7 @@ class VaultAIAgentRunner:
                             if confirm != 'y':
                                 justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to write the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
                                 terminal.print_console(f"\nValutAI> File write refused by user. Justification: {justification}\n")
-                                self.context.append({"role": "user", "content": f"User refused to write file '{file_path}' with justification: {justification}. Based on this, what should be the next step?"})
+                                self.context_manager.add_user_message(f"User refused to write file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
                         preview = file_content[:100] + ("..." if len(file_content) > 100 else "")
@@ -782,13 +720,13 @@ class VaultAIAgentRunner:
                                         out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                                     if code == 0:
                                         terminal.print_console(f"File '{file_path}' copied to remote host.\nPreview:\n{preview}")
-                                        self.context.append({"role": "user", "content": f"File '{file_path}' copied to remote host. Preview:\n{preview}"})
+                                        self.context_manager.add_user_message(f"File '{file_path}' copied to remote host. Preview:\n{preview}")
                                     else:
                                         terminal.print_console(f"Failed to move file to '{file_path}' on remote host: {out}")
-                                        self.context.append({"role": "user", "content": f"Failed to move file to '{file_path}' on remote host: {out}"})
+                                        self.context_manager.add_user_message(f"Failed to move file to '{file_path}' on remote host: {out}")
                                 else:
                                     terminal.print_console(f"Failed to copy file to remote tmp: {result.stderr}")
-                                    self.context.append({"role": "user", "content": f"Failed to copy file to remote tmp: {result.stderr}"})
+                                    self.context_manager.add_user_message(f"Failed to copy file to remote tmp: {result.stderr}")
                             finally:
                                 try:
                                     os.remove(tmpf_path)
@@ -803,10 +741,10 @@ class VaultAIAgentRunner:
                                 with open(file_path, "w", encoding="utf-8") as f:
                                     f.write(file_content)
                                 terminal.print_console(f"File '{file_path}' written successfully.\nPreview:\n{preview}")
-                                self.context.append({"role": "user", "content": f"File '{file_path}' written successfully. Preview:\n{preview}"})
+                                self.context_manager.add_user_message(f"File '{file_path}' written successfully. Preview:\n{preview}")
                             except Exception as e:
                                 terminal.print_console(f"Failed to write file '{file_path}': {e}")
-                                self.context.append({"role": "user", "content": f"Failed to write file '{file_path}': {e}"})
+                                self.context_manager.add_user_message(f"Failed to write file '{file_path}': {e}")
                         continue
 
                     elif tool == "edit_file":
@@ -819,7 +757,7 @@ class VaultAIAgentRunner:
 
                         if not file_path or not action:
                             terminal.print_console(f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping.")
-                            self.context.append({"role": "user", "content": f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping."})
+                            self.context_manager.add_user_message(f"Missing 'path' or 'action' in edit_file action: {action_item}. Skipping.")
                             continue
 
                         if not terminal.auto_accept:
@@ -838,7 +776,7 @@ class VaultAIAgentRunner:
                             if confirm != 'y':
                                 justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to edit the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
                                 terminal.print_console(f"\nValutAI> File edit refused by user. Justification: {justification}\n")
-                                self.context.append({"role": "user", "content": f"User refused to edit file '{file_path}' with justification: {justification}. Based on this, what should be the next step?"})
+                                self.context_manager.add_user_message(f"User refused to edit file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
                         def edit_file_local():
@@ -847,7 +785,7 @@ class VaultAIAgentRunner:
                                     lines = f.readlines()
                             except Exception as e:
                                 terminal.print_console(f"Failed to read file '{file_path}': {e}")
-                                self.context.append({"role": "user", "content": f"Failed to read file '{file_path}': {e}"})
+                                self.context_manager.add_user_message(f"Failed to read file '{file_path}': {e}")
                                 return False
 
                             changed = False
@@ -879,7 +817,7 @@ class VaultAIAgentRunner:
                                     new_lines.append(l)
                             else:
                                 terminal.print_console(f"Unsupported or missing parameters for edit_file: {action_item}")
-                                self.context.append({"role": "user", "content": f"Unsupported or missing parameters for edit_file: {action_item}"})
+                                self.context_manager.add_user_message(f"Unsupported or missing parameters for edit_file: {action_item}")
                                 return False
 
                             if changed:
@@ -887,15 +825,15 @@ class VaultAIAgentRunner:
                                     with open(file_path, "w", encoding="utf-8") as f:
                                         f.writelines(new_lines)
                                     terminal.print_console(f"File '{file_path}' edited successfully.")
-                                    self.context.append({"role": "user", "content": f"File '{file_path}' edited successfully."})
+                                    self.context_manager.add_user_message(f"File '{file_path}' edited successfully.")
                                     return True
                                 except Exception as e:
                                     terminal.print_console(f"Failed to write file '{file_path}': {e}")
-                                    self.context.append({"role": "user", "content": f"Failed to write file '{file_path}': {e}"})
+                                    self.context_manager.add_user_message(f"Failed to write file '{file_path}': {e}")
                                     return False
                             else:
                                 terminal.print_console(f"No changes made to '{file_path}'.")
-                                self.context.append({"role": "user", "content": f"No changes made to '{file_path}'."})
+                                self.context_manager.add_user_message(f"No changes made to '{file_path}'.")
                                 return False
 
                         if self.terminal.ssh_connection:
@@ -910,7 +848,7 @@ class VaultAIAgentRunner:
                                 result = subprocess.run(scp_get, capture_output=True, text=True)
                                 if result.returncode != 0:
                                     terminal.print_console(f"Failed to fetch remote file '{file_path}': {result.stderr}")
-                                    self.context.append({"role": "user", "content": f"Failed to fetch remote file '{file_path}': {result.stderr}"})
+                                    self.context_manager.add_user_message(f"Failed to fetch remote file '{file_path}': {result.stderr}")
                                     continue
                                 # Edit locally
                                 file_path_backup = file_path
@@ -939,13 +877,13 @@ class VaultAIAgentRunner:
                                             out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                                         if code == 0:
                                             terminal.print_console(f"File '{file_path}' edited and uploaded to remote host.")
-                                            self.context.append({"role": "user", "content": f"File '{file_path}' edited and uploaded to remote host."})
+                                            self.context_manager.add_user_message(f"File '{file_path}' edited and uploaded to remote host.")
                                         else:
                                             terminal.print_console(f"Failed to move edited file to '{file_path}' on remote host: {out}")
-                                            self.context.append({"role": "user", "content": f"Failed to move edited file to '{file_path}' on remote host: {out}"})
+                                            self.context_manager.add_user_message(f"Failed to move edited file to '{file_path}' on remote host: {out}")
                                     else:
                                         terminal.print_console(f"Failed to upload edited file to remote tmp: {result.stderr}")
-                                        self.context.append({"role": "user", "content": f"Failed to upload edited file to remote tmp: {result.stderr}"})
+                                        self.context_manager.add_user_message(f"Failed to upload edited file to remote tmp: {result.stderr}")
                         else:
                             edit_file_local()
                         continue
@@ -958,11 +896,11 @@ class VaultAIAgentRunner:
                         )
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."
-                            self.context.append({"role": "user", "content": user_feedback_invalid_tool})
+                            self.context_manager.add_user_message(user_feedback_invalid_tool)
                             continue 
                         else:
                             user_feedback_invalid_tool += "I am stopping processing of your actions for this turn. Please provide a valid set of actions."
-                            self.context.append({"role": "user", "content": user_feedback_invalid_tool})
+                            self.context_manager.add_user_message(user_feedback_invalid_tool)
                             agent_should_stop_this_turn = True 
                             break 
                 
@@ -981,8 +919,8 @@ class VaultAIAgentRunner:
                     new_instruction = terminal.process_input(user_input)
 
                     # Append to existing context instead of resetting to preserve conversation history
-                    self.context.append({"role": "assistant", "content": f"Previous task summary: {self.summary}"})
-                    self.context.append({"role": "user", "content": f"New instruction (this takes priority): {new_instruction}"})
+                    self.context_manager.add_assistant_message(f"Previous task summary: {self.summary}")
+                    self.context_manager.add_user_message(f"New instruction (this takes priority): {new_instruction}")
 
                     self.steps = []
                     self.summary = ""
