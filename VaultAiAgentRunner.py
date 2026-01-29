@@ -9,6 +9,7 @@ import uuid
 from prompt_toolkit import prompt
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
+from ai.AICommunicationHandler import AICommunicationHandler
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -96,6 +97,7 @@ class VaultAIAgentRunner:
 
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
+        self.ai_handler = AICommunicationHandler(terminal, logger=self.logger)
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -130,106 +132,7 @@ class VaultAIAgentRunner:
         except Exception as e:
             pass
 
-    def _get_ai_reply_with_retry(self, terminal, system_prompt, prompt_text, retries=0, delay=10):
-        # Log entry into retry helper
-        try:
-            self.logger.debug("_get_ai_reply_with_retry called; retries=%s", retries)
-        except Exception:
-            pass
 
-        if retries == 0:
-            attempt = 0
-            while True:
-                attempt += 1
-                ai_reply = None
-                try:
-                    try:
-                        self.logger.debug("Contacting AI (attempt %s). Engine=%s", attempt, getattr(terminal, 'ai_engine', None))
-                    except Exception:
-                        pass
-                    if terminal.ai_engine == "ollama":
-                        ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
-                    elif terminal.ai_engine == "ollama-cloud":
-                        ai_reply = terminal.connect_to_ollama_cloud(system_prompt, prompt_text, format="json")
-                    elif terminal.ai_engine == "google":
-                        ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
-                    elif terminal.ai_engine == "openai":
-                        ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
-                    elif terminal.ai_engine == "openrouter":
-                        ai_reply = terminal.connect_to_openrouter(system_prompt, prompt_text)
-                    else:
-                        terminal.print_console("Invalid AI engine specified. Stopping agent.")
-                        self.summary = "Agent stopped: Invalid AI engine specified."
-                        return None
-
-                    if ai_reply and "503" not in ai_reply:
-                        try:
-                            self.logger.debug("Received AI reply (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
-                        except Exception:
-                            pass
-                        return ai_reply
-                    else:
-                        terminal.print_console(f"AI returned an error or empty response (Attempt {attempt}). Retrying in {delay}s...")
-                        try:
-                            self.logger.warning("AI returned empty/error response on attempt %s", attempt)
-                        except Exception:
-                            pass
-                        time.sleep(delay)
-
-                except Exception as e:
-                    terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt}): {e}. Retrying in {delay}s...")
-                    try:
-                        self.logger.exception("Exception while contacting AI on attempt %s: %s", attempt, e)
-                    except Exception:
-                        pass
-                    time.sleep(delay)
-        else:
-            for attempt in range(retries):
-                ai_reply = None
-                try:
-                    try:
-                        self.logger.debug("Contacting AI (retry attempt %s/%s). Engine=%s", attempt + 1, retries, getattr(terminal, 'ai_engine', None))
-                    except Exception:
-                        pass
-                    if terminal.ai_engine == "ollama":
-                        ai_reply = terminal.connect_to_ollama(system_prompt, prompt_text, format="json")
-                    elif terminal.ai_engine == "ollama-cloud":
-                        ai_reply = terminal.connect_to_ollama_cloud(system_prompt, prompt_text, format="json")
-                    elif terminal.ai_engine == "google":
-                        ai_reply = terminal.connect_to_gemini(f"{system_prompt}\n{prompt_text}")
-                    elif terminal.ai_engine == "openai":
-                        ai_reply = terminal.connect_to_chatgpt(system_prompt, prompt_text)
-                    elif terminal.ai_engine == "openrouter":
-                        ai_reply = terminal.connect_to_openrouter(system_prompt, prompt_text)
-                    else:
-                        terminal.print_console("Invalid AI engine specified. Stopping agent.")
-                        self.summary = "Agent stopped: Invalid AI engine specified."
-                        return None
-
-                    if ai_reply and "503" not in ai_reply:
-                        try:
-                            self.logger.debug("Received AI reply on retry (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
-                        except Exception:
-                            pass
-                        return ai_reply
-                    else:
-                        terminal.print_console(f"AI returned an error or empty response (Attempt {attempt + 1}/{retries}). Retrying in {delay}s...")
-                        try:
-                            self.logger.warning("AI returned empty/error response on retry %s/%s", attempt + 1, retries)
-                        except Exception:
-                            pass
-                        time.sleep(delay)
-
-                except Exception as e:
-                    terminal.print_console(f"An exception occurred while contacting AI (Attempt {attempt + 1}/{retries}): {e}. Retrying in {delay}s...")
-                    try:
-                        self.logger.exception("Exception while contacting AI on retry %s/%s: %s", attempt + 1, retries, e)
-                    except Exception:
-                        pass
-                    time.sleep(delay)
-            
-            terminal.print_console("Failed to get a valid response from AI after multiple retries.")
-            return None
 
     def _sliding_window_context(self):
         """
@@ -279,7 +182,11 @@ class VaultAIAgentRunner:
                     prompt_text_parts.append(f"{m['role']}: {m['content']}")
                 prompt_text = "\n".join(prompt_text_parts)
 
-                ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, prompt_text)
+                ai_reply = self.ai_handler.send_request(
+                    system_prompt=self.system_prompt_agent, 
+                    user_prompt=prompt_text,
+                    request_format="json"
+                )
 
                 try:
                     self.logger.debug("AI reply received (nil? %s) request_id=%s", ai_reply is None, request_id)
@@ -343,7 +250,11 @@ class VaultAIAgentRunner:
                                 correction_llm_prompt_parts.append(f"{m_corr['role']}: {m_corr['content']}")
                             correction_llm_prompt_text = "\n".join(correction_llm_prompt_parts)
 
-                            corrected_ai_reply = self._get_ai_reply_with_retry(terminal, self.system_prompt_agent, correction_llm_prompt_text)
+                            corrected_ai_reply = self.ai_handler.send_request(
+                                system_prompt=self.system_prompt_agent, 
+                                user_prompt=correction_llm_prompt_text,
+                                request_format="json"
+                            )
 
                             terminal.print_console(f"AI agent correction attempt {correction_attempt}: {corrected_ai_reply}")
 
