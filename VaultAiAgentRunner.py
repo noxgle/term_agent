@@ -85,7 +85,7 @@ class VaultAIAgentRunner:
             self.system_prompt_agent = f"{self.system_prompt_agent} You dont need sudo, you are root."
 
         # Initialize ContextManager for conversation context and sliding window functionality
-        self.context_manager = ContextManager(window_size=window_size, logger=self.logger)
+        self.context_manager = ContextManager(window_size=window_size, logger=self.logger, runner=self)
 
         # Initialize context with system prompt and user goal
         self.context_manager.add_system_message(self.system_prompt_agent)
@@ -249,97 +249,6 @@ class VaultAIAgentRunner:
         state = getattr(self, "state", None)
         return self.context_manager.get_sliding_window_context(state)
 
-    def _summarize(self, messages: list) -> str:
-        """
-        Produce a concise summary for a list of messages.
-
-        The summary should include:
-        - what has been done (completed actions),
-        - decisions or results,
-        - outstanding/pending tasks.
-
-        This implementation first attempts to use the configured AI engine via
-        `_get_ai_reply_with_retry`. If that fails or is unavailable, it falls
-        back to a lightweight heuristic extraction.
-
-        Args:
-            messages: list of message dicts to summarize (each with 'role' and 'content').
-
-        Returns:
-            str: concise multi-line summary.
-        """
-        # Log summarization request
-        try:
-            self.logger.debug("_summarize called for %s messages", len(messages))
-        except Exception:
-            pass
-
-        # Build a compact textual representation of the messages
-        joined = []
-        for m in messages:
-            role = m.get("role", "")
-            content = m.get("content", "")
-            # Truncate long contents to keep prompt sizes reasonable
-            preview = content if len(content) <= 800 else content[:800] + "..."
-            joined.append(f"{role}: {preview}")
-        prompt_text = "\n".join(joined)
-
-        # Try to use the AI to create a high-quality summary
-        summarizer_system = (
-            "You are a concise summarizer. Create a short summary containing:\n"
-            "- Completed actions and their results\n"
-            "- Key decisions or outcomes\n"
-            "- Pending/open tasks\n"
-            "Format the output as bullet points, prefixed by categories: Completed:, Decisions:, Pending:."
-        )
-
-        try:
-            self.logger.debug("Attempting AI summarization via _get_ai_reply_with_retry")
-            ai_reply = self._get_ai_reply_with_retry(self.terminal, summarizer_system, prompt_text, retries=1)
-            if ai_reply:
-                # If AI returns a JSON-wrapped or fenced block, strip fences
-                # and return the plain text reply.
-                # Remove markdown code fences if present
-                ai_reply = re.sub(r'```\w*', '', ai_reply)
-                ai_reply = ai_reply.replace('```', '').strip()
-                try:
-                    self.logger.debug("AI summarization succeeded (len=%s)", len(ai_reply) if isinstance(ai_reply, str) else 0)
-                except Exception:
-                    pass
-                return ai_reply
-        except Exception:
-            # fall through to heuristic
-            try:
-                self.logger.exception("AI summarization attempt failed, falling back to heuristic summarization.")
-            except Exception:
-                pass
-
-        # Fallback heuristic summarization: simple extraction by keywords
-        completed = []
-        decisions = []
-        pending = []
-
-        for m in messages:
-            text = m.get("content", "").strip()
-            lower = text.lower()
-            # Heuristics: look for typical phrases
-            if any(k in lower for k in ("done", "completed", "finished", "succeeded", "created", "written")):
-                completed.append(text.splitlines()[0])
-            elif any(k in lower for k in ("decide", "decision", "choose", "will", "should")):
-                decisions.append(text.splitlines()[0])
-            elif any(k in lower for k in ("todo", "pending", "next", "remaining", "open")):
-                pending.append(text.splitlines()[0])
-
-        # Build the summary text
-        parts = []
-        parts.append("Completed:")
-        parts.extend([f"- {c}" for c in (completed or ["(none detected)"])])
-        parts.append("\nDecisions:")
-        parts.extend([f"- {d}" for d in (decisions or ["(none detected)"])])
-        parts.append("\nPending:")
-        parts.extend([f"- {p}" for p in (pending or ["(none detected)"])])
-
-        return "\n".join(parts)
 
     def run(self):
         terminal = self.terminal

@@ -14,18 +14,20 @@ class ContextManager:
     - Providing context windows for AI model input
     """
 
-    def __init__(self, window_size: int = 20, logger: Optional[logging.Logger] = None):
+    def __init__(self, window_size: int = 20, logger: Optional[logging.Logger] = None, runner=None):
         """
         Initialize the ContextManager.
 
         Args:
             window_size: Number of recent messages to keep in the sliding window
             logger: Optional logger for debugging and tracing
+            runner: Reference to the agent runner for AI operations
         """
         self.window_size = window_size
         self.context: List[Dict[str, str]] = []
         self.request_history: List[Dict[str, Any]] = []
         self.logger = logger or logging.getLogger("ContextManager")
+        self.runner = runner
 
         # Initialize with empty context
         self._initialize_context()
@@ -137,28 +139,36 @@ class ContextManager:
 
     def _summarize(self, messages: List[Dict[str, str]]) -> str:
         """
-        Produce a concise summary for a list of messages.
-
-        The summary should include:
-        - what has been done (completed actions),
-        - decisions or results,
-        - outstanding/pending tasks.
-
-        This implementation uses a lightweight heuristic extraction.
-
-        Args:
-            messages: list of message dicts to summarize (each with 'role' and 'content').
-
-        Returns:
-            str: concise multi-line summary.
+        Produce a concise summary for a list of messages using AI with heuristic fallback.
         """
-        # Log summarization request
-        try:
-            self.logger.debug("_summarize called for %s messages", len(messages))
-        except Exception:
-            pass
+        # First attempt AI-powered summary if runner is available
+        if self.runner:
+            try:
+                # Build compact message representation
+                joined = [f"{m.get('role','')}: {m.get('content','')[:800]}" for m in messages]
+                prompt_text = "\n".join(joined)
 
-        # Fallback heuristic summarization: simple extraction by keywords
+                summarizer_system = (
+                    "You are a concise summarizer. Create a short summary containing:\n"
+                    "- Completed actions and their results\n"
+                    "- Key decisions or outcomes\n"
+                    "- Pending/open tasks\n"
+                    "Format the output as bullet points."
+                )
+
+                ai_reply = self.runner._get_ai_reply_with_retry(
+                    self.runner.terminal, 
+                    summarizer_system, 
+                    prompt_text, 
+                    retries=1
+                )
+                if ai_reply:
+                    # Clean any code fences from response
+                    return re.sub(r'```\w*', '', ai_reply).replace('```', '').strip()
+            except Exception:
+                self.logger.exception("AI summarization failed, using heuristic fallback")
+                
+        # Fallback heuristic summarization
         completed = []
         decisions = []
         pending = []
@@ -166,23 +176,16 @@ class ContextManager:
         for m in messages:
             text = m.get("content", "").strip()
             lower = text.lower()
-            # Heuristics: look for typical phrases
-            if any(k in lower for k in ("done", "completed", "finished", "succeeded", "created", "written")):
+            if any(k in lower for k in ("done", "completed", "finished", "succeeded", "created")):
                 completed.append(text.splitlines()[0])
             elif any(k in lower for k in ("decide", "decision", "choose", "will", "should")):
                 decisions.append(text.splitlines()[0])
             elif any(k in lower for k in ("todo", "pending", "next", "remaining", "open")):
                 pending.append(text.splitlines()[0])
 
-        # Build the summary text
-        parts = []
-        parts.append("Completed:")
-        parts.extend([f"- {c}" for c in (completed or ["(none detected)"])])
-        parts.append("\nDecisions:")
-        parts.extend([f"- {d}" for d in (decisions or ["(none detected)"])])
-        parts.append("\nPending:")
-        parts.extend([f"- {p}" for p in (pending or ["(none detected)"])])
-
+        parts = ["Completed:"] + [f"- {c}" for c in completed or ["(none detected)"]]
+        parts += ["\nDecisions:"] + [f"- {d}" for d in decisions or ["(none detected)"]]
+        parts += ["\nPending:"] + [f"- {p}" for p in pending or ["(none detected)"]]
         return "\n".join(parts)
 
     def record_request(self, request_id: str, step: int, assistant_json: str):
