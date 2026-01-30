@@ -10,6 +10,7 @@ from prompt_toolkit import prompt
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
+from file_operator.FileOperator import FileOperator
 
 class VaultAIAgentRunner:
     def __init__(self, 
@@ -98,6 +99,7 @@ class VaultAIAgentRunner:
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
         self.ai_handler = AICommunicationHandler(terminal, logger=self.logger)
+        self.file_operator = FileOperator(terminal, logger=self.logger)
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -488,8 +490,6 @@ class VaultAIAgentRunner:
                     elif tool == "write_file":
                         file_path = action_item.get("path")
                         explain = action_item.get("explain", "")
-                        if file_path and not file_path.startswith("/"):
-                            file_path = os.path.join(os.getcwd(), file_path)
                         file_content = action_item.get("content")
                         if not file_path or file_content is None:
                             terminal.print_console(f"Missing 'path' or 'content' in write_file action: {action_item}. Skipping.")
@@ -505,66 +505,11 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(f"User refused to write file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
-                        preview = file_content[:100] + ("..." if len(file_content) > 100 else "")
-
-                        if self.terminal.ssh_connection:
-                            with tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8") as tmpf:
-                                tmpf.write(file_content)
-                                tmpf_path = tmpf.name
-
-                            remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
-                            password = getattr(self.terminal, "ssh_password", None)
-
-                            remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
-
-                            # Remove existing file on remote host if exists
-                            rm_cmd = f"rm -f '{file_path}'"
-                            self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
-                            # Remove existing temp file on remote host if exists
-                            rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
-                            self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
-
-                            scp_cmd = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [tmpf_path, f"{remote}:{remote_tmp_path}"]
-                            try:
-                                result = subprocess.run(scp_cmd, capture_output=True, text=True)
-                                if result.returncode == 0:
-                                    needs_sudo = not (self.user == "root" or file_path.startswith(f"/home/{self.user}") or file_path.startswith("/tmp"))
-                                    if remote_tmp_path == file_path:
-                                        code = 0
-                                        out = ""
-                                    else:
-                                        if needs_sudo:
-                                            cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
-                                        else:
-                                            cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
-                                        out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
-                                    if code == 0:
-                                        terminal.print_console(f"File '{file_path}' copied to remote host.\nPreview:\n{preview}")
-                                        self.context_manager.add_user_message(f"File '{file_path}' copied to remote host. Preview:\n{preview}")
-                                    else:
-                                        terminal.print_console(f"Failed to move file to '{file_path}' on remote host: {out}")
-                                        self.context_manager.add_user_message(f"Failed to move file to '{file_path}' on remote host: {out}")
-                                else:
-                                    terminal.print_console(f"Failed to copy file to remote tmp: {result.stderr}")
-                                    self.context_manager.add_user_message(f"Failed to copy file to remote tmp: {result.stderr}")
-                            finally:
-                                try:
-                                    os.remove(tmpf_path)
-                                except Exception:
-                                    pass
+                        success = self.file_operator.write_file(file_path, file_content, explain)
+                        if success:
+                            self.context_manager.add_user_message(f"File '{file_path}' written successfully.")
                         else:
-                            try:
-                                os.makedirs(os.path.dirname(file_path), exist_ok=True)
-                                # Remove existing file if it exists
-                                if os.path.exists(file_path):
-                                    os.remove(file_path)
-                                with open(file_path, "w", encoding="utf-8") as f:
-                                    f.write(file_content)
-                                terminal.print_console(f"File '{file_path}' written successfully.\nPreview:\n{preview}")
-                                self.context_manager.add_user_message(f"File '{file_path}' written successfully. Preview:\n{preview}")
-                            except Exception as e:
-                                terminal.print_console(f"Failed to write file '{file_path}': {e}")
-                                self.context_manager.add_user_message(f"Failed to write file '{file_path}': {e}")
+                            self.context_manager.add_user_message(f"Failed to write file '{file_path}'.")
                         continue
 
                     elif tool == "edit_file":
@@ -599,113 +544,11 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(f"User refused to edit file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
-                        def edit_file_local():
-                            try:
-                                with open(file_path, "r", encoding="utf-8") as f:
-                                    lines = f.readlines()
-                            except Exception as e:
-                                terminal.print_console(f"Failed to read file '{file_path}': {e}")
-                                self.context_manager.add_user_message(f"Failed to read file '{file_path}': {e}")
-                                return False
-
-                            changed = False
-                            new_lines = []
-                            if action == "replace" and search is not None and replace is not None:
-                                for l in lines:
-                                    if search in l:
-                                        new_lines.append(l.replace(search, replace))
-                                        changed = True
-                                    else:
-                                        new_lines.append(l)
-                            elif action == "insert_after" and search is not None and line is not None:
-                                for l in lines:
-                                    new_lines.append(l)
-                                    if search in l:
-                                        new_lines.append(line + "\n")
-                                        changed = True
-                            elif action == "insert_before" and search is not None and line is not None:
-                                for l in lines:
-                                    if search in l:
-                                        new_lines.append(line + "\n")
-                                        changed = True
-                                    new_lines.append(l)
-                            elif action == "delete_line" and search is not None:
-                                for l in lines:
-                                    if search in l:
-                                        changed = True
-                                        continue
-                                    new_lines.append(l)
-                            else:
-                                terminal.print_console(f"Unsupported or missing parameters for edit_file: {action_item}")
-                                self.context_manager.add_user_message(f"Unsupported or missing parameters for edit_file: {action_item}")
-                                return False
-
-                            if changed:
-                                try:
-                                    with open(file_path, "w", encoding="utf-8") as f:
-                                        f.writelines(new_lines)
-                                    terminal.print_console(f"File '{file_path}' edited successfully.")
-                                    self.context_manager.add_user_message(f"File '{file_path}' edited successfully.")
-                                    return True
-                                except Exception as e:
-                                    terminal.print_console(f"Failed to write file '{file_path}': {e}")
-                                    self.context_manager.add_user_message(f"Failed to write file '{file_path}': {e}")
-                                    return False
-                            else:
-                                terminal.print_console(f"No changes made to '{file_path}'.")
-                                self.context_manager.add_user_message(f"No changes made to '{file_path}'.")
-                                return False
-
-                        if self.terminal.ssh_connection:
-                            # Get the file from remote, edit locally, then send back
-                            remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
-                            password = getattr(self.terminal, "ssh_password", None)
-                            with tempfile.TemporaryDirectory() as tmpdir:
-                                local_tmp_path = os.path.join(tmpdir, os.path.basename(file_path))
-                                remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
-                                # Get remote file
-                                scp_get = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [f"{remote}:{file_path}", local_tmp_path]
-                                result = subprocess.run(scp_get, capture_output=True, text=True)
-                                if result.returncode != 0:
-                                    terminal.print_console(f"Failed to fetch remote file '{file_path}': {result.stderr}")
-                                    self.context_manager.add_user_message(f"Failed to fetch remote file '{file_path}': {result.stderr}")
-                                    continue
-                                # Edit locally
-                                file_path_backup = file_path
-                                file_path = local_tmp_path
-                                ok = edit_file_local()
-                                file_path = file_path_backup
-                                if ok:
-                                   # Remove existing target file on remote if it exists
-                                    rm_cmd = f"rm -f '{file_path}'"
-                                    self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
-                                    rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
-                                    self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
-                                    # Send back edited file
-                                    scp_put = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [local_tmp_path, f"{remote}:{remote_tmp_path}"]
-                                    result = subprocess.run(scp_put, capture_output=True, text=True)
-                                    if result.returncode == 0:
-                                        needs_sudo = not (self.user == "root" or file_path.startswith(f"/home/{self.user}") or file_path.startswith("/tmp"))
-                                        if remote_tmp_path == file_path:
-                                            code = 0
-                                            out = ""
-                                        else:
-                                            if needs_sudo:
-                                                cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
-                                            else:
-                                                cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
-                                            out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
-                                        if code == 0:
-                                            terminal.print_console(f"File '{file_path}' edited and uploaded to remote host.")
-                                            self.context_manager.add_user_message(f"File '{file_path}' edited and uploaded to remote host.")
-                                        else:
-                                            terminal.print_console(f"Failed to move edited file to '{file_path}' on remote host: {out}")
-                                            self.context_manager.add_user_message(f"Failed to move edited file to '{file_path}' on remote host: {out}")
-                                    else:
-                                        terminal.print_console(f"Failed to upload edited file to remote tmp: {result.stderr}")
-                                        self.context_manager.add_user_message(f"Failed to upload edited file to remote tmp: {result.stderr}")
+                        success = self.file_operator.edit_file(file_path, action, search, replace, line, explain)
+                        if success:
+                            self.context_manager.add_user_message(f"File '{file_path}' edited successfully.")
                         else:
-                            edit_file_local()
+                            self.context_manager.add_user_message(f"Failed to edit file '{file_path}'.")
                         continue
 
                     else: 
