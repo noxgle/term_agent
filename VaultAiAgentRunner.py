@@ -415,7 +415,7 @@ class VaultAIAgentRunner:
                             out, code = self.terminal.execute_local(command, timeout=timeout) # Corrected method call
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
-                        terminal.print_console(f"Result (code {code}):\n{out}")
+                        terminal.print_console(f"Result (exit code: {code}):\n{out}")
                         try:
                             self.logger.debug("Command result: code=%s, out_len=%s; request_id=%s", code, len(out) if isinstance(out, str) else 0, request_id)
                         except Exception:
