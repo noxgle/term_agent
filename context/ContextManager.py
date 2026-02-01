@@ -225,6 +225,24 @@ class ContextManager:
     # Maintenance / metrics
     # ------------------------------------------------------------------
 
+    def record_request(self, request_id: str, step_count: int, ai_reply_json_string: str) -> None:
+        """
+        Record a request in the request history for tracking and debugging purposes.
+        
+        Args:
+            request_id: Unique identifier for the request
+            step_count: The step number in the current session
+            ai_reply_json_string: The JSON string response from the AI
+        """
+        request_entry = {
+            "request_id": request_id,
+            "step_count": step_count,
+            "timestamp": datetime.now().isoformat(),
+            "ai_reply_json_string": ai_reply_json_string
+        }
+        self.request_history.append(request_entry)
+        self._safe_log("debug", "Recorded request; request_id=%s; step=%s", request_id, step_count)
+
     def cleanup_request_history(self, max_entries: Optional[int] = None) -> None:
         """
         Clean up request history to prevent memory leaks.
