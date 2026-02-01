@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import time
 import uuid
-from prompt_toolkit import prompt
+from user.UserInteractionHandler import UserInteractionHandler
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
@@ -100,6 +100,7 @@ class VaultAIAgentRunner:
         self.security_validator = SecurityValidator()
         self.ai_handler = AICommunicationHandler(terminal, logger=self.logger)
         self.file_operator = FileOperator(terminal, logger=self.logger)
+        self.user_interaction_handler = UserInteractionHandler(terminal)
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -110,29 +111,7 @@ class VaultAIAgentRunner:
         self.context_manager.cleanup_request_history(max_entries)
 
     def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
-        """
-        Unified input helper that uses prompt_toolkit so Ctrl+S (configured in
-        the terminal keybindings) can be used to submit input consistently.
-
-        Returns the entered text (empty string on cancel/EOF).
-        """
-        try:
-            user_input = prompt(
-                prompt_text,
-                multiline=multiline,
-                prompt_continuation=(lambda width, line_number, is_soft_wrap: "... ") if multiline else None,
-                enable_system_prompt=True,
-                key_bindings=self.terminal.create_keybindings(),
-            )
-            return user_input
-        # except (EOFError, KeyboardInterrupt):
-        #     try:
-        #         self.terminal.print_console("\nInput cancelled by user.")
-        #     except Exception:
-        #         pass
-        #     return ""
-        except Exception as e:
-            pass
+        return self.user_interaction_handler._get_user_input(prompt_text, multiline)
 
 
 
