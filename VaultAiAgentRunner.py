@@ -12,6 +12,13 @@ from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
 from file_operator.FileOperator import FileOperator
 
+# Import our enhanced JSON validator
+try:
+    from json_validator.JsonValidator import create_validator
+    JSON_VALIDATOR_AVAILABLE = True
+except ImportError:
+    JSON_VALIDATOR_AVAILABLE = False
+
 class VaultAIAgentRunner:
     def __init__(self, 
                 terminal, 
@@ -101,6 +108,18 @@ class VaultAIAgentRunner:
         self.ai_handler = AICommunicationHandler(terminal, logger=self.logger)
         self.file_operator = FileOperator(terminal, logger=self.logger)
         self.user_interaction_handler = UserInteractionHandler(terminal)
+        
+        # Initialize enhanced JSON validator if available
+        self.json_validator = None
+        if JSON_VALIDATOR_AVAILABLE:
+            try:
+                self.json_validator = create_validator("flexible")  # Use flexible mode for maximum compatibility
+                self.logger.info("Enhanced JSON validator initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize enhanced JSON validator: {e}")
+                self.json_validator = None
+        else:
+            self.logger.warning("Enhanced JSON validator not available, falling back to standard parsing")
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -132,6 +151,151 @@ class VaultAIAgentRunner:
         # Get the sliding window context from the ContextManager
         state = getattr(self, "state", None)
         return self.context_manager.get_sliding_window_context(state)
+
+    def _parse_ai_response_with_enhanced_validator(self, ai_reply: str, request_id: str) -> tuple:
+        """
+        Parse AI response using the enhanced JSON validator for better error recovery.
+        
+        Args:
+            ai_reply: Raw AI response string
+            request_id: Request ID for logging
+            
+        Returns:
+            tuple: (success, data, ai_reply_json_string, corrected_successfully, error_message)
+        """
+        if not self.json_validator:
+            # Fallback to original parsing if enhanced validator is not available
+            return self._parse_ai_response_original(ai_reply, request_id)
+        
+        try:
+            success, data, error = self.json_validator.validate_response(ai_reply)
+            
+            if success:
+                # Successfully parsed with enhanced validator
+                ai_reply_json_string = str(data) if isinstance(data, (dict, list)) else json.dumps(data)
+                self.logger.debug(f"Enhanced JSON validator successfully parsed response. request_id={request_id}")
+                return True, data, ai_reply_json_string, False, ""
+            else:
+                # Enhanced validator failed, try original parsing as fallback
+                self.logger.warning(f"Enhanced JSON validator failed: {error}. Trying original parsing. request_id={request_id}")
+                return self._parse_ai_response_original(ai_reply, request_id)
+                
+        except Exception as e:
+            self.logger.error(f"Error in enhanced JSON validation: {e}. Falling back to original parsing. request_id={request_id}")
+            return self._parse_ai_response_original(ai_reply, request_id)
+
+    def _parse_ai_response_original(self, ai_reply: str, request_id: str) -> tuple:
+        """
+        Original AI response parsing logic (kept for fallback compatibility).
+        """
+        data = None
+        ai_reply_json_string = None
+        corrected_successfully = False
+        error_message = ""
+
+        try:
+            json_match = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', ai_reply, re.DOTALL)
+            if not json_match:
+                json_match = re.search(r'(\{.*\}|\[.*\])', ai_reply, re.DOTALL)
+
+            if json_match:
+                potential_json_str = json_match.group(1)
+                data = json.loads(potential_json_str)
+                ai_reply_json_string = potential_json_str
+                self.terminal.logger.debug(f"Successfully parsed extracted JSON: {potential_json_str}")
+            else:
+                data = json.loads(ai_reply)
+                ai_reply_json_string = ai_reply
+                self.terminal.logger.debug("Successfully parsed JSON from full AI reply.")
+        
+        except json.JSONDecodeError as e:
+            # Implement multiple correction attempts (up to 3 attempts)
+            max_correction_attempts = 3
+            correction_attempt = 0
+            corrected_successfully = False
+
+            # Add original invalid response to context
+            self.context_manager.add_assistant_message(ai_reply)
+
+            while correction_attempt < max_correction_attempts and not corrected_successfully:
+                correction_attempt += 1
+                self.terminal.print_console(f"AI did not return valid JSON (attempt {correction_attempt}): {e}. Asking for correction...")
+                self.terminal.logger.warning(f"Invalid JSON from AI (attempt {correction_attempt}): %s; request_id=%s", ai_reply, request_id)
+                try:
+                    self.logger.warning("JSON decode error from AI on attempt %s: %s; request_id=%s", correction_attempt, e, request_id)
+                except Exception:
+                    pass
+
+                correction_prompt_content = (
+                    f"Your previous response was not valid JSON:\n```\n{ai_reply}\n```\n"
+                    f"Please correct it and reply ONLY with the valid JSON object or list of objects. "
+                    f"Do not include any explanations or introductory text."
+                )
+                self.context_manager.add_user_message(correction_prompt_content)
+
+                correction_window_for_prompt = self._sliding_window_context()
+                correction_llm_prompt_parts = []
+                for m_corr in correction_window_for_prompt:
+                    if m_corr["role"] == "system": continue
+                    correction_llm_prompt_parts.append(f"{m_corr['role']}: {m_corr['content']}")
+                correction_llm_prompt_text = "\n".join(correction_llm_prompt_parts)
+
+                corrected_ai_reply = self.ai_handler.send_request(
+                    system_prompt=self.system_prompt_agent, 
+                    user_prompt=correction_llm_prompt_text,
+                    request_format="json"
+                )
+
+                self.terminal.print_console(f"AI agent correction attempt {correction_attempt}: {corrected_ai_reply}")
+
+                if corrected_ai_reply:
+                    try:
+                        json_match_corr = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', corrected_ai_reply, re.DOTALL)
+                        if not json_match_corr:
+                            json_match_corr = re.search(r'(\{.*\}|\[.*\])', corrected_ai_reply, re.DOTALL)
+
+                        if json_match_corr:
+                            potential_json_corr_str = json_match_corr.group(1)
+                            data = json.loads(potential_json_corr_str)
+                            ai_reply_json_string = potential_json_corr_str
+                            self.terminal.logger.debug(f"Successfully parsed extracted corrected JSON: {potential_json_corr_str}")
+                        else:
+                            data = json.loads(corrected_ai_reply)
+                            ai_reply_json_string = corrected_ai_reply
+                            self.terminal.logger.debug("Successfully parsed corrected JSON from full reply.")
+
+                        self.terminal.print_console(f"Successfully parsed corrected JSON after {correction_attempt} attempt(s).")
+                        try:
+                            self.logger.debug("Successfully parsed corrected JSON for assistant reply. request_id=%s", request_id)
+                        except Exception:
+                            pass
+                        # Remove the correction request and original failed reply from context
+                        self.context_manager.context.pop()  # Remove user's correction request
+                        self.context_manager.context.pop()  # Remove assistant's failed reply
+                        corrected_successfully = True
+                        break  # Exit the correction loop on success
+                    except json.JSONDecodeError as e2:
+                        self.terminal.print_console(f"AI still did not return valid JSON after correction attempt {correction_attempt} ({e2}).")
+                        self.terminal.logger.warning(f"Invalid JSON from AI (attempt {correction_attempt + 1}): {corrected_ai_reply}")
+                        # Update ai_reply for next correction attempt
+                        ai_reply = corrected_ai_reply
+                        e = e2  # Update error for next iteration
+                        # If this is the last attempt, we'll handle it after the loop
+                        if correction_attempt == max_correction_attempts:
+                            error_message = f"Failed to parse JSON after {max_correction_attempts} correction attempts"
+                            break
+                else: # No corrected reply
+                    self.terminal.print_console(f"AI did not provide a correction on attempt {correction_attempt}.")
+                    try:
+                        self.logger.warning("AI did not respond with corrected JSON to correction request. request_id=%s", request_id)
+                    except Exception:
+                        pass
+                    # If this is the last attempt, we'll handle it after the loop
+                    if correction_attempt == max_correction_attempts:
+                        error_message = f"Failed to get corrected JSON after {max_correction_attempts} attempts"
+                        break
+
+        return data is not None, data, ai_reply_json_string, corrected_successfully, error_message
 
 
     def run(self):
@@ -181,123 +345,21 @@ class VaultAIAgentRunner:
                 
                 data = None
                 ai_reply_json_string = None
-                corrected_ai_reply_string = None # Stores the string of a successfully parsed corrected reply
+                corrected_successfully = False
 
                 if ai_reply:
-                    try:
-                        json_match = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', ai_reply, re.DOTALL)
-                        if not json_match:
-                            json_match = re.search(r'(\{.*\}|\[.*\])', ai_reply, re.DOTALL)
-
-                        if json_match:
-                            potential_json_str = json_match.group(1)
-                            data = json.loads(potential_json_str)
-                            ai_reply_json_string = potential_json_str
-                            terminal.logger.debug(f"Successfully parsed extracted JSON: {potential_json_str}")
-                        else:
-                            data = json.loads(ai_reply)
-                            ai_reply_json_string = ai_reply
-                            terminal.logger.debug("Successfully parsed JSON from full AI reply.")
+                    # Use enhanced JSON validator if available, otherwise fall back to original parsing
+                    success, data, ai_reply_json_string, corrected_successfully, error_message = self._parse_ai_response_with_enhanced_validator(ai_reply, request_id)
                     
-                    except json.JSONDecodeError as e:
-                        # Implement multiple correction attempts (up to 3 attempts)
-                        max_correction_attempts = 3
-                        correction_attempt = 0
-                        corrected_successfully = False
-
-                        # Add original invalid response to context
-                        self.context_manager.add_assistant_message(ai_reply)
-
-                        while correction_attempt < max_correction_attempts and not corrected_successfully:
-                            correction_attempt += 1
-                            terminal.print_console(f"AI did not return valid JSON (attempt {correction_attempt}): {e}. Asking for correction...")
-                            terminal.logger.warning(f"Invalid JSON from AI (attempt {correction_attempt}): %s; request_id=%s", ai_reply, request_id)
-                            try:
-                                self.logger.warning("JSON decode error from AI on attempt %s: %s; request_id=%s", correction_attempt, e, request_id)
-                            except Exception:
-                                pass
-
-                            correction_prompt_content = (
-                                f"Your previous response was not valid JSON:\n```\n{ai_reply}\n```\n"
-                                f"Please correct it and reply ONLY with the valid JSON object or list of objects. "
-                                f"Do not include any explanations or introductory text."
-                            )
-                            self.context_manager.add_user_message(correction_prompt_content)
-
-                            correction_window_for_prompt = self._sliding_window_context()
-                            correction_llm_prompt_parts = []
-                            for m_corr in correction_window_for_prompt:
-                                if m_corr["role"] == "system": continue
-                                correction_llm_prompt_parts.append(f"{m_corr['role']}: {m_corr['content']}")
-                            correction_llm_prompt_text = "\n".join(correction_llm_prompt_parts)
-
-                            corrected_ai_reply = self.ai_handler.send_request(
-                                system_prompt=self.system_prompt_agent, 
-                                user_prompt=correction_llm_prompt_text,
-                                request_format="json"
-                            )
-
-                            terminal.print_console(f"AI agent correction attempt {correction_attempt}: {corrected_ai_reply}")
-
-                            if corrected_ai_reply:
-                                try:
-                                    json_match_corr = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', corrected_ai_reply, re.DOTALL)
-                                    if not json_match_corr:
-                                        json_match_corr = re.search(r'(\{.*\}|\[.*\])', corrected_ai_reply, re.DOTALL)
-
-                                    if json_match_corr:
-                                        potential_json_corr_str = json_match_corr.group(1)
-                                        data = json.loads(potential_json_corr_str)
-                                        corrected_ai_reply_string = potential_json_corr_str
-                                        terminal.logger.debug(f"Successfully parsed extracted corrected JSON: {potential_json_corr_str}")
-                                    else:
-                                        data = json.loads(corrected_ai_reply)
-                                        corrected_ai_reply_string = corrected_ai_reply
-                                        terminal.logger.debug("Successfully parsed corrected JSON from full reply.")
-
-                                    terminal.print_console(f"Successfully parsed corrected JSON after {correction_attempt} attempt(s).")
-                                    try:
-                                        self.logger.debug("Successfully parsed corrected JSON for assistant reply. request_id=%s", request_id)
-                                    except Exception:
-                                        pass
-                                    # Remove the correction request and original failed reply from context
-                                    self.context_manager.context.pop()  # Remove user's correction request
-                                    self.context_manager.context.pop()  # Remove assistant's failed reply
-                                    ai_reply_json_string = corrected_ai_reply_string # This is now the primary response string
-                                    corrected_successfully = True
-                                    break  # Exit the correction loop on success
-                                except json.JSONDecodeError as e2:
-                                    terminal.print_console(f"AI still did not return valid JSON after correction attempt {correction_attempt} ({e2}).")
-                                    terminal.logger.warning(f"Invalid JSON from AI (attempt {correction_attempt + 1}): {corrected_ai_reply}")
-                                    # Update ai_reply for next correction attempt
-                                    ai_reply = corrected_ai_reply
-                                    e = e2  # Update error for next iteration
-                                    # If this is the last attempt, we'll handle it after the loop
-                                    if correction_attempt == max_correction_attempts:
-                                        break
-                            else: # No corrected reply
-                                terminal.print_console(f"AI did not provide a correction on attempt {correction_attempt}.")
-                                try:
-                                    self.logger.warning("AI did not respond with corrected JSON to correction request. request_id=%s", request_id)
-                                except Exception:
-                                    pass
-                                # If this is the last attempt, we'll handle it after the loop
-                                if correction_attempt == max_correction_attempts:
-                                    break
-
-                        if corrected_successfully:
-                            # If we successfully corrected the JSON, continue with normal processing
-                            continue
-                        else:
-                            # If all correction attempts failed, continue with task using alternative approach
-                            terminal.print_console(f"AI failed to provide valid JSON after {max_correction_attempts} correction attempts. Continuing with task using alternative approach.")
-                            self.summary = f"Agent continued: AI failed to provide valid JSON after {max_correction_attempts} correction attempts, trying alternative approach."
-                            # Add the last failed response to context
-                            self.context_manager.add_assistant_message(ai_reply or "")
-                            self.context_manager.add_user_message(f"Your response could not be corrected after {max_correction_attempts} attempts. Please provide a new response with valid JSON format.")
-                            # Set data to None to trigger the fallback behavior
-                            data = None
-                            continue
+                    if not success:
+                        # Enhanced validator and fallback both failed
+                        terminal.print_console(f"JSON parsing failed: {error_message}. Continuing with task using alternative approach.")
+                        self.summary = f"Agent continued: JSON parsing failed ({error_message}), trying alternative approach."
+                        # Add the failed response to context
+                        self.context_manager.add_assistant_message(ai_reply or "")
+                        self.context_manager.add_user_message(f"Your response could not be parsed as JSON: {error_message}. Please provide a new response with valid JSON format.")
+                        # Set data to None to trigger the fallback behavior
+                        data = None
 
                 if data is None:
                     terminal.print_console("JSON parsing failed. Continuing with task using alternative approach.")
@@ -306,7 +368,7 @@ class VaultAIAgentRunner:
                         self.logger.warning("Data is None after parsing attempts. ai_reply=%s", ai_reply)
                     except Exception:
                         pass
-                    if ai_reply and not ai_reply_json_string and not corrected_ai_reply_string: # If original reply exists but wasn't parsed
+                    if ai_reply and not ai_reply_json_string: # If original reply exists but wasn't parsed
                         self.context_manager.add_assistant_message(ai_reply)
                         self.context_manager.add_user_message("Your response could not be parsed as JSON. Please provide a new response with valid JSON format.")
                     # Continue with the loop instead of breaking
