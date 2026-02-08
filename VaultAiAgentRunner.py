@@ -50,13 +50,22 @@ class VaultAIAgentRunner:
                 f"Solve the following problem. Think step-by-step before providing the final answer."
                 f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal. "
                 "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
-                "Your first task is to analyze the user's goal and decide what to do next. "
+                "You have an action plan that guides your work. You MUST follow this plan step by step. "
+                "Execute each step in order and wait for results before proceeding to the next step. "
+                "Only mark a step as completed after you have verified it was successful. "
+                "Do NOT skip steps unless they are explicitly marked as SKIPPED or FAILED. "
+                "Do NOT call 'finish' until all steps in the plan are completed, unless you encounter an unrecoverable error. "
+                "If a step fails, try to fix it or ask the user for guidance before proceeding. "
                 "For each step, always reply in JSON: "
                 "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
                 "or {'tool': 'write_file', 'path': '...', 'content': '...', 'explain' : 'short explain what are doing'} "
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...', 'explain' : 'short explain what are doing'} "
+                "or {'tool': 'update_plan_step', 'step_number': 1, 'status': 'completed|failed|skipped', 'result': 'optional description of what was done'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
-                "or {'tool': 'finish', 'summary': '...'} when done. "
+                "or {'tool': 'finish', 'summary': '...'} when ALL plan steps are completed. "
+                "Use 'update_plan_step' to explicitly mark plan steps as completed after you verify they are done. "
+                "IMPORTANT: When running in autonomous mode, DO NOT use the 'ask_user' tool. "
+                "Instead, make decisions yourself based on available information and proceed with the best course of action. "
                 "At the last step, always provide a detailed summary and analysis of the entire task you performed. The summary should clearly explain what was achieved, what actions were taken, and any important results or issues encountered. "
                 "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
                 "Use the 'write_file' tool to create or overwrite files with specific content. "
@@ -145,11 +154,11 @@ class VaultAIAgentRunner:
         
         # Try to create plan with AI
         try:
-            terminal.print_console("\n[cyan]📋 Creating action plan...[/]")
+            terminal.print_console("\n📋 Creating action plan...")
             steps = self.plan_manager.create_plan_with_ai(self.user_goal)
             
             if steps:
-                terminal.print_console(f"[green]✓ Created plan with {len(steps)} steps[/]")
+                terminal.print_console(f"✓ Created plan with {len(steps)} steps")
                 self.plan_manager.display_plan()
                 
                 # Add plan to AI context
@@ -175,7 +184,7 @@ class VaultAIAgentRunner:
             {"description": "Summarize task", "command": None},
         ]
         self.plan_manager.create_plan(self.user_goal, default_steps)
-        self.terminal.print_console("[yellow]⚠ Using default plan[/]")
+        self.terminal.print_console("⚠ Using default plan")
 
     def _update_plan_progress(self, action_description: str, success: bool = True):
         """
@@ -206,6 +215,31 @@ class VaultAIAgentRunner:
         
         # Display compact progress
         self.plan_manager.display_compact()
+
+    def _get_plan_status_for_ai(self) -> str:
+        """
+        Get a concise plan status summary for AI context.
+        
+        Returns:
+            String with current plan status
+        """
+        if not self.plan_manager.steps:
+            return ""
+        
+        progress = self.plan_manager.get_progress()
+        lines = ["📊 PLAN STATUS:"]
+        lines.append(f"Progress: {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
+        
+        # Show next pending step
+        next_step = self.plan_manager.get_next_pending_step()
+        if next_step:
+            lines.append(f"Next step to complete: Step {next_step.number}: {next_step.description}")
+        
+        # Show warning if plan not complete
+        if progress['pending'] > 0:
+            lines.append(f"⚠️ You still have {progress['pending']} pending step(s) to complete before finishing.")
+        
+        return "\n".join(lines)
 
     def _sliding_window_context(self):
         """
@@ -494,6 +528,21 @@ class VaultAIAgentRunner:
 
                     if tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
+                        
+                        # Check if all plan steps are completed before allowing finish
+                        progress = self.plan_manager.get_progress()
+                        if progress['pending'] > 0 or progress['in_progress'] > 0:
+                            incomplete_steps = progress['pending'] + progress['in_progress']
+                            terminal.print_console(f"\n⚠️ Agent tried to finish but {incomplete_steps} plan step(s) are still pending.")
+                            self.context_manager.add_user_message(
+                                f"You tried to finish the task, but the action plan is not complete. "
+                                f"You still have {incomplete_steps} step(s) pending or in progress. "
+                                f"Please complete all plan steps before calling 'finish'. "
+                                f"If a step cannot be completed, mark it as failed with a reason. "
+                                f"Current plan status: {progress['completed']}/{progress['total']} completed."
+                            )
+                            continue
+                        
                         terminal.print_console(f"\nValutAI> Agent finished its task.\nSummary: {summary_text}")
                         self.summary = summary_text
                         task_finished_successfully = True
@@ -587,13 +636,29 @@ class VaultAIAgentRunner:
                             # else: 
                             #     user_feedback_content += "\nWhat is the next step?"
                         
-                        self.context_manager.add_user_message(user_feedback_content)
-                        
-                        # Update plan progress
+                        # Update plan progress first
                         action_desc = f"Executed: {command} (exit code: {code})"
                         self._update_plan_progress(action_desc, success=(code == 0))
+                        
+                        # Add plan status to feedback
+                        plan_status = self._get_plan_status_for_ai()
+                        user_feedback_content += f"\n\n{plan_status}"
+                        
+                        self.context_manager.add_user_message(user_feedback_content)
 
                     elif tool == "ask_user":
+                        # Block ask_user in autonomous mode
+                        if terminal.auto_accept:
+                            terminal.print_console("⚠️ Agent tried to use 'ask_user' in autonomous mode. Request rejected.")
+                            self.context_manager.add_user_message(
+                                "You tried to use the 'ask_user' tool, but you are running in AUTONOMOUS MODE. "
+                                "In autonomous mode, you must NOT ask the user questions. "
+                                "Instead, make decisions yourself based on available information and proceed with the best course of action. "
+                                "Use your best judgment and continue with the task."
+                            )
+                            continue
+                        
+                        # Normal ask_user handling in interactive mode
                         question = action_item.get("question")
                         if not question:
                             terminal.print_console(f"No question provided in ask_user action: {action_item}. Skipping.")
@@ -678,11 +743,51 @@ class VaultAIAgentRunner:
                             self._update_plan_progress(f"Failed to edit file: {file_path}", success=False)
                         continue
 
+                    elif tool == "update_plan_step":
+                        step_number = action_item.get("step_number")
+                        status = action_item.get("status")
+                        result = action_item.get("result", "")
+                        
+                        # Validate parameters
+                        if step_number is None or status is None:
+                            terminal.print_console(f"Missing 'step_number' or 'status' in update_plan_step action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided 'update_plan_step' but missing 'step_number' or 'status': {action_item}. I am skipping it.")
+                            continue
+                        
+                        # Validate status value
+                        valid_statuses = ["completed", "failed", "skipped", "in_progress"]
+                        if status not in valid_statuses:
+                            terminal.print_console(f"Invalid status '{status}' in update_plan_step. Valid: {valid_statuses}. Skipping.")
+                            self.context_manager.add_user_message(f"Invalid status '{status}'. Valid statuses are: {', '.join(valid_statuses)}. I am skipping it.")
+                            continue
+                        
+                        # Convert status string to StepStatus enum
+                        from plan.ActionPlanManager import StepStatus
+                        status_map = {
+                            "completed": StepStatus.COMPLETED,
+                            "failed": StepStatus.FAILED,
+                            "skipped": StepStatus.SKIPPED,
+                            "in_progress": StepStatus.IN_PROGRESS
+                        }
+                        step_status = status_map[status]
+                        
+                        # Update the plan step
+                        success = self.plan_manager.mark_step_status(step_number, step_status, result)
+                        if success:
+                            terminal.print_console(f"✓ Plan step {step_number} marked as {status}")
+                            self.context_manager.add_user_message(f"Plan step {step_number} successfully marked as {status}. Result: {result}")
+                            # Display updated plan
+                            self.plan_manager.display_compact()
+                        else:
+                            terminal.print_console(f"[yellow]⚠ Failed to update plan step {step_number}[/]")
+                            self.context_manager.add_user_message(f"Failed to update plan step {step_number}. Step may not exist in the plan.")
+                        continue
+
                     else: 
                         terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                         user_feedback_invalid_tool = (
                             f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
-                            f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', and 'finish'. "
+                            f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', 'update_plan_step', and 'finish'. "
                         )
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."
@@ -703,7 +808,7 @@ class VaultAIAgentRunner:
 
             if task_finished_successfully:
                 # Display final plan
-                self.terminal.print_console("\n[cyan]📋 Final Action Plan:[/]")
+                self.terminal.print_console("\n📋 Final Action Plan:")
                 self.plan_manager.display_plan(show_details=True)
                 
                 continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
