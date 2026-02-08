@@ -1,7 +1,7 @@
 """
-ActionPlanManager - Moduł zarządzania planem działania agenta terminalowego.
+ActionPlanManager - Task planning module for the terminal AI agent.
 
-Tworzy, aktualizuje i wyświetla plan działania z możliwością śledzenia postępu.
+Creates, updates, and displays action plans with progress tracking.
 """
 
 import json
@@ -17,17 +17,17 @@ from rich import box
 
 
 class StepStatus(Enum):
-    """Statusy kroków planu."""
-    PENDING = "pending"         # ⬜ Oczekujący
-    IN_PROGRESS = "in_progress" # ⏳ W trakcie
-    COMPLETED = "completed"     # ✅ Ukończony
-    FAILED = "failed"           # ❌ Nieudany
-    SKIPPED = "skipped"         # ⏭️ Pominięty
+    """Plan step statuses."""
+    PENDING = "pending"         # ⬜ Pending
+    IN_PROGRESS = "in_progress" # ⏳ In progress
+    COMPLETED = "completed"     # ✅ Completed
+    FAILED = "failed"           # ❌ Failed
+    SKIPPED = "skipped"         # ⏭️ Skipped
 
 
 @dataclass
 class PlanStep:
-    """Pojedynczy krok planu."""
+    """Single plan step."""
     number: int
     description: str
     command: Optional[str] = None
@@ -38,14 +38,14 @@ class PlanStep:
     notes: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Konwertuje krok do słownika."""
+        """Convert step to dictionary."""
         data = asdict(self)
         data['status'] = self.status.value
         return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'PlanStep':
-        """Tworzy krok ze słownika."""
+        """Create step from dictionary."""
         data = data.copy()
         data['status'] = StepStatus(data.get('status', 'pending'))
         return cls(**data)
@@ -53,17 +53,17 @@ class PlanStep:
 
 class ActionPlanManager:
     """
-    Klasa zarządzająca planem działania agenta terminalowego.
+    Class for managing the terminal AI agent's action plan.
     
-    Funkcjonalności:
-    - Tworzenie planu na podstawie celu użytkownika
-    - Aktualizacja statusów kroków
-    - Wyświetlanie postępu
-    - Zapisywanie/odczytywanie planu z pliku
-    - Integracja z kontekstem AI
+    Features:
+    - Creating a plan based on user goal
+    - Updating step statuses
+    - Displaying progress
+    - Saving/loading plan to/from file
+    - Integration with AI context
     """
 
-    # Ikony statusów
+    # Status icons
     STATUS_ICONS = {
         StepStatus.PENDING: "⬜",
         StepStatus.IN_PROGRESS: "⏳",
@@ -72,7 +72,7 @@ class ActionPlanManager:
         StepStatus.SKIPPED: "⏭️",
     }
 
-    # Kolory dla Rich
+    # Colors for Rich
     STATUS_COLORS = {
         StepStatus.PENDING: "white",
         StepStatus.IN_PROGRESS: "yellow",
@@ -83,12 +83,12 @@ class ActionPlanManager:
 
     def __init__(self, terminal=None, ai_handler=None, plan_file: Optional[str] = None):
         """
-        Inicjalizacja managera planu.
+        Initialize plan manager.
         
         Args:
-            terminal: Obiekt terminala do wyświetlania (opcjonalny)
-            ai_handler: Handler do komunikacji z AI (opcjonalny)
-            plan_file: Ścieżka do pliku planu (opcjonalna)
+            terminal: Terminal object for display (optional)
+            ai_handler: Handler for AI communication (optional)
+            plan_file: Path to plan file (optional)
         """
         self.terminal = terminal
         self.ai_handler = ai_handler
@@ -99,20 +99,20 @@ class ActionPlanManager:
         self.updated_at: Optional[str] = None
         self.console = Console() if terminal is None else terminal.console
         
-        # Jeśli podano plik planu, spróbuj go wczytać
+        # If plan file is provided, try to load it
         if plan_file and os.path.exists(plan_file):
             self.load_from_file(plan_file)
 
     def create_plan(self, goal: str, steps_data: List[Dict[str, Any]]) -> List[PlanStep]:
         """
-        Tworzy nowy plan działania.
+        Create a new action plan.
         
         Args:
-            goal: Cel użytkownika
-            steps_data: Lista słowników z danymi kroków (description, command opcjonalnie)
+            goal: User goal
+            steps_data: List of dictionaries with step data (description, command optional)
             
         Returns:
-            Lista utworzonych kroków
+            List of created steps
         """
         self.goal = goal
         self.created_at = datetime.now().isoformat()
@@ -128,32 +128,32 @@ class ActionPlanManager:
             )
             self.steps.append(step)
         
-        self._log(f"Utworzono plan z {len(self.steps)} krokami dla celu: {goal}")
+        self._log(f"Created plan with {len(self.steps)} steps for goal: {goal}")
         return self.steps
 
     def create_plan_with_ai(self, goal: str, system_prompt: Optional[str] = None) -> List[PlanStep]:
         """
-        Tworzy plan działania z pomocą AI.
+        Create action plan with AI assistance.
         
         Args:
-            goal: Cel użytkownika
-            system_prompt: Opcjonalny prompt systemowy dla AI
+            goal: User goal
+            system_prompt: Optional system prompt for AI
             
         Returns:
-            Lista utworzonych kroków
+            List of created steps
         """
         if self.ai_handler is None:
-            raise ValueError("AI handler nie został podany podczas inicjalizacji")
+            raise ValueError("AI handler was not provided during initialization")
         
         default_prompt = (
-            "Jesteś planerem zadań. Na podstawie celu użytkownika stwórz szczegółowy plan działania. "
-            "Zwróć odpowiedź w formacie JSON z listą kroków. "
-            "Każdy krok powinien mieć pola: 'description' (opis) i opcjonalnie 'command' (polecenie do wykonania). "
-            "Odpowiedź musi być w formacie: {'steps': [{'description': '...', 'command': '...'}, ...]}"
+            "You are a task planner. Based on the user's goal, create a detailed action plan. "
+            "Return response in JSON format with list of steps. "
+            "Each step should have fields: 'description' and optionally 'command'. "
+            "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
         )
         
         prompt = system_prompt or default_prompt
-        user_prompt = f"Stwórz plan działania dla następującego celu: {goal}"
+        user_prompt = f"Create an action plan for the following goal: {goal}"
         
         try:
             response = self.ai_handler.send_request(
@@ -167,24 +167,24 @@ class ActionPlanManager:
                 steps_data = data.get('steps', [])
                 return self.create_plan(goal, steps_data)
             else:
-                self._log("Błąd: Brak odpowiedzi od AI", level="error")
+                self._log("Error: No response from AI", level="error")
                 return []
                 
         except Exception as e:
-            self._log(f"Błąd podczas tworzenia planu z AI: {e}", level="error")
+            self._log(f"Error creating plan with AI: {e}", level="error")
             return []
 
     def mark_step_status(self, step_number: int, status: StepStatus, result: Optional[str] = None) -> bool:
         """
-        Zmienia status kroku planu.
+        Change plan step status.
         
         Args:
-            step_number: Numer kroku (1-based)
-            status: Nowy status
-            result: Opcjonalny wynik/wiadomość
+            step_number: Step number (1-based)
+            status: New status
+            result: Optional result/message
             
         Returns:
-            True jeśli zaktualizowano, False jeśli krok nie istnieje
+            True if updated, False if step doesn't exist
         """
         for step in self.steps:
             if step.number == step_number:
@@ -199,44 +199,44 @@ class ActionPlanManager:
                     step.result = result
                 
                 self.updated_at = datetime.now().isoformat()
-                self._log(f"Krok {step_number}: {status.value}")
+                self._log(f"Step {step_number}: {status.value}")
                 return True
         
-        self._log(f"Krok {step_number} nie istnieje", level="warning")
+        self._log(f"Step {step_number} does not exist", level="warning")
         return False
 
     def mark_step_done(self, step_number: int, result: Optional[str] = None) -> bool:
-        """Oznacza krok jako ukończony."""
+        """Mark step as completed."""
         return self.mark_step_status(step_number, StepStatus.COMPLETED, result)
 
     def mark_step_in_progress(self, step_number: int) -> bool:
-        """Oznacza krok jako w trakcie wykonywania."""
+        """Mark step as in progress."""
         return self.mark_step_status(step_number, StepStatus.IN_PROGRESS)
 
     def mark_step_failed(self, step_number: int, error_message: Optional[str] = None) -> bool:
-        """Oznacza krok jako nieudany."""
+        """Mark step as failed."""
         return self.mark_step_status(step_number, StepStatus.FAILED, error_message)
 
     def mark_step_skipped(self, step_number: int, reason: Optional[str] = None) -> bool:
-        """Oznacza krok jako pominięty."""
+        """Mark step as skipped."""
         return self.mark_step_status(step_number, StepStatus.SKIPPED, reason)
 
     def get_next_pending_step(self) -> Optional[PlanStep]:
-        """Zwraca pierwszy oczekujący krok."""
+        """Return first pending step."""
         for step in self.steps:
             if step.status == StepStatus.PENDING:
                 return step
         return None
 
     def get_current_step(self) -> Optional[PlanStep]:
-        """Zwraca krok aktualnie w trakcie wykonywania."""
+        """Return step currently in progress."""
         for step in self.steps:
             if step.status == StepStatus.IN_PROGRESS:
                 return step
         return None
 
     def get_progress(self) -> Dict[str, int]:
-        """Zwraca statystyki postępu planu."""
+        """Return plan progress statistics."""
         total = len(self.steps)
         if total == 0:
             return {"total": 0, "completed": 0, "failed": 0, "pending": 0, "in_progress": 0, "percentage": 0}
@@ -258,29 +258,29 @@ class ActionPlanManager:
 
     def display_plan(self, show_details: bool = False):
         """
-        Wyświetla plan działania w formie tabeli.
+        Display action plan as a table.
         
         Args:
-            show_details: Czy pokazać szczegóły (komendy, wyniki)
+            show_details: Whether to show details (commands, results)
         """
         if not self.steps:
-            self.console.print("[yellow]Plan jest pusty.[/]")
+            self.console.print("[yellow]Plan is empty.[/]")
             return
         
-        # Nagłówek z celem
-        header = f"📋 Plan działania: {self.goal or 'Brak celu'}"
+        # Header with goal
+        header = f"📋 Action Plan: {self.goal or 'No goal'}"
         self.console.print(f"\n[bold cyan]{header}[/]")
         self.console.print("━" * min(len(header) + 5, 80))
         
-        # Tabela kroków
+        # Steps table
         table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column("Status", width=4)
         table.add_column("Nr", width=4, justify="right")
-        table.add_column("Opis", min_width=40)
+        table.add_column("Description", min_width=40)
         
         if show_details:
-            table.add_column("Komenda", min_width=20)
-            table.add_column("Wynik", min_width=20)
+            table.add_column("Command", min_width=20)
+            table.add_column("Result", min_width=20)
         
         for step in self.steps:
             icon = self.STATUS_ICONS.get(step.status, "⬜")
@@ -301,21 +301,21 @@ class ActionPlanManager:
         
         self.console.print(table)
         
-        # Pasek postępu
+        # Progress bar
         progress = self.get_progress()
         bar_width = 40
         filled = int((progress['completed'] / progress['total']) * bar_width)
         bar = "█" * filled + "░" * (bar_width - filled)
         
-        self.console.print(f"\n[bold]Postęp:[/] [{bar}] {progress['percentage']}%")
-        self.console.print(f"[green]✓ {progress['completed']} ukończone[/] | "
-                          f"[red]✗ {progress['failed']} nieudane[/] | "
-                          f"[yellow]⏳ {progress['in_progress']} w trakcie[/] | "
-                          f"[white]⬜ {progress['pending']} oczekujące[/]")
+        self.console.print(f"\n[bold]Progress:[/] [{bar}] {progress['percentage']}%")
+        self.console.print(f"[green]✓ {progress['completed']} completed[/] | "
+                          f"[red]✗ {progress['failed']} failed[/] | "
+                          f"[yellow]⏳ {progress['in_progress']} in progress[/] | "
+                          f"[white]⬜ {progress['pending']} pending[/]")
         self.console.print()
 
     def display_compact(self):
-        """Wyświetla skrócony widok planu (tylko postęp)."""
+        """Display compact plan view (only progress)."""
         progress = self.get_progress()
         if progress['total'] == 0:
             return
@@ -327,7 +327,7 @@ class ActionPlanManager:
         self.console.print(f"[dim]Plan: [{bar}] {progress['completed']}/{progress['total']} ({progress['percentage']}%)[/]")
 
     def to_dict(self) -> Dict[str, Any]:
-        """Konwertuje cały plan do słownika."""
+        """Convert entire plan to dictionary."""
         return {
             "goal": self.goal,
             "created_at": self.created_at,
@@ -336,49 +336,49 @@ class ActionPlanManager:
         }
 
     def from_dict(self, data: Dict[str, Any]):
-        """Wczytuje plan ze słownika."""
+        """Load plan from dictionary."""
         self.goal = data.get('goal')
         self.created_at = data.get('created_at')
         self.updated_at = data.get('updated_at')
         self.steps = [PlanStep.from_dict(s) for s in data.get('steps', [])]
 
     def to_json(self) -> str:
-        """Zwraca plan jako JSON."""
+        """Return plan as JSON."""
         return json.dumps(self.to_dict(), ensure_ascii=False, indent=2)
 
     def save_to_file(self, filepath: Optional[str] = None) -> bool:
         """
-        Zapisuje plan do pliku JSON.
+        Save plan to JSON file.
         
         Args:
-            filepath: Ścieżka do pliku (jeśli None, używa self.plan_file)
+            filepath: File path (if None, uses self.plan_file)
             
         Returns:
-            True jeśli zapisano pomyślnie
+            True if saved successfully
         """
         filepath = filepath or self.plan_file
         if not filepath:
-            self._log("Brak ścieżki do pliku", level="error")
+            self._log("No file path provided", level="error")
             return False
         
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-            self._log(f"Plan zapisano do: {filepath}")
+            self._log(f"Plan saved to: {filepath}")
             return True
         except Exception as e:
-            self._log(f"Błąd zapisu planu: {e}", level="error")
+            self._log(f"Error saving plan: {e}", level="error")
             return False
 
     def load_from_file(self, filepath: Optional[str] = None) -> bool:
         """
-        Wczytuje plan z pliku JSON.
+        Load plan from JSON file.
         
         Args:
-            filepath: Ścieżka do pliku (jeśli None, używa self.plan_file)
+            filepath: File path (if None, uses self.plan_file)
             
         Returns:
-            True jeśli wczytano pomyślnie
+            True if loaded successfully
         """
         filepath = filepath or self.plan_file
         if not filepath or not os.path.exists(filepath):
@@ -389,55 +389,55 @@ class ActionPlanManager:
                 data = json.load(f)
             self.from_dict(data)
             self.plan_file = filepath
-            self._log(f"Plan wczytano z: {filepath}")
+            self._log(f"Plan loaded from: {filepath}")
             return True
         except Exception as e:
-            self._log(f"Błąd wczytywania planu: {e}", level="error")
+            self._log(f"Error loading plan: {e}", level="error")
             return False
 
     def get_context_for_ai(self) -> str:
         """
-        Generuje tekstowy opis planu dla kontekstu AI.
+        Generate text description of plan for AI context.
         
         Returns:
-            String z opisem planu gotowym do wysłania do AI
+            String with plan description ready to send to AI
         """
-        lines = ["Aktualny plan działania:"]
-        lines.append(f"Cel: {self.goal or 'Nieokreślony'}")
+        lines = ["Current action plan:"]
+        lines.append(f"Goal: {self.goal or 'Undefined'}")
         lines.append("")
         
         for step in self.steps:
             icon = self.STATUS_ICONS.get(step.status, "⬜")
             status_text = step.status.value.upper()
-            lines.append(f"{icon} Krok {step.number}: {step.description} [{status_text}]")
+            lines.append(f"{icon} Step {step.number}: {step.description} [{status_text}]")
             if step.command:
-                lines.append(f"   Komenda: {step.command}")
+                lines.append(f"   Command: {step.command}")
             if step.result:
-                lines.append(f"   Wynik: {step.result[:200]}..." if len(str(step.result)) > 200 else f"   Wynik: {step.result}")
+                lines.append(f"   Result: {step.result[:200]}..." if len(str(step.result)) > 200 else f"   Result: {step.result}")
         
         progress = self.get_progress()
         lines.append("")
-        lines.append(f"Postęp: {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
+        lines.append(f"Progress: {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
         
         return "\n".join(lines)
 
     def add_step(self, description: str, command: Optional[str] = None, position: Optional[int] = None) -> PlanStep:
         """
-        Dodaje nowy krok do planu.
+        Add new step to plan.
         
         Args:
-            description: Opis kroku
-            command: Opcjonalna komenda
-            position: Pozycja wstawienia (None = na końcu)
+            description: Step description
+            command: Optional command
+            position: Insert position (None = at the end)
             
         Returns:
-            Utworzony krok
+            Created step
         """
         if position is None:
             number = len(self.steps) + 1
         else:
             number = position
-            # Przenumeruj pozostałe kroki
+            # Renumber remaining steps
             for step in self.steps:
                 if step.number >= number:
                     step.number += 1
@@ -453,95 +453,95 @@ class ActionPlanManager:
         self.steps.sort(key=lambda s: s.number)
         self.updated_at = datetime.now().isoformat()
         
-        self._log(f"Dodano krok {number}: {description}")
+        self._log(f"Added step {number}: {description}")
         return step
 
     def remove_step(self, step_number: int) -> bool:
         """
-        Usuwa krok z planu.
+        Remove step from plan.
         
         Args:
-            step_number: Numer kroku do usunięcia
+            step_number: Step number to remove
             
         Returns:
-            True jeśli usunięto
+            True if removed
         """
         for i, step in enumerate(self.steps):
             if step.number == step_number:
                 self.steps.pop(i)
-                # Przenumeruj pozostałe
+                # Renumber remaining
                 for s in self.steps:
                     if s.number > step_number:
                         s.number -= 1
                 self.updated_at = datetime.now().isoformat()
-                self._log(f"Usunięto krok {step_number}")
+                self._log(f"Removed step {step_number}")
                 return True
         return False
 
     def clear(self):
-        """Czyści cały plan."""
+        """Clear entire plan."""
         self.steps = []
         self.goal = None
         self.created_at = None
         self.updated_at = None
-        self._log("Plan wyczyszczony")
+        self._log("Plan cleared")
 
     def _log(self, message: str, level: str = "info"):
-        """Wewnętrzne logowanie."""
+        """Internal logging."""
         if self.terminal and hasattr(self.terminal, 'logger'):
             logger = getattr(self.terminal, 'logger')
             if hasattr(logger, level):
                 getattr(logger, level)(f"[ActionPlanManager] {message}")
 
 
-# Funkcje pomocnicze dla szybkiego tworzenia planu
+# Helper functions for quick plan creation
 
 def create_simple_plan(goal: str, steps_descriptions: List[str]) -> List[Dict[str, Any]]:
     """
-    Tworzy prostą listę kroków z opisów.
+    Create simple list of steps from descriptions.
     
     Args:
-        goal: Cel planu
-        steps_descriptions: Lista opisów kroków
+        goal: Plan goal
+        steps_descriptions: List of step descriptions
         
     Returns:
-        Lista słowników gotowa do użycia w create_plan
+        List of dictionaries ready to use in create_plan
     """
     return [{"description": desc} for desc in steps_descriptions]
 
 
-# Przykład użycia
+# Usage example
 if __name__ == "__main__":
-    # Przykładowe użycie
+    # Example usage
     manager = ActionPlanManager()
     
-    # Tworzenie planu
+    # Create plan
     steps = [
-        {"description": "Zaktualizować listę pakietów", "command": "apt update"},
-        {"description": "Zainstalować Nginx", "command": "apt install nginx -y"},
-        {"description": "Uruchomić usługę Nginx", "command": "systemctl start nginx"},
-        {"description": "Włączyć autostart", "command": "systemctl enable nginx"},
-        {"description": "Sprawdzić status", "command": "systemctl status nginx"},
+        {"description": "Update package list", "command": "apt update"},
+        {"description": "Install Nginx", "command": "apt install nginx -y"},
+        {"description": "Start Nginx service", "command": "systemctl start nginx"},
+        {"description": "Enable autostart", "command": "systemctl enable nginx"},
+        {"description": "Check status", "command": "systemctl status nginx"},
     ]
     
-    manager.create_plan("Instalacja serwera Nginx", steps)
+    manager.create_plan("Nginx server installation", steps)
     
-    # Wyświetlenie początkowe
+    # Initial display
     manager.display_plan()
     
-    # Symulacja wykonywania
+    # Simulate execution
     import time
     for step in manager.steps[:3]:
         manager.mark_step_in_progress(step.number)
         manager.display_compact()
         time.sleep(0.5)
-        manager.mark_step_done(step.number, f"Wykonano pomyślnie")
+        manager.mark_step_done(step.number, f"Completed successfully")
         time.sleep(0.3)
     
-    # Wyświetlenie końcowe
+    # Final display
     manager.display_plan(show_details=True)
     
-    # Zapis do pliku
+    # Save to file
     manager.save_to_file("/tmp/test_plan.json")
-    print("\nKontekst dla AI:")
+    print("\nContext for AI:")
     print(manager.get_context_for_ai())

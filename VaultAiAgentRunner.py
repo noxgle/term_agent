@@ -138,57 +138,57 @@ class VaultAIAgentRunner:
 
     def _initialize_plan(self):
         """
-        Inicjalizuje plan działania na podstawie celu użytkownika.
-        Prosi AI o stworzenie początkowego planu lub tworzy prosty plan domyślny.
+        Initialize action plan based on user goal.
+        Asks AI to create initial plan or creates a simple default plan.
         """
         terminal = self.terminal
         
-        # Spróbuj utworzyć plan z AI
+        # Try to create plan with AI
         try:
-            terminal.print_console("\n[cyan]📋 Tworzenie planu działania...[/]")
+            terminal.print_console("\n[cyan]📋 Creating action plan...[/]")
             steps = self.plan_manager.create_plan_with_ai(self.user_goal)
             
             if steps:
-                terminal.print_console(f"[green]✓ Utworzono plan z {len(steps)} krokami[/]")
+                terminal.print_console(f"[green]✓ Created plan with {len(steps)} steps[/]")
                 self.plan_manager.display_plan()
                 
-                # Dodaj plan do kontekstu AI
+                # Add plan to AI context
                 plan_context = self.plan_manager.get_context_for_ai()
                 self.context_manager.add_system_message(
-                    f"Masz do dyspozycji następujący plan działania. "
-                    f"Wykonuj kroki sekwencyjnie i aktualizuj status każdego kroku po jego wykonaniu.\n\n{plan_context}"
+                    f"You have the following action plan available. "
+                    f"Execute steps sequentially and update the status of each step after completion.\n\n{plan_context}"
                 )
             else:
-                # Jeśli AI nie zwróciło planu, utwórz prosty plan domyślny
+                # If AI didn't return a plan, create a simple default plan
                 self._create_default_plan()
                 
         except Exception as e:
-            self.logger.warning(f"Nie udało się utworzyć planu z AI: {e}")
+            self.logger.warning(f"Failed to create plan with AI: {e}")
             self._create_default_plan()
 
     def _create_default_plan(self):
-        """Tworzy domyślny plan z ogólnymi krokami."""
+        """Create default plan with general steps."""
         default_steps = [
-            {"description": "Analiza celu i wymagań", "command": None},
-            {"description": "Wykonanie niezbędnych operacji", "command": None},
-            {"description": "Weryfikacja wyników", "command": None},
-            {"description": "Podsumowanie zadania", "command": None},
+            {"description": "Analyze goal and requirements", "command": None},
+            {"description": "Execute necessary operations", "command": None},
+            {"description": "Verify results", "command": None},
+            {"description": "Summarize task", "command": None},
         ]
         self.plan_manager.create_plan(self.user_goal, default_steps)
-        self.terminal.print_console("[yellow]⚠ Użyto domyślnego planu[/]")
+        self.terminal.print_console("[yellow]⚠ Using default plan[/]")
 
     def _update_plan_progress(self, action_description: str, success: bool = True):
         """
-        Aktualizuje postęp planu po wykonaniu akcji.
+        Update plan progress after action execution.
         
         Args:
-            action_description: Opis wykonanej akcji
-            success: Czy akcja zakończyła się sukcesem
+            action_description: Description of executed action
+            success: Whether action completed successfully
         """
         if not self.plan_manager.steps:
             return
         
-        # Znajdź pierwszy oczekujący lub w trakcie krok
+        # Find first pending or in-progress step
         current_step = self.plan_manager.get_current_step()
         if current_step:
             if success:
@@ -196,7 +196,7 @@ class VaultAIAgentRunner:
             else:
                 self.plan_manager.mark_step_failed(current_step.number, action_description)
         else:
-            # Jeśli nie ma kroku w trakcie, oznacz następny oczekujący
+            # If no step in progress, mark next pending one
             next_step = self.plan_manager.get_next_pending_step()
             if next_step:
                 if success:
@@ -204,7 +204,7 @@ class VaultAIAgentRunner:
                 else:
                     self.plan_manager.mark_step_failed(next_step.number, action_description)
         
-        # Wyświetl skrócony postęp
+        # Display compact progress
         self.plan_manager.display_compact()
 
     def _sliding_window_context(self):
@@ -380,7 +380,7 @@ class VaultAIAgentRunner:
         except Exception:
             pass
 
-        # Utwórz początkowy plan na podstawie celu użytkownika
+        # Create initial plan based on user goal
         self._initialize_plan()
 
         while keep_running:
@@ -589,8 +589,8 @@ class VaultAIAgentRunner:
                         
                         self.context_manager.add_user_message(user_feedback_content)
                         
-                        # Aktualizuj postęp planu
-                        action_desc = f"Wykonano: {command} (kod: {code})"
+                        # Update plan progress
+                        action_desc = f"Executed: {command} (exit code: {code})"
                         self._update_plan_progress(action_desc, success=(code == 0))
 
                     elif tool == "ask_user":
@@ -629,11 +629,11 @@ class VaultAIAgentRunner:
                         success = self.file_operator.write_file(file_path, file_content, explain)
                         if success:
                             self.context_manager.add_user_message(f"File '{file_path}' written successfully.")
-                            # Aktualizuj postęp planu
-                            self._update_plan_progress(f"Utworzono plik: {file_path}", success=True)
+                            # Update plan progress
+                            self._update_plan_progress(f"Created file: {file_path}", success=True)
                         else:
                             self.context_manager.add_user_message(f"Failed to write file '{file_path}'.")
-                            self._update_plan_progress(f"Nie udało się utworzyć pliku: {file_path}", success=False)
+                            self._update_plan_progress(f"Failed to create file: {file_path}", success=False)
                         continue
 
                     elif tool == "edit_file":
@@ -671,11 +671,11 @@ class VaultAIAgentRunner:
                         success = self.file_operator.edit_file(file_path, action, search, replace, line, explain)
                         if success:
                             self.context_manager.add_user_message(f"File '{file_path}' edited successfully.")
-                            # Aktualizuj postęp planu
-                            self._update_plan_progress(f"Edytowano plik: {file_path} ({action})", success=True)
+                            # Update plan progress
+                            self._update_plan_progress(f"Edited file: {file_path} ({action})", success=True)
                         else:
                             self.context_manager.add_user_message(f"Failed to edit file '{file_path}'.")
-                            self._update_plan_progress(f"Nie udało się edytować pliku: {file_path}", success=False)
+                            self._update_plan_progress(f"Failed to edit file: {file_path}", success=False)
                         continue
 
                     else: 
@@ -702,8 +702,8 @@ class VaultAIAgentRunner:
                 self.summary = "Agent stopped: Reached maximum step limit."
 
             if task_finished_successfully:
-                # Wyświetl finalny plan
-                self.terminal.print_console("\n[cyan]📋 Finalny plan działania:[/]")
+                # Display final plan
+                self.terminal.print_console("\n[cyan]📋 Final Action Plan:[/]")
                 self.plan_manager.display_plan(show_details=True)
                 
                 continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
@@ -718,7 +718,7 @@ class VaultAIAgentRunner:
 
                     self.steps = []
                     self.summary = ""
-                    # Reset planu dla nowego zadania
+                    # Reset plan for new task
                     self.plan_manager.clear()
                     # Continue the while loop
                 else:
