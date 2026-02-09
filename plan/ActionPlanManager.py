@@ -63,13 +63,13 @@ class ActionPlanManager:
     - Integration with AI context
     """
 
-    # Status icons
+    # Status icons (text-based)
     STATUS_ICONS = {
-        StepStatus.PENDING: "⬜",
-        StepStatus.IN_PROGRESS: "⏳",
-        StepStatus.COMPLETED: "✅",
-        StepStatus.FAILED: "❌",
-        StepStatus.SKIPPED: "⏭️",
+        StepStatus.PENDING: "[ ]",
+        StepStatus.IN_PROGRESS: "[~]",
+        StepStatus.COMPLETED: "[X]",
+        StepStatus.FAILED: "[!]",
+        StepStatus.SKIPPED: ">",
     }
 
     # Colors for Rich
@@ -268,9 +268,9 @@ class ActionPlanManager:
             return
         
         # Header with goal
-        header = f"📋 Action Plan: {self.goal or 'No goal'}"
+        header = f"PLAN: {self.goal or 'No goal'}"
         self.console.print(f"\n[bold cyan]{header}[/]")
-        self.console.print("━" * min(len(header) + 5, 80))
+        self.console.print("-" * min(len(header) + 5, 80))
         
         # Steps table
         table = Table(show_header=False, box=None, padding=(0, 1))
@@ -283,7 +283,7 @@ class ActionPlanManager:
             table.add_column("Result", min_width=20)
         
         for step in self.steps:
-            icon = self.STATUS_ICONS.get(step.status, "⬜")
+            icon = self.STATUS_ICONS.get(step.status, "[ ]")
             color = self.STATUS_COLORS.get(step.status, "white")
             
             row = [
@@ -308,10 +308,10 @@ class ActionPlanManager:
         bar = "█" * filled + "░" * (bar_width - filled)
         
         self.console.print(f"\n[bold]Progress:[/] [{bar}] {progress['percentage']}%")
-        self.console.print(f"[green]✓ {progress['completed']} completed[/] | "
-                          f"[red]✗ {progress['failed']} failed[/] | "
-                          f"[yellow]⏳ {progress['in_progress']} in progress[/] | "
-                          f"[white]⬜ {progress['pending']} pending[/]")
+        self.console.print(f"[green][OK] {progress['completed']} completed[/] | "
+                          f"[red][FAIL] {progress['failed']} failed[/] | "
+                          f"[yellow][~] {progress['in_progress']} in progress[/] | "
+                          f"[white][ ] {progress['pending']} pending[/]")
         self.console.print()
 
     def display_compact(self):
@@ -407,7 +407,7 @@ class ActionPlanManager:
         lines.append("")
         
         for step in self.steps:
-            icon = self.STATUS_ICONS.get(step.status, "⬜")
+            icon = self.STATUS_ICONS.get(step.status, "[ ]")
             status_text = step.status.value.upper()
             lines.append(f"{icon} Step {step.number}: {step.description} [{status_text}]")
             if step.command:

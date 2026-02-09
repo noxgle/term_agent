@@ -154,11 +154,11 @@ class VaultAIAgentRunner:
         
         # Try to create plan with AI
         try:
-            terminal.print_console("\n📋 Creating action plan...")
+            terminal.print_console("\nCreating action plan...")
             steps = self.plan_manager.create_plan_with_ai(self.user_goal)
             
             if steps:
-                terminal.print_console(f"✓ Created plan with {len(steps)} steps")
+                terminal.print_console(f"[OK] Created plan with {len(steps)} steps")
                 self.plan_manager.display_plan()
                 
                 # Add plan to AI context
@@ -184,7 +184,7 @@ class VaultAIAgentRunner:
             {"description": "Summarize task", "command": None},
         ]
         self.plan_manager.create_plan(self.user_goal, default_steps)
-        self.terminal.print_console("⚠ Using default plan")
+        self.terminal.print_console("[WARN] Using default plan")
 
     def _update_plan_progress(self, action_description: str, success: bool = True):
         """
@@ -227,7 +227,7 @@ class VaultAIAgentRunner:
             return ""
         
         progress = self.plan_manager.get_progress()
-        lines = ["📊 PLAN STATUS:"]
+        lines = ["PLAN STATUS:"]
         lines.append(f"Progress: {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
         
         # Show next pending step
@@ -237,7 +237,7 @@ class VaultAIAgentRunner:
         
         # Show warning if plan not complete
         if progress['pending'] > 0:
-            lines.append(f"⚠️ You still have {progress['pending']} pending step(s) to complete before finishing.")
+            lines.append(f"[WARN] You still have {progress['pending']} pending step(s) to complete before finishing.")
         
         return "\n".join(lines)
 
@@ -649,7 +649,7 @@ class VaultAIAgentRunner:
                     elif tool == "ask_user":
                         # Block ask_user in autonomous mode
                         if terminal.auto_accept:
-                            terminal.print_console("⚠️ Agent tried to use 'ask_user' in autonomous mode. Request rejected.")
+                            terminal.print_console("[WARN] Agent tried to use 'ask_user' in autonomous mode. Request rejected.")
                             self.context_manager.add_user_message(
                                 "You tried to use the 'ask_user' tool, but you are running in AUTONOMOUS MODE. "
                                 "In autonomous mode, you must NOT ask the user questions. "
@@ -774,12 +774,12 @@ class VaultAIAgentRunner:
                         # Update the plan step
                         success = self.plan_manager.mark_step_status(step_number, step_status, result)
                         if success:
-                            terminal.print_console(f"✓ Plan step {step_number} marked as {status}")
+                            terminal.print_console(f"[OK] Plan step {step_number} marked as {status}")
                             self.context_manager.add_user_message(f"Plan step {step_number} successfully marked as {status}. Result: {result}")
                             # Display updated plan
                             self.plan_manager.display_compact()
                         else:
-                            terminal.print_console(f"[yellow]⚠ Failed to update plan step {step_number}[/]")
+                            terminal.print_console(f"[WARN] Failed to update plan step {step_number}")
                             self.context_manager.add_user_message(f"Failed to update plan step {step_number}. Step may not exist in the plan.")
                         continue
 
@@ -808,7 +808,7 @@ class VaultAIAgentRunner:
 
             if task_finished_successfully:
                 # Display final plan
-                self.terminal.print_console("\n📋 Final Action Plan:")
+                self.terminal.print_console("\nFinal Action Plan:")
                 self.plan_manager.display_plan(show_details=True)
                 
                 continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
