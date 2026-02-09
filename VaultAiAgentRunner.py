@@ -64,6 +64,14 @@ class VaultAIAgentRunner:
                 "or {'tool': 'ask_user', 'question': '...'} "
                 "or {'tool': 'finish', 'summary': '...'} when ALL plan steps are completed. "
                 "Use 'update_plan_step' to explicitly mark plan steps as completed after you verify they are done. "
+                "IMPORTANT: After each bash command, analyze the exit_code and output carefully. "
+                "If exit_code=0: the command succeeded, mark the step as completed and continue to next step. "
+                "If exit_code≠0: analyze the error and decide: "
+                "  - RETRY: if it's a transient error (timeout, network issue, temporary failure) - retry the same or similar command "
+                "  - FIX: if the command was wrong (bad syntax, missing file, wrong args) - fix and retry with corrected command "
+                "  - SKIP: if the error is non-critical and you can proceed without this step - skip and continue "
+                "  - FAIL: if the error is critical and blocks further progress - mark step as failed and ask user or stop "
+                "You have full autonomy to decide the best course of action based on the error type. "
                 "IMPORTANT: When running in autonomous mode, DO NOT use the 'ask_user' tool. "
                 "Instead, make decisions yourself based on available information and proceed with the best course of action. "
                 "At the last step, always provide a detailed summary and analysis of the entire task you performed. The summary should clearly explain what was achieved, what actions were taken, and any important results or issues encountered. "
@@ -149,6 +157,7 @@ class VaultAIAgentRunner:
         """
         Initialize action plan based on user goal.
         Asks AI to create initial plan or creates a simple default plan.
+        In interactive mode, asks user to accept or modify the plan.
         """
         terminal = self.terminal
         
@@ -160,6 +169,10 @@ class VaultAIAgentRunner:
             if steps:
                 terminal.print_console(f"[OK] Created plan with {len(steps)} steps")
                 self.plan_manager.display_plan()
+                
+                # In interactive mode, ask for plan acceptance
+                if not terminal.auto_accept:
+                    self._interactive_plan_acceptance()
                 
                 # Add plan to AI context
                 plan_context = self.plan_manager.get_context_for_ai()
@@ -174,6 +187,80 @@ class VaultAIAgentRunner:
         except Exception as e:
             self.logger.warning(f"Failed to create plan with AI: {e}")
             self._create_default_plan()
+
+    def _interactive_plan_acceptance(self):
+        """
+        Interactive loop for plan acceptance and modification.
+        Asks user to accept (y), reject (n), or edit (e) the plan.
+        """
+        terminal = self.terminal
+        
+        while True:
+            # Ask for acceptance
+            choice = self._get_user_input(
+                "\nAccept this plan? [y/n/e(edit)]: ",
+                multiline=False
+            ).lower().strip()
+            
+            if choice == 'y':
+                terminal.print_console("[OK] Plan accepted. Starting execution...")
+                return
+            
+            elif choice in ('n', 'e'):
+                # Get user's change requests
+                terminal.print_console("\nDescribe what you want to change in the plan:")
+                terminal.print_console("(e.g., 'Add backup step before changes', 'Remove step 3', 'Change step 2 command to...')")
+                changes = self._get_user_input(
+                    "Your changes: ",
+                    multiline=True
+                ).strip()
+                
+                if not changes:
+                    terminal.print_console("[WARN] No changes specified. Keeping current plan.")
+                    continue
+                
+                # Ask AI to revise the plan
+                terminal.print_console("\nRevising plan based on your feedback...")
+                
+                # Create revision prompt
+                current_plan = self.plan_manager.get_context_for_ai()
+                revision_prompt = (
+                    f"Current plan:\n{current_plan}\n\n"
+                    f"User requested changes: {changes}\n\n"
+                    f"Please generate a revised action plan incorporating these changes. "
+                    f"Return the plan in the same JSON format: {{'steps': [{{'description': '...', 'command': '...'}}, ...]}}"
+                )
+                
+                try:
+                    # Get revised plan from AI
+                    response = self.ai_handler.send_request(
+                        system_prompt="You are a task planner. Revise the action plan based on user feedback. Return only valid JSON.",
+                        user_prompt=revision_prompt,
+                        request_format="json"
+                    )
+                    
+                    if response:
+                        import json
+                        data = json.loads(response)
+                        new_steps = data.get('steps', [])
+                        
+                        if new_steps:
+                            # Clear old plan and create new one
+                            self.plan_manager.clear()
+                            self.plan_manager.create_plan(self.user_goal, new_steps)
+                            terminal.print_console("\n[OK] Plan revised:")
+                            self.plan_manager.display_plan()
+                        else:
+                            terminal.print_console("[WARN] Could not revise plan. Keeping current plan.")
+                    else:
+                        terminal.print_console("[WARN] No response from AI. Keeping current plan.")
+                        
+                except Exception as e:
+                    terminal.print_console(f"[ERROR] Failed to revise plan: {e}")
+                    terminal.print_console("[WARN] Keeping current plan.")
+            
+            else:
+                terminal.print_console("[WARN] Invalid choice. Please enter 'y', 'n', or 'e'.")
 
     def _create_default_plan(self):
         """Create default plan with general steps."""
@@ -533,7 +620,7 @@ class VaultAIAgentRunner:
                         progress = self.plan_manager.get_progress()
                         if progress['pending'] > 0 or progress['in_progress'] > 0:
                             incomplete_steps = progress['pending'] + progress['in_progress']
-                            terminal.print_console(f"\n⚠️ Agent tried to finish but {incomplete_steps} plan step(s) are still pending.")
+                            terminal.print_console(f"\n[WARN] Agent tried to finish but {incomplete_steps} plan step(s) are still pending.")
                             self.context_manager.add_user_message(
                                 f"You tried to finish the task, but the action plan is not complete. "
                                 f"You still have {incomplete_steps} step(s) pending or in progress. "
@@ -602,7 +689,8 @@ class VaultAIAgentRunner:
                             out, code = self.terminal.execute_local(command, timeout=timeout) # Corrected method call
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
-                        terminal.print_console(f"Result (exit code: {code}):\n{out}")
+                        #terminal.print_console(f"Result (exit code: {code}):\n{out}")
+                        terminal.print_console(f"\n{out}")
                         try:
                             self.logger.debug("Command result: code=%s, out_len=%s; request_id=%s", code, len(out) if isinstance(out, str) else 0, request_id)
                         except Exception:
@@ -626,15 +714,24 @@ class VaultAIAgentRunner:
                                 "but no connection error detected. Treating as command failure."
                             )
 
-                        user_feedback_content = f"Command '{command}' executed with exit code {code}.\n" \
-                                                f"Output:\n```\n{out}\n```\n" \
-                                                "Based on this, what should be the next step?"
+                        # Build smart feedback based on exit code
+                        if code == 0:
+                            user_feedback_content = f"Command '{command}' executed successfully with exit code 0.\n" \
+                                                    f"Output:\n```\n{out}\n```\n" \
+                                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                        else:
+                            user_feedback_content = f"Command '{command}' failed with exit code {code}.\n" \
+                                                    f"Output:\n```\n{out}\n```\n" \
+                                                    f"The command failed. Analyze the error and decide:\n" \
+                                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n" \
+                                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n" \
+                                                    f"- SKIP: If this step is non-critical and you can proceed without it\n" \
+                                                    f"- FAIL: If this is a critical error that blocks progress\n" \
+                                                    f"What is your decision?"
 
                         if not agent_should_stop_this_turn:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                                 user_feedback_content += "\nI will now proceed to the next action you provided."
-                            # else: 
-                            #     user_feedback_content += "\nWhat is the next step?"
                         
                         # Update plan progress first
                         action_desc = f"Executed: {command} (exit code: {code})"
