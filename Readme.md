@@ -6,6 +6,7 @@
 ## Table of Contents
 
 - [Features](#features)
+- [Operating Modes](#operating-modes)
 - [AI Model Comparison](#ai-model-comparison)
 - [Terminal Agent Capabilities](#terminal-agent-capabilities)
 - [Prompt Creator](#prompt-creator)
@@ -29,7 +30,39 @@
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
 
-- **Interactive -> Automatic mode**: Press Ctrl+A at the prompt to switch the agent from interactive mode (agent asks for confirmation before running suggested bash commands) to automatic mode (agent executes suggested commands without asking). This shortcut is one-way: it only switches from interactive to automatic during a session.
+- **Two Operating Modes**: Work with the agent in **Collaborative Mode** (interactive confirmation for each command) or **Fully Automatic Mode** (agent executes commands autonomously). Switch dynamically during a session with Ctrl+A or configure via `.env` file.
+
+## Operating Modes
+
+The agent supports two distinct modes of operation, allowing you to choose the level of control that best fits your workflow:
+
+### Collaborative Mode (Interactive)
+In this mode, the agent works as your collaborative partner. Before executing any bash command, the agent presents it to you and asks for confirmation. You can approve (`y`) or reject (`N`) each command individually, giving you full oversight of all actions performed on your system.
+
+**When to use:**
+- Learning new commands and their effects
+- Working on production systems where caution is required
+- Tasks where you want to understand each step before execution
+- First-time automation of sensitive operations
+
+**How to enable:**
+- Set `AUTO_ACCEPT=false` in your `.env` file (default)
+- Or press the mode switch shortcut during a session
+
+### Fully Automatic Mode
+In this mode, the agent operates autonomously, executing suggested commands without prompting for confirmation. The agent proceeds with the task workflow independently, only stopping to report results or ask clarifying questions when necessary.
+
+**When to use:**
+- Routine, well-understood automation tasks
+- Development or testing environments
+- Time-sensitive operations where speed is critical
+- Tasks you've already verified and trust the agent to handle
+
+**How to enable:**
+- Set `AUTO_ACCEPT=true` in your `.env` file to start in automatic mode
+- Or press `Ctrl+A` during an interactive session to switch to automatic mode on-the-fly
+
+**Note:** The `Ctrl+A` shortcut is one-way - it switches from interactive to automatic mode during the current session. To return to collaborative mode, restart the agent with `AUTO_ACCEPT=false`.
 
 ## AI Model Comparison
 
@@ -200,6 +233,10 @@ python term_ask.py
 ```bash
 python term_ag.py
 ```
+
+> **Operating Modes:** By default, the agent runs in **Collaborative Mode** and asks for confirmation before executing each command (`[y/N]`). To run in **Fully Automatic Mode**, either:
+> - Set `AUTO_ACCEPT=true` in your `.env` file before starting
+> - Press `Ctrl+A` during a session to switch from collaborative to automatic mode on-the-fly
 
 ### Remote agent mode (SSH):
 
