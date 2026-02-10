@@ -146,7 +146,7 @@ class ActionPlanManager:
             raise ValueError("AI handler was not provided during initialization")
         
         default_prompt = (
-            "You are a task planner. Based on the user's goal, create a detailed action plan. "
+            "You are a task planner. Based on the user's goal, create a detailed action plan for autonomous linux terminal agent. "
             "Return response in JSON format with list of steps. "
             "Each step should have fields: 'description' and optionally 'command'. "
             "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
