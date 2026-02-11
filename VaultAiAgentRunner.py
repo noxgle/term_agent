@@ -128,7 +128,7 @@ class VaultAIAgentRunner:
         self.user_interaction_handler = UserInteractionHandler(terminal)
         
         # Initialize ActionPlanManager for task planning
-        self.plan_manager = ActionPlanManager(terminal=terminal, ai_handler=self.ai_handler)
+        self.plan_manager = ActionPlanManager(terminal=terminal, ai_handler=self.ai_handler,linux_distro=self.linux_distro, linux_version=self.linux_version, logger=self.logger)
         
         # Initialize enhanced JSON validator if available
         self.json_validator = None
@@ -149,6 +149,26 @@ class VaultAIAgentRunner:
         Keep only the most recent entries.
         """
         self.context_manager.cleanup_request_history(max_entries)
+
+    def _get_ai_reply_with_retry(self, terminal, system_prompt, user_prompt, retries=3):
+        """
+        Get AI reply with retry logic.
+        Delegates to ai_handler.send_request for actual communication.
+        
+        Args:
+            terminal: Terminal instance (kept for interface compatibility)
+            system_prompt: System instructions for the AI
+            user_prompt: User prompt content
+            retries: Number of retry attempts (not directly used, handled by ai_handler)
+            
+        Returns:
+            AI response string or None on failure
+        """
+        return self.ai_handler.send_request(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            request_format="text"  # Summarization doesn't need JSON
+        )
 
     def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
         return self.user_interaction_handler._get_user_input(prompt_text, multiline)

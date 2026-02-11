@@ -81,7 +81,8 @@ class ActionPlanManager:
         StepStatus.SKIPPED: "dim",
     }
 
-    def __init__(self, terminal=None, ai_handler=None, plan_file: Optional[str] = None):
+    def __init__(self, terminal=None, ai_handler=None, plan_file: Optional[str] = None,
+                 linux_distro: Optional[str] = None, linux_version: Optional[str] = None, logger=None):
         """
         Initialize plan manager.
         
@@ -89,6 +90,9 @@ class ActionPlanManager:
             terminal: Terminal object for display (optional)
             ai_handler: Handler for AI communication (optional)
             plan_file: Path to plan file (optional)
+            linux_distro: Linux distribution name (optional)
+            linux_version: Linux distribution version (optional)
+            logger: Logger instance (optional)
         """
         self.terminal = terminal
         self.ai_handler = ai_handler
@@ -98,6 +102,9 @@ class ActionPlanManager:
         self.created_at: Optional[str] = None
         self.updated_at: Optional[str] = None
         self.console = Console() if terminal is None else terminal.console
+        self.linux_distro = linux_distro
+        self.linux_version = linux_version
+        self.logger = logger
         
         # If plan file is provided, try to load it
         if plan_file and os.path.exists(plan_file):
@@ -128,7 +135,8 @@ class ActionPlanManager:
             )
             self.steps.append(step)
         
-        self._log(f"Created plan with {len(self.steps)} steps for goal: {goal}")
+        if self.logger:
+            self.logger.info(f"[ActionPlanManager] Created plan with {len(self.steps)} steps for goal: {goal}")
         return self.steps
 
     def create_plan_with_ai(self, goal: str, system_prompt: Optional[str] = None) -> List[PlanStep]:
@@ -145,8 +153,14 @@ class ActionPlanManager:
         if self.ai_handler is None:
             raise ValueError("AI handler was not provided during initialization")
         
+        if self.linux_distro and self.linux_version:
+            distro_info = f"{self.linux_distro} {self.linux_version}"
+        else:
+            distro_info = "unknown Linux distribution"
+
         default_prompt = (
             "You are a task planner. Based on the user's goal, create a detailed action plan for autonomous linux terminal agent. "
+            f"The agent is running on {distro_info}. "
             "Return response in JSON format with list of steps. "
             "Each step should have fields: 'description' and optionally 'command'. "
             "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
@@ -167,11 +181,13 @@ class ActionPlanManager:
                 steps_data = data.get('steps', [])
                 return self.create_plan(goal, steps_data)
             else:
-                self._log("Error: No response from AI", level="error")
+                if self.logger:
+                    self.logger.error("[ActionPlanManager] Error: No response from AI")
                 return []
                 
         except Exception as e:
-            self._log(f"Error creating plan with AI: {e}", level="error")
+            if self.logger:
+                self.logger.error(f"[ActionPlanManager] Error creating plan with AI: {e}")
             return []
 
     def mark_step_status(self, step_number: int, status: StepStatus, result: Optional[str] = None) -> bool:
@@ -199,10 +215,12 @@ class ActionPlanManager:
                     step.result = result
                 
                 self.updated_at = datetime.now().isoformat()
-                self._log(f"Step {step_number}: {status.value}")
+                if self.logger:
+                    self.logger.info(f"[ActionPlanManager] Step {step_number}: {status.value}")
                 return True
         
-        self._log(f"Step {step_number} does not exist", level="warning")
+        if self.logger:
+            self.logger.warning(f"[ActionPlanManager] Step {step_number} does not exist")
         return False
 
     def mark_step_done(self, step_number: int, result: Optional[str] = None) -> bool:
@@ -358,16 +376,19 @@ class ActionPlanManager:
         """
         filepath = filepath or self.plan_file
         if not filepath:
-            self._log("No file path provided", level="error")
+            if self.logger:
+                self.logger.error("[ActionPlanManager] No file path provided")
             return False
         
         try:
             with open(filepath, 'w', encoding='utf-8') as f:
                 json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-            self._log(f"Plan saved to: {filepath}")
+            if self.logger:
+                self.logger.info(f"[ActionPlanManager] Plan saved to: {filepath}")
             return True
         except Exception as e:
-            self._log(f"Error saving plan: {e}", level="error")
+            if self.logger:
+                self.logger.error(f"[ActionPlanManager] Error saving plan: {e}")
             return False
 
     def load_from_file(self, filepath: Optional[str] = None) -> bool:
@@ -389,10 +410,12 @@ class ActionPlanManager:
                 data = json.load(f)
             self.from_dict(data)
             self.plan_file = filepath
-            self._log(f"Plan loaded from: {filepath}")
+            if self.logger:
+                self.logger.info(f"[ActionPlanManager] Plan loaded from: {filepath}")
             return True
         except Exception as e:
-            self._log(f"Error loading plan: {e}", level="error")
+            if self.logger:
+                self.logger.error(f"[ActionPlanManager] Error loading plan: {e}")
             return False
 
     def get_context_for_ai(self) -> str:
@@ -453,7 +476,8 @@ class ActionPlanManager:
         self.steps.sort(key=lambda s: s.number)
         self.updated_at = datetime.now().isoformat()
         
-        self._log(f"Added step {number}: {description}")
+        if self.logger:
+            self.logger.info(f"[ActionPlanManager] Added step {number}: {description}")
         return step
 
     def remove_step(self, step_number: int) -> bool:
@@ -474,7 +498,8 @@ class ActionPlanManager:
                     if s.number > step_number:
                         s.number -= 1
                 self.updated_at = datetime.now().isoformat()
-                self._log(f"Removed step {step_number}")
+                if self.logger:
+                    self.logger.info(f"[ActionPlanManager] Removed step {step_number}")
                 return True
         return False
 
@@ -484,14 +509,8 @@ class ActionPlanManager:
         self.goal = None
         self.created_at = None
         self.updated_at = None
-        self._log("Plan cleared")
-
-    def _log(self, message: str, level: str = "info"):
-        """Internal logging."""
-        if self.terminal and hasattr(self.terminal, 'logger'):
-            logger = getattr(self.terminal, 'logger')
-            if hasattr(logger, level):
-                getattr(logger, level)(f"[ActionPlanManager] {message}")
+        if self.logger:
+            self.logger.info("[ActionPlanManager] Plan cleared")
 
 
 # Helper functions for quick plan creation
