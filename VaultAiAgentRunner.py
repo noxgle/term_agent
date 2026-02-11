@@ -632,6 +632,16 @@ class VaultAIAgentRunner:
                         continue
 
                     tool = action_item.get("tool")
+                    
+                    if tool is None:
+                        terminal.print_console(f"[WARN] AI response missing 'tool' field: {action_item}")
+                        self.context_manager.add_user_message(
+                            "Your response is missing the required 'tool' field. "
+                            "Valid tools are: 'bash', 'ask_user', 'write_file', 'edit_file', 'update_plan_step', 'finish'. "
+                            "Please provide a valid JSON response with the correct structure."
+                        )
+                        continue
+                    
 
                     if tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
