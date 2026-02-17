@@ -13,6 +13,13 @@ from ai.AICommunicationHandler import AICommunicationHandler
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, create_simple_plan
 
+# Import Web Search Agent
+try:
+    from web_search.WebSearchAgent import WebSearchAgent
+    WEB_SEARCH_AGENT_AVAILABLE = True
+except ImportError:
+    WEB_SEARCH_AGENT_AVAILABLE = False
+
 # Import our enhanced JSON validator
 try:
     from json_validator.JsonValidator import create_validator
@@ -62,6 +69,7 @@ class VaultAIAgentRunner:
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...', 'explain' : 'short explain what are doing'} "
                 "or {'tool': 'update_plan_step', 'step_number': 1, 'status': 'completed|failed|skipped', 'result': 'optional description of what was done'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
+                "or {'tool': 'web_search_agent', 'query': 'search query', 'engine': 'duckduckgo|searxng', 'max_sources': 5, 'deep_search': true, 'explain': 'why you need this search'} "
                 "or {'tool': 'finish', 'summary': '...'} when ALL plan steps are completed. "
                 "Use 'update_plan_step' to explicitly mark plan steps as completed after you verify they are done. "
                 "IMPORTANT: After each bash command, analyze the exit_code and output carefully. "
@@ -910,11 +918,107 @@ class VaultAIAgentRunner:
                             self.context_manager.add_user_message(f"Failed to update plan step {step_number}. Step may not exist in the plan.")
                         continue
 
+                    elif tool == "web_search_agent":
+                        # Web search agent tool for internet research
+                        query = action_item.get("query")
+                        engine = action_item.get("engine", "duckduckgo")
+                        max_sources = action_item.get("max_sources", 5)
+                        deep_search = action_item.get("deep_search", True)
+                        explain = action_item.get("explain", "")
+                        
+                        if not query:
+                            terminal.print_console(f"No query provided in web_search_agent action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'web_search_agent' tool action but no query: {action_item}. I am skipping it.")
+                            continue
+                        
+                        # Check if WebSearchAgent is available
+                        if not WEB_SEARCH_AGENT_AVAILABLE:
+                            terminal.print_console("[ERROR] WebSearchAgent is not available. Please install required dependencies: pip install duckduckgo-search beautifulsoup4 lxml")
+                            self.context_manager.add_user_message(
+                                "The 'web_search_agent' tool is not available because required dependencies are missing. "
+                                "Install them with: pip install duckduckgo-search beautifulsoup4 lxml. "
+                                "Try an alternative approach to complete this step."
+                            )
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to search web for: '{query}' using {engine}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the search and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Web search refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to search for '{query}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        terminal.print_console(f"\nValutAI> Executing web search: {query}")
+                        try:
+                            self.logger.info("Executing web search: query='%s', engine=%s; request_id=%s", query, engine, request_id)
+                        except Exception:
+                            pass
+                        
+                        try:
+                            # Create WebSearchAgent instance
+                            search_agent = WebSearchAgent(
+                                ai_handler=self.ai_handler,
+                                logger=self.logger
+                            )
+                            
+                            # Execute search
+                            search_result = search_agent.execute(
+                                query=query,
+                                engine=engine,
+                                max_sources=max_sources,
+                                deep_search=deep_search
+                            )
+                            
+                            if search_result.get('success'):
+                                # Build feedback message
+                                summary = search_result.get('summary', '')
+                                sources = search_result.get('sources', [])
+                                confidence = search_result.get('confidence', 0)
+                                iterations = search_result.get('iterations_used', 0)
+                                
+                                terminal.print_console(f"\n[OK] Web search completed (confidence: {confidence:.0%}, {len(sources)} sources, {iterations} iterations)")
+                                
+                                # Format results for AI context
+                                result_text = f"Web Search Results for: '{query}'\n\n"
+                                result_text += f"Summary:\n{summary}\n\n"
+                                result_text += f"Confidence: {confidence:.0%}\n"
+                                result_text += f"Sources found: {len(sources)}\n\n"
+                                
+                                if sources:
+                                    result_text += "Sources:\n"
+                                    for i, source in enumerate(sources[:5], 1):
+                                        result_text += f"{i}. {source.get('title', 'Untitled')}\n"
+                                        result_text += f"   URL: {source.get('url', '')}\n"
+                                        result_text += f"   Relevance: {source.get('relevance', 0):.0%}\n"
+                                        content = source.get('content', '')
+                                        if content:
+                                            result_text += f"   Content: {content[:500]}{'...' if len(content) > 500 else ''}\n"
+                                        result_text += "\n"
+                                
+                                # Update plan progress
+                                self._update_plan_progress(f"Web search: {query}", success=True)
+                                
+                                self.context_manager.add_user_message(result_text)
+                            else:
+                                error_msg = search_result.get('summary', 'Unknown error')
+                                terminal.print_console(f"\n[ERROR] Web search failed: {error_msg}")
+                                self._update_plan_progress(f"Web search failed: {query}", success=False)
+                                self.context_manager.add_user_message(f"Web search for '{query}' failed: {error_msg}. Try an alternative approach.")
+                                
+                        except Exception as e:
+                            terminal.print_console(f"\n[ERROR] Web search exception: {e}")
+                            self.logger.error(f"Web search exception: {e}")
+                            self._update_plan_progress(f"Web search error: {query}", success=False)
+                            self.context_manager.add_user_message(f"Web search for '{query}' encountered an error: {str(e)}. Try an alternative approach.")
+                        continue
+
                     else: 
                         terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                         user_feedback_invalid_tool = (
                             f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
-                            f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', 'update_plan_step', and 'finish'. "
+                            f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', 'update_plan_step', 'web_search_agent', and 'finish'. "
                         )
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."

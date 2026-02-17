@@ -8,3 +8,8 @@ rich
 requests
 ollama
 json5
+
+# Web Search Agent
+ddgs>=2.0.0
+beautifulsoup4>=4.12.0
+lxml
