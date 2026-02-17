@@ -65,8 +65,12 @@ class VaultAIAgentRunner:
                 "If a step fails, try to fix it or ask the user for guidance before proceeding. "
                 "For each step, always reply in JSON: "
                 "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
+                "or {'tool': 'read_file', 'path': '...', 'start_line': optional_line_number, 'end_line': optional_line_number, 'explain': 'short explain what are doing'} "
                 "or {'tool': 'write_file', 'path': '...', 'content': '...', 'explain' : 'short explain what are doing'} "
                 "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...', 'explain' : 'short explain what are doing'} "
+                "or {'tool': 'list_directory', 'path': '...', 'recursive': true|false, 'pattern': 'optional_glob_pattern', 'explain': 'short explain what are doing'} "
+                "or {'tool': 'copy_file', 'source': '...', 'destination': '...', 'overwrite': true|false, 'explain': 'short explain what are doing'} "
+                "or {'tool': 'delete_file', 'path': '...', 'backup': true|false, 'explain': 'short explain what are doing'} "
                 "or {'tool': 'update_plan_step', 'step_number': 1, 'status': 'completed|failed|skipped', 'result': 'optional description of what was done'} "
                 "or {'tool': 'ask_user', 'question': '...'} "
                 "or {'tool': 'web_search_agent', 'query': 'search query', 'engine': 'duckduckgo|searxng', 'max_sources': 5, 'deep_search': true, 'explain': 'why you need this search'} "
@@ -808,6 +812,57 @@ class VaultAIAgentRunner:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                                 self.context_manager.add_user_message("I will now proceed to the next action you provided.")
                     
+                    elif tool == "read_file":
+                        file_path = action_item.get("path")
+                        start_line = action_item.get("start_line")
+                        end_line = action_item.get("end_line")
+                        explain = action_item.get("explain", "")
+                        
+                        if not file_path:
+                            terminal.print_console(f"Missing 'path' in read_file action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'read_file' tool action but no 'path': {action_item}. I am skipping it.")
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            line_info = ""
+                            if start_line or end_line:
+                                line_info = f" (lines {start_line or 'start'} to {end_line or 'end'})"
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to read file: '{file_path}'{line_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to read the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> File read refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to read file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        result = self.file_operator.read_file(file_path, start_line, end_line, explain)
+                        if result.get("success"):
+                            content = result.get("content", "")
+                            total_lines = result.get("total_lines", "unknown")
+                            lines_read = result.get("lines_count", 0)
+                            
+                            # Truncate very long content for context
+                            max_content_len = 10000
+                            if len(content) > max_content_len:
+                                content_display = content[:max_content_len] + f"\n... (truncated, {len(content)} total characters)"
+                            else:
+                                content_display = content
+                            
+                            terminal.print_console(f"\n[OK] File '{file_path}' read successfully ({lines_read} lines).")
+                            
+                            feedback = f"File '{file_path}' read successfully.\n"
+                            feedback += f"Total lines: {total_lines}, Lines read: {lines_read}\n\n"
+                            feedback += f"Content:\n```\n{content_display}\n```"
+                            
+                            self._update_plan_progress(f"Read file: {file_path}", success=True)
+                            self.context_manager.add_user_message(feedback)
+                        else:
+                            error = result.get("error", "Unknown error")
+                            terminal.print_console(f"\n[ERROR] Failed to read file '{file_path}': {error}")
+                            self._update_plan_progress(f"Failed to read file: {file_path}", success=False)
+                            self.context_manager.add_user_message(f"Failed to read file '{file_path}': {error}")
+                        continue
+
                     elif tool == "write_file":
                         file_path = action_item.get("path")
                         explain = action_item.get("explain", "")
@@ -834,6 +889,130 @@ class VaultAIAgentRunner:
                         else:
                             self.context_manager.add_user_message(f"Failed to write file '{file_path}'.")
                             self._update_plan_progress(f"Failed to create file: {file_path}", success=False)
+                        continue
+
+                    elif tool == "list_directory":
+                        dir_path = action_item.get("path")
+                        recursive = action_item.get("recursive", False)
+                        pattern = action_item.get("pattern")
+                        explain = action_item.get("explain", "")
+                        
+                        if not dir_path:
+                            terminal.print_console(f"Missing 'path' in list_directory action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'list_directory' tool action but no 'path': {action_item}. I am skipping it.")
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            pattern_info = f" (pattern: {pattern})" if pattern else ""
+                            recursive_info = " recursively" if recursive else ""
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to list directory: '{dir_path}'{recursive_info}{pattern_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Directory listing refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to list directory '{dir_path}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        result = self.file_operator.list_directory(dir_path, recursive, pattern, explain)
+                        if result.get("success"):
+                            entries = result.get("entries", [])
+                            total_count = result.get("total_count", 0)
+                            
+                            terminal.print_console(f"\n[OK] Directory '{dir_path}' listed ({total_count} entries).")
+                            
+                            # Format for display
+                            feedback = f"Directory '{dir_path}' contents ({total_count} entries):\n\n"
+                            
+                            # Limit entries in context to avoid token overflow
+                            max_entries = 100
+                            display_entries = entries[:max_entries]
+                            
+                            for entry in display_entries:
+                                entry_type = "📁" if entry["type"] == "directory" else "📄"
+                                size_info = f" ({entry.get('size', 0)} bytes)" if entry["type"] == "file" else ""
+                                feedback += f"{entry_type} {entry['name']}{size_info}\n"
+                            
+                            if len(entries) > max_entries:
+                                feedback += f"\n... and {len(entries) - max_entries} more entries"
+                            
+                            self._update_plan_progress(f"Listed directory: {dir_path}", success=True)
+                            self.context_manager.add_user_message(feedback)
+                        else:
+                            error = result.get("error", "Unknown error")
+                            terminal.print_console(f"\n[ERROR] Failed to list directory '{dir_path}': {error}")
+                            self._update_plan_progress(f"Failed to list directory: {dir_path}", success=False)
+                            self.context_manager.add_user_message(f"Failed to list directory '{dir_path}': {error}")
+                        continue
+
+                    elif tool == "copy_file":
+                        source = action_item.get("source")
+                        destination = action_item.get("destination")
+                        overwrite = action_item.get("overwrite", False)
+                        explain = action_item.get("explain", "")
+                        
+                        if not source or not destination:
+                            terminal.print_console(f"Missing 'source' or 'destination' in copy_file action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'copy_file' tool action but missing 'source' or 'destination': {action_item}. I am skipping it.")
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            overwrite_info = " (overwrite)" if overwrite else ""
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to copy '{source}' to '{destination}'{overwrite_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Copy operation refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to copy '{source}' to '{destination}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        result = self.file_operator.copy_file(source, destination, overwrite, explain)
+                        if result.get("success"):
+                            terminal.print_console(f"\n[OK] Copied '{source}' to '{destination}'.")
+                            self._update_plan_progress(f"Copied: {source} -> {destination}", success=True)
+                            self.context_manager.add_user_message(f"Successfully copied '{source}' to '{destination}'.")
+                        else:
+                            error = result.get("error", "Unknown error")
+                            terminal.print_console(f"\n[ERROR] Failed to copy: {error}")
+                            self._update_plan_progress(f"Failed to copy: {source} -> {destination}", success=False)
+                            self.context_manager.add_user_message(f"Failed to copy '{source}' to '{destination}': {error}")
+                        continue
+
+                    elif tool == "delete_file":
+                        file_path = action_item.get("path")
+                        backup = action_item.get("backup", False)
+                        explain = action_item.get("explain", "")
+                        
+                        if not file_path:
+                            terminal.print_console(f"Missing 'path' in delete_file action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'delete_file' tool action but no 'path': {action_item}. I am skipping it.")
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            backup_info = " (with backup)" if backup else ""
+                            confirm_prompt_text = f"\nValutAI> Agent suggests to delete '{file_path}'{backup_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nValutAI> Delete operation refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to delete '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        result = self.file_operator.delete_file(file_path, backup, explain)
+                        if result.get("success"):
+                            backup_path = result.get("backup_path")
+                            terminal.print_console(f"\n[OK] Deleted '{file_path}'.")
+                            if backup_path:
+                                terminal.print_console(f"Backup created: {backup_path}")
+                                self._update_plan_progress(f"Deleted: {file_path} (backup: {backup_path})", success=True)
+                                self.context_manager.add_user_message(f"Successfully deleted '{file_path}'. Backup created at: {backup_path}")
+                            else:
+                                self._update_plan_progress(f"Deleted: {file_path}", success=True)
+                                self.context_manager.add_user_message(f"Successfully deleted '{file_path}'.")
+                        else:
+                            error = result.get("error", "Unknown error")
+                            terminal.print_console(f"\n[ERROR] Failed to delete: {error}")
+                            self._update_plan_progress(f"Failed to delete: {file_path}", success=False)
+                            self.context_manager.add_user_message(f"Failed to delete '{file_path}': {error}")
                         continue
 
                     elif tool == "edit_file":
@@ -1018,7 +1197,7 @@ class VaultAIAgentRunner:
                         terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                         user_feedback_invalid_tool = (
                             f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
-                            f"Valid tools are 'bash', 'ask_user', 'write_file', 'edit_file', 'update_plan_step', 'web_search_agent', and 'finish'. "
+                            f"Valid tools are: 'bash', 'read_file', 'write_file', 'edit_file', 'list_directory', 'copy_file', 'delete_file', 'update_plan_step', 'ask_user', 'web_search_agent', and 'finish'. "
                         )
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."
