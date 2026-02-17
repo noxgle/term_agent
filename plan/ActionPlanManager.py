@@ -158,14 +158,22 @@ class ActionPlanManager:
         else:
             distro_info = "unknown Linux distribution"
 
+        # default_prompt = (
+        #     "You are a task planner. Based on the user's goal, create a detailed action plan for autonomous linux terminal agent. "
+        #     f"The agent is running on {distro_info}. "
+        #     "Return response in JSON format with list of steps. "
+        #     "Each step should have fields: 'description' and optionally 'command'. "
+        #     "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
+        # )
+        
+
         default_prompt = (
-            "You are a task planner. Based on the user's goal, create a detailed action plan for autonomous linux terminal agent. "
-            f"The agent is running on {distro_info}. "
+            "You are a task planner. Based on the user's goal, create a detailed action plan. "
             "Return response in JSON format with list of steps. "
             "Each step should have fields: 'description' and optionally 'command'. "
             "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
         )
-        
+
         prompt = system_prompt or default_prompt
         user_prompt = f"Create an action plan for the following goal: {goal}"
         
