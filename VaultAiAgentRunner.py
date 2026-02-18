@@ -11,7 +11,7 @@ from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
 from file_operator.FileOperator import FileOperator
-from plan.ActionPlanManager import ActionPlanManager, create_simple_plan
+from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
 
 # Import Web Search Agent
 try:
@@ -28,13 +28,17 @@ except ImportError:
     JSON_VALIDATOR_AVAILABLE = False
 
 class VaultAIAgentRunner:
+    # Maximum number of steps per task execution before stopping
+    MAX_STEPS_DEFAULT = 100
+
     def __init__(self, 
                 terminal, 
                 user_goal,
                 system_prompt_agent=None,
                 user=None, 
                 host=None,
-                window_size=20
+                window_size=20,
+                max_steps=None
                 ):
         
         self.linux_distro = None
@@ -54,56 +58,46 @@ class VaultAIAgentRunner:
         self.user_goal = user_goal
         if system_prompt_agent is None:
             self.system_prompt_agent = (
-                f"Solve the following problem. Think step-by-step before providing the final answer."
-                f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal. "
-                "Your task is to achieve the user's goal by executing shell commands and reading/editing/writing files. "
-                "You have an action plan that guides your work. You MUST follow this plan step by step. "
-                "Execute each step in order and wait for results before proceeding to the next step. "
-                "Only mark a step as completed after you have verified it was successful. "
-                "Do NOT skip steps unless they are explicitly marked as SKIPPED or FAILED. "
-                "Do NOT call 'finish' until all steps in the plan are completed, unless you encounter an unrecoverable error. "
-                "If a step fails, try to fix it or ask the user for guidance before proceeding. "
-                "For each step, always reply in JSON: "
-                "{'tool': 'bash', 'command': '...', 'timeout': timeout in seconds, 'explain' : 'short explain what the command are doing'} "
-                "or {'tool': 'read_file', 'path': '...', 'start_line': optional_line_number, 'end_line': optional_line_number, 'explain': 'short explain what are doing'} "
-                "or {'tool': 'write_file', 'path': '...', 'content': '...', 'explain' : 'short explain what are doing'} "
-                "or {'tool': 'edit_file', 'path': '...', 'action': 'replace|insert_after|insert_before|delete_line', 'search': '...', 'replace': '...', 'line': '...', 'explain' : 'short explain what are doing'} "
-                "or {'tool': 'list_directory', 'path': '...', 'recursive': true|false, 'pattern': 'optional_glob_pattern', 'explain': 'short explain what are doing'} "
-                "or {'tool': 'copy_file', 'source': '...', 'destination': '...', 'overwrite': true|false, 'explain': 'short explain what are doing'} "
-                "or {'tool': 'delete_file', 'path': '...', 'backup': true|false, 'explain': 'short explain what are doing'} "
-                "or {'tool': 'update_plan_step', 'step_number': 1, 'status': 'completed|failed|skipped', 'result': 'optional description of what was done'} "
-                "or {'tool': 'ask_user', 'question': '...'} "
-                "or {'tool': 'web_search_agent', 'query': 'search query', 'engine': 'duckduckgo|searxng', 'max_sources': 5, 'deep_search': true, 'explain': 'why you need this search'} "
-                "or {'tool': 'finish', 'summary': '...'} when ALL plan steps are completed. "
-                "Use 'update_plan_step' to explicitly mark plan steps as completed after you verify they are done. "
-                "IMPORTANT: After each bash command, analyze the exit_code and output carefully. "
-                "If exit_code=0: the command succeeded, mark the step as completed and continue to next step. "
-                "If exit_code≠0: analyze the error and decide: "
-                "  - RETRY: if it's a transient error (timeout, network issue, temporary failure) - retry the same or similar command "
-                "  - FIX: if the command was wrong (bad syntax, missing file, wrong args) - fix and retry with corrected command "
-                "  - SKIP: if the error is non-critical and you can proceed without this step - skip and continue "
-                "  - FAIL: if the error is critical and blocks further progress - mark step as failed and ask user or stop "
-                "You have full autonomy to decide the best course of action based on the error type. "
-                "IMPORTANT: When running in autonomous mode, DO NOT use the 'ask_user' tool. "
-                "Instead, make decisions yourself based on available information and proceed with the best course of action. "
-                "At the last step, always provide a detailed summary and analysis of the entire task you performed. The summary should clearly explain what was achieved, what actions were taken, and any important results or issues encountered. "
-                "Every action object MUST include a 'tool' field. Never omit the 'tool' field. "
-                "Use the 'write_file' tool to create or overwrite files with specific content. "
-                "After each command, you will receive its exit code and output. Decide yourself if the command was successful and what to do next. If the result is acceptable, continue. If not, try to fix the command or ask the user for clarification. "
-                "At the end, always summarize what you have done in the 'summary' field of the finish message. "
-                "Please remember that in this environment, each command is executed in a separate shell process (subprocess). This means that changing the directory using the `cd` command will not persist between subsequent command invocations. If you need to operate on files within a specific directory, ensure you provide the full path to those files in each command, or consider performing all related operations in a single invocation (if possible) with appropriately nested commands. "
-                "Never use interactive commands (such as editors, passwd, top, less, more, nano, vi, vim, htop, mc, etc.) or commands that require user interaction. "
-                "You can also use the 'edit_file' tool to modify existing files in a structured way. "
-                "The 'edit_file' tool supports actions such as: "
-                "- 'replace': replace all occurrences of a string, "
-                "- 'insert_after': insert a line after a line containing a given string, "
-                "- 'insert_before': insert a line before a line containing a given string, "
-                "- 'delete_line': delete lines containing a given string. "
-                " Example usage: "
-                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'replace', 'search': 'foo=bar', 'replace': 'foo=baz'} "
-                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'insert_after', 'search': '[section]', 'line': 'new_option=1'} "
-                "{'tool': 'edit_file', 'path': '/etc/example.conf', 'action': 'delete_line', 'search': 'deprecated_option'} "
-                """Important: Always reply with a valid JSON object. Use double quotes for all keys and string values, e.g. {"tool": "bash", "command": "ls"}. Do not use single quotes. Do not include any explanation, only the JSON object. """
+                f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal.\n"
+                "Your task is to achieve the user's goal by executing shell commands and file operations.\n\n"
+                "## ACTION PLAN\n"
+                "Follow your action plan step by step. Execute each step in order and wait for results before proceeding.\n"
+                "- Only mark a step as completed after verifying success\n"
+                "- Do NOT call 'finish' until all steps are completed (or unrecoverable error)\n"
+                "- Use 'update_plan_step' tool to mark steps: completed, failed, or skipped\n\n"
+                "## AVAILABLE TOOLS (always reply with JSON object, use double quotes)\n\n"
+                "### Execution\n"
+                '- {"tool": "bash", "command": "...", "timeout": seconds, "explain": "what it does"}\n'
+                '- {"tool": "web_search_agent", "query": "...", "engine": "duckduckgo|searxng", "max_sources": 5, "deep_search": true, "explain": "why search"}\n\n'
+                "### File Operations\n"
+                '- {"tool": "read_file", "path": "...", "start_line": N, "end_line": M, "explain": "..."}\n'
+                '- {"tool": "write_file", "path": "...", "content": "...", "explain": "..."}\n'
+                '- {"tool": "edit_file", "path": "...", "action": "replace|insert_after|insert_before|delete_line", "search": "...", "replace": "...", "line": "...", "explain": "..."}\n'
+                '- {"tool": "list_directory", "path": "...", "recursive": true|false, "pattern": "glob", "explain": "..."}\n'
+                '- {"tool": "copy_file", "source": "...", "destination": "...", "overwrite": true|false, "explain": "..."}\n'
+                '- {"tool": "delete_file", "path": "...", "backup": true|false, "explain": "..."}\n\n'
+                "### Plan & Communication\n"
+                '- {"tool": "update_plan_step", "step_number": N, "status": "completed|failed|skipped", "result": "description"}\n'
+                '- {"tool": "ask_user", "question": "..."}  (NOT available in autonomous mode)\n\n'
+                "### Completion\n"
+                '- {"tool": "finish", "summary": "detailed summary of what was achieved"}\n\n'
+                "## ERROR HANDLING (for bash commands)\n"
+                "After each command, analyze exit_code:\n"
+                "- exit_code=0: SUCCESS → mark step completed, continue to next\n"
+                "- exit_code≠0: FAILURE → decide action:\n"
+                "  - RETRY: transient error (timeout, network) → retry same/modified command\n"
+                "  - FIX: wrong command (syntax, missing file) → fix and retry\n"
+                "  - SKIP: non-critical error → skip and continue\n"
+                "  - FAIL: critical error → mark failed, ask user or stop\n\n"
+                "## CONSTRAINTS\n"
+                "- Each command runs in a separate shell process; 'cd' does not persist between commands\n"
+                "- Never use interactive commands: nano, vi, vim, less, more, top, htop, mc, passwd\n"
+                "- In autonomous mode: DO NOT use 'ask_user', make decisions yourself\n"
+                "- Always include 'tool' field in every response\n"
+                "- Provide detailed summary in 'finish' explaining achievements and issues\n\n"
+                "## RESPONSE FORMAT\n"
+                "Reply ONLY with a valid JSON object (no explanations outside JSON):\n"
+                '{"tool": "bash", "command": "ls -la", "explain": "List files in current directory"}'
             )
         else:
             self.system_prompt_agent = system_prompt_agent
@@ -151,8 +145,22 @@ class VaultAIAgentRunner:
             except Exception as e:
                 self.logger.warning(f"Failed to initialize enhanced JSON validator: {e}")
                 self.json_validator = None
+        # Configurable max steps limit (prevents infinite loops)
+        self.max_steps = max_steps if max_steps is not None else self.MAX_STEPS_DEFAULT
+
+        # Initialize WebSearchAgent as singleton (avoids re-creating per call)
+        self.web_search_agent = None
+        if WEB_SEARCH_AGENT_AVAILABLE:
+            try:
+                self.web_search_agent = WebSearchAgent(
+                    ai_handler=self.ai_handler,
+                    logger=self.logger
+                )
+                self.logger.info("WebSearchAgent initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize WebSearchAgent: {e}")
         else:
-            self.logger.warning("Enhanced JSON validator not available, falling back to standard parsing")
+            self.logger.warning("WebSearchAgent not available (missing dependencies)")
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -272,7 +280,6 @@ class VaultAIAgentRunner:
                     )
                     
                     if response:
-                        import json
                         data = json.loads(response)
                         new_steps = data.get('steps', [])
                         
@@ -397,8 +404,8 @@ class VaultAIAgentRunner:
             success, data, error = self.json_validator.validate_response(ai_reply)
             
             if success:
-                # Successfully parsed with enhanced validator
-                ai_reply_json_string = str(data) if isinstance(data, (dict, list)) else json.dumps(data)
+                # Successfully parsed with enhanced validator - always serialize to JSON string
+                ai_reply_json_string = json.dumps(data, ensure_ascii=False)
                 self.logger.debug(f"Enhanced JSON validator successfully parsed response. request_id={request_id}")
                 return True, data, ai_reply_json_string, False, ""
             else:
@@ -496,8 +503,8 @@ class VaultAIAgentRunner:
                         except Exception:
                             pass
                         # Remove the correction request and original failed reply from context
-                        self.context_manager.context.pop()  # Remove user's correction request
-                        self.context_manager.context.pop()  # Remove assistant's failed reply
+                        # Uses encapsulated method instead of direct deque manipulation
+                        self.context_manager.remove_last_n_messages(2)
                         corrected_successfully = True
                         break  # Exit the correction loop on success
                     except json.JSONDecodeError as e2:
@@ -540,7 +547,7 @@ class VaultAIAgentRunner:
             task_finished_successfully = False
             agent_should_stop_this_turn = False
 
-            for step_count in range(100):  # Limit steps to avoid infinite loops
+            for step_count in range(self.max_steps):  # Configurable step limit
                 try:
                     # Generate a unique request id for this step to trace the flow
                     request_id = uuid.uuid4().hex
@@ -672,7 +679,7 @@ class VaultAIAgentRunner:
                             )
                             continue
                         
-                        terminal.print_console(f"\nValutAI> Agent finished its task.\nSummary: {summary_text}")
+                        terminal.print_console(f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}")
                         self.summary = summary_text
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
@@ -706,20 +713,20 @@ class VaultAIAgentRunner:
 
                         if not terminal.auto_accept:
                             if self.terminal.auto_explain_command and explain:
-                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
+                                confirm_prompt_text = f"\nVaultAI> Agent suggests to run command: '{command}' which is intended to: {explain}. Execute? [y/N]: "
                             else:
-                                confirm_prompt_text = f"\nValutAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
+                                confirm_prompt_text = f"\nVaultAI> Agent suggests to run command: '{command}'. Execute? [y/N]: "
 
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the command and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> Command refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing the command and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Command refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to execute command '{command}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
-                        terminal.print_console(f"\nValutAI> Executing: {command}")
+                        terminal.print_console(f"\nVaultAI> Executing: {command}")
                         try:
-                            self.logger.info("\nValutAI> Executing bash command: %s; request_id=%s", command, request_id)
+                            self.logger.info("\nVaultAI> Executing bash command: %s; request_id=%s", command, request_id)
                         except Exception:
                             pass
                         out, code = "", 1
@@ -827,11 +834,11 @@ class VaultAIAgentRunner:
                             line_info = ""
                             if start_line or end_line:
                                 line_info = f" (lines {start_line or 'start'} to {end_line or 'end'})"
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to read file: '{file_path}'{line_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to read file: '{file_path}'{line_info}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to read the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> File read refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing to read the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> File read refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to read file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
@@ -873,11 +880,11 @@ class VaultAIAgentRunner:
                             continue
 
                         if not terminal.auto_accept:
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to write file: '{file_path}' which is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to write file: '{file_path}' which is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to write the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> File write refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing to write the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> File write refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to write file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
@@ -905,11 +912,11 @@ class VaultAIAgentRunner:
                         if not terminal.auto_accept:
                             pattern_info = f" (pattern: {pattern})" if pattern else ""
                             recursive_info = " recursively" if recursive else ""
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to list directory: '{dir_path}'{recursive_info}{pattern_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to list directory: '{dir_path}'{recursive_info}{pattern_info}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> Directory listing refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Directory listing refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to list directory '{dir_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
@@ -957,11 +964,11 @@ class VaultAIAgentRunner:
                         
                         if not terminal.auto_accept:
                             overwrite_info = " (overwrite)" if overwrite else ""
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to copy '{source}' to '{destination}'{overwrite_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to copy '{source}' to '{destination}'{overwrite_info}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> Copy operation refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Copy operation refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to copy '{source}' to '{destination}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
@@ -989,11 +996,11 @@ class VaultAIAgentRunner:
                         
                         if not terminal.auto_accept:
                             backup_info = " (with backup)" if backup else ""
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to delete '{file_path}'{backup_info}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to delete '{file_path}'{backup_info}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> Delete operation refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Delete operation refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to delete '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
@@ -1039,11 +1046,11 @@ class VaultAIAgentRunner:
                                 desc = f"delete lines containing '{search}'"
                             else:
                                 desc = f"perform {action} action"
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to edit file '{file_path}' with action: {desc}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to edit file '{file_path}' with action: {desc}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing to edit the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> File edit refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing to edit the file and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> File edit refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to edit file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
 
@@ -1075,8 +1082,7 @@ class VaultAIAgentRunner:
                             self.context_manager.add_user_message(f"Invalid status '{status}'. Valid statuses are: {', '.join(valid_statuses)}. I am skipping it.")
                             continue
                         
-                        # Convert status string to StepStatus enum
-                        from plan.ActionPlanManager import StepStatus
+                        # Convert status string to StepStatus enum (already imported at module level)
                         status_map = {
                             "completed": StepStatus.COMPLETED,
                             "failed": StepStatus.FAILED,
@@ -1121,29 +1127,23 @@ class VaultAIAgentRunner:
                             continue
                         
                         if not terminal.auto_accept:
-                            confirm_prompt_text = f"\nValutAI> Agent suggests to search web for: '{query}' using {engine}. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to search web for: '{query}' using {engine}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
-                                justification = self._get_user_input(f"\nValutAI> Provide justification for refusing the search and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
-                                terminal.print_console(f"\nValutAI> Web search refused by user. Justification: {justification}\n")
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing the search and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Web search refused by user. Justification: {justification}\n")
                                 self.context_manager.add_user_message(f"User refused to search for '{query}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
-                        terminal.print_console(f"\nValutAI> Executing web search: {query}")
+                        terminal.print_console(f"\nVaultAI> Executing web search: {query}")
                         try:
                             self.logger.info("Executing web search: query='%s', engine=%s; request_id=%s", query, engine, request_id)
                         except Exception:
                             pass
                         
                         try:
-                            # Create WebSearchAgent instance
-                            search_agent = WebSearchAgent(
-                                ai_handler=self.ai_handler,
-                                logger=self.logger
-                            )
-                            
-                            # Execute search
-                            search_result = search_agent.execute(
+                            # Use singleton WebSearchAgent (initialized in __init__)
+                            search_result = self.web_search_agent.execute(
                                 query=query,
                                 engine=engine,
                                 max_sources=max_sources,
@@ -1221,9 +1221,9 @@ class VaultAIAgentRunner:
                 self.terminal.print_console("\nFinal Action Plan:")
                 self.plan_manager.display_plan(show_details=True)
                 
-                continue_choice = self._get_user_input("\nValutAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
+                continue_choice = self._get_user_input("\nVaultAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
-                    terminal.console.print("\nValutAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
+                    terminal.console.print("\nVaultAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
                     user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
@@ -1233,8 +1233,11 @@ class VaultAIAgentRunner:
 
                     self.steps = []
                     self.summary = ""
-                    # Reset plan for new task
+                    # Update the goal and reset plan for the new task
+                    self.user_goal = new_instruction
                     self.plan_manager.clear()
+                    # Create a new plan for the new goal
+                    self._initialize_plan()
                     # Continue the while loop
                 else:
                     keep_running = False

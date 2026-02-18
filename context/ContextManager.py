@@ -243,6 +243,20 @@ class ContextManager:
         self.request_history.append(request_entry)
         self._safe_log("debug", "Recorded request; request_id=%s; step=%s", request_id, step_count)
 
+    def remove_last_n_messages(self, n: int) -> None:
+        """
+        Remove the last n messages from context.
+        Used to clean up failed correction attempts without breaking encapsulation.
+
+        Args:
+            n: Number of messages to remove from the end
+        """
+        removed = 0
+        for _ in range(min(n, len(self.context))):
+            self.context.pop()
+            removed += 1
+        self._safe_log("debug", "Removed last %s messages from context; remaining=%s", removed, len(self.context))
+
     def cleanup_request_history(self, max_entries: Optional[int] = None) -> None:
         """
         Clean up request history to prevent memory leaks.

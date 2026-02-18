@@ -1,8 +1,11 @@
 import os
 import re
+import shutil
+import fnmatch
 import tempfile
 import subprocess
 import logging
+import time
 from typing import Dict, Any, Optional, Tuple, List
 
 class FileOperator:
@@ -746,21 +749,22 @@ class FileOperator:
                     "path": file_path
                 }
             
+            # Determine type BEFORE deletion
+            is_dir = os.path.isdir(file_path)
             backup_path = None
             
             # Create backup if requested
             if backup:
-                import time
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 backup_path = f"{file_path}.backup_{timestamp}"
-                if os.path.isdir(file_path):
+                if is_dir:
                     shutil.copytree(file_path, backup_path)
                 else:
                     shutil.copy2(file_path, backup_path)
                 self.logger.info(f"Created backup: {backup_path}")
             
             # Delete
-            if os.path.isdir(file_path):
+            if is_dir:
                 shutil.rmtree(file_path)
             else:
                 os.remove(file_path)
@@ -771,7 +775,7 @@ class FileOperator:
                 "success": True,
                 "path": file_path,
                 "backup_path": backup_path,
-                "type": "directory" if os.path.isdir(file_path) else "file"
+                "type": "directory" if is_dir else "file"
             }
             
         except Exception as e:

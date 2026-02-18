@@ -21,30 +21,32 @@ class SecurityValidator:
             dangerous_commands: Set of dangerous command patterns to block
             allowed_paths: List of allowed paths for file operations
         """
-        # Default dangerous commands that should be blocked
+        # Default dangerous commands that should be blocked.
+        # Only truly destructive operations are listed - common admin tools
+        # like curl, wget, systemctl, chmod +x, etc. are intentionally NOT blocked
+        # because they are required for normal Linux administration tasks.
         self.dangerous_commands = dangerous_commands or {
+            # Recursive filesystem destruction
             'rm -rf /', 'rm -rf /*', 'rm -rf /home', 'rm -rf /etc', 'rm -rf /var',
-            'dd if=', 'mkfs', 'fdisk', 'format', 'wipefs', 'shred',
-            'passwd root', 'usermod -p', 'chpasswd',
+            'rm -rf /usr', 'rm -rf /boot', 'rm -rf /root',
+            # Disk/partition operations
+            'dd if=/dev/', 'mkfs.', 'fdisk /dev/', 'wipefs', 'shred /dev/',
+            # Direct credential modification
+            'passwd root', 'usermod -p ', 'chpasswd',
+            # Privilege escalation
             'sudo su', 'su root', 'sudo -i', 'sudo -s',
+            # Audit trail destruction
             'crontab -r', 'history -c', 'unset HISTFILE',
-            '> /dev/null', '>/dev/null', '2>/dev/null', '&>/dev/null',
-            'curl -s', 'wget -q', 'curl -O', 'wget -O',
-            'chmod 777', 'chmod +x', 'chmod u+s', 'chmod g+s',
-            'chown root', 'chown 0', 'chgrp root', 'chgrp 0',
+            # Setuid/setgid (privilege escalation via file permissions)
+            'chmod u+s', 'chmod g+s', 'chmod 4', 'chmod 2',
+            # Firewall destruction
             'iptables -F', 'iptables -X', 'ufw --force disable',
-            'systemctl stop', 'systemctl disable', 'service stop',
-            'pkill -9', 'killall -9', 'kill -9',
+            # System halt/reboot (destructive in automated context)
             'reboot', 'shutdown', 'halt', 'poweroff',
-            'mount /dev', 'umount /', 'mount -t nfs',
-            'ssh-keygen', 'ssh-copy-id', 'scp',
-            'mysql -e', 'psql -c', 'sqlite3',
-            'python -c', 'python3 -c', 'perl -e', 'ruby -e',
-            'eval', 'exec', 'source', 'bash -c', 'sh -c',
-            'nohup', 'screen', 'tmux', 'at', 'batch', 'cron',
-            'find / -exec', 'find / -delete', 'find / -print0 | xargs',
-            'tar -xzf /dev/null', 'gzip -dc /dev/null',
-            'base64 -d', 'openssl enc', 'gpg --decrypt'
+            # Root filesystem unmount
+            'umount /', 'umount -a',
+            # Find with mass delete/exec on root
+            'find / -delete', 'find / -exec rm',
         }
 
         # Allowed paths for file operations
@@ -69,11 +71,13 @@ class SecurityValidator:
             if dangerous in cmd_lower:
                 return False, f"Command contains dangerous pattern: '{dangerous}'"
 
-        # Check for shell injection attempts
-        # Allow legitimate command chaining with &&, || when properly separated
-        dangerous_patterns = [';', '`', '$(', '${', '>', '<', '2>', '&>', '&>>']
-        for pattern in dangerous_patterns:
-            if pattern in command and not (pattern in ['>', '2>'] and ' ' in command.split(pattern)[0]):  # Allow redirection after commands
+        # Check for shell injection patterns.
+        # NOTE: Shell redirections (>, <, 2>, &>, |) are intentionally NOT blocked here
+        # because they are standard and necessary for Linux administration.
+        # Only true injection metacharacters are checked.
+        injection_patterns = [';', '`', '$(', '${']
+        for pattern in injection_patterns:
+            if pattern in command:
                 return False, f"Command contains potential shell injection: '{pattern}'"
 
         # Special handling for && and || - allow when used for legitimate command chaining
