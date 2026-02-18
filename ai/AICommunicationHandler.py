@@ -120,21 +120,27 @@ class AICommunicationHandler:
                     except json.JSONDecodeError:
                         pass
 
-            # Strategy 5: Line-by-line NDJSON parsing - extract first valid JSON line
+            # Strategy 5: Line-by-line NDJSON parsing - collect ALL valid JSON lines
+            valid_objects = []
             for line in response.split('\n'):
                 line = line.strip()
                 if not line:
                     continue
                 try:
-                    json.loads(line)
-                    return line
+                    obj = json.loads(line)
+                    valid_objects.append(obj)
                 except json.JSONDecodeError:
                     fixed = self._fix_single_quotes(line)
                     try:
-                        json.loads(fixed)
-                        return fixed
+                        obj = json.loads(fixed)
+                        valid_objects.append(obj)
                     except json.JSONDecodeError:
                         continue
+
+            if len(valid_objects) == 1:
+                return json.dumps(valid_objects[0], ensure_ascii=False)
+            elif len(valid_objects) > 1:
+                return json.dumps(valid_objects, ensure_ascii=False)
 
             raise ValueError("Could not extract valid JSON from response")
 

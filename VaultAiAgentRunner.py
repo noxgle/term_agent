@@ -20,6 +20,13 @@ try:
 except ImportError:
     WEB_SEARCH_AGENT_AVAILABLE = False
 
+# Import FinishSubAgent for deep task completion analysis
+try:
+    from finish.FinishSubAgent import FinishSubAgent
+    FINISH_SUB_AGENT_AVAILABLE = True
+except ImportError:
+    FINISH_SUB_AGENT_AVAILABLE = False
+
 # Import our enhanced JSON validator
 try:
     from json_validator.JsonValidator import create_validator
@@ -80,7 +87,11 @@ class VaultAIAgentRunner:
                 '- {"tool": "update_plan_step", "step_number": N, "status": "completed|failed|skipped", "result": "description"}\n'
                 '- {"tool": "ask_user", "question": "..."}  (NOT available in autonomous mode)\n\n'
                 "### Completion\n"
-                '- {"tool": "finish", "summary": "detailed summary of what was achieved"}\n\n'
+                '- {"tool": "finish", "summary": "detailed summary of what was achieved"}\n'
+                "  NOTE: When you call 'finish', a Deep Analysis Sub-Agent will automatically\n"
+                "  review ALL sources from this session (commands, outputs, files, searches, plan)\n"
+                "  and generate a comprehensive final report. Your 'summary' field should be\n"
+                "  a thorough description of what was done and achieved.\n\n"
                 "## ERROR HANDLING (for bash commands)\n"
                 "After each command, analyze exit_code:\n"
                 "- exit_code=0: SUCCESS → mark step completed, continue to next\n"
@@ -161,6 +172,21 @@ class VaultAIAgentRunner:
                 self.logger.warning(f"Failed to initialize WebSearchAgent: {e}")
         else:
             self.logger.warning("WebSearchAgent not available (missing dependencies)")
+
+        # Initialize FinishSubAgent for deep task completion analysis
+        self.finish_sub_agent = None
+        if FINISH_SUB_AGENT_AVAILABLE:
+            try:
+                self.finish_sub_agent = FinishSubAgent(
+                    terminal=terminal,
+                    ai_handler=self.ai_handler,
+                    logger=self.logger
+                )
+                self.logger.info("FinishSubAgent initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize FinishSubAgent: {e}")
+        else:
+            self.logger.warning("FinishSubAgent not available")
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -688,6 +714,31 @@ class VaultAIAgentRunner:
                             self.logger.info("Agent signaled finish with summary: %s; request_id=%s", summary_text, request_id)
                         except Exception:
                             pass
+
+                        # --- FinishSubAgent: Deep Analysis ---
+                        # Ask user whether to run the deep analysis sub-agent
+                        if self.finish_sub_agent is not None:
+                            run_analysis = self._get_user_input(
+                                "\nVaultAI> Run Deep Analysis Sub-Agent for a detailed session report? [y/N]: ",
+                                multiline=False
+                            ).lower().strip()
+
+                            if run_analysis == 'y':
+                                try:
+                                    self.finish_sub_agent.run(
+                                        user_goal=self.user_goal,
+                                        agent_summary=summary_text,
+                                        context_manager=self.context_manager,
+                                        plan_manager=self.plan_manager,
+                                        steps=self.steps,
+                                    )
+                                except Exception as e:
+                                    terminal.print_console(f"\n[WARN] Deep Analysis Sub-Agent encountered an error: {e}")
+                                    self.logger.warning("FinishSubAgent.run failed: %s", e)
+                            else:
+                                terminal.print_console("[dim]Deep Analysis skipped.[/dim]")
+                        # --- End FinishSubAgent ---
+
                         break 
                     
                     elif tool == "bash":
