@@ -9,6 +9,10 @@
 - [Operating Modes](#operating-modes)
 - [AI Model Comparison](#ai-model-comparison)
 - [Terminal Agent Capabilities](#terminal-agent-capabilities)
+- [Agent Tools](#agent-tools)
+- [Action Plan Management](#action-plan-management)
+- [Deep Analysis Sub-Agent](#deep-analysis-sub-agent)
+- [Web Search Agent](#web-search-agent)
 - [Prompt Creator](#prompt-creator)
 - [Requirements](#requirements)
 - [Installation](#installation)
@@ -29,15 +33,21 @@
 - **Configurable via `.env`**: Easily switch engines and settings.
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
-
 - **Two Operating Modes**: Work with the agent in **Collaborative Mode** (interactive confirmation for each command) or **Fully Automatic Mode** (agent executes commands autonomously). Switch dynamically during a session with Ctrl+A or configure via `.env` file.
+- **Interactive Action Plan Management**: Before execution, the agent generates a step-by-step plan. In Collaborative Mode you can accept, reject, or edit the plan. The AI revises the plan based on your feedback.
+- **Rich File Operations**: Agent has built-in tools to read, write, edit, copy, delete files and list directories — all with user confirmation in Collaborative Mode.
+- **Web Search Agent**: Agent can search the internet during task execution using DuckDuckGo (no API key required) or a self-hosted SearxNG instance. Supports multi-source aggregation and content extraction.
+- **Deep Analysis Sub-Agent**: After task completion, an optional sub-agent performs a comprehensive analysis of all session data (commands, outputs, file operations, web searches, plan steps) and generates a structured final report.
+- **Thread Continuation**: After finishing a task, you can continue the session with a new goal while preserving the full conversation history.
+- **Enhanced JSON Validator**: Robust JSON parsing with up to 3 automatic correction attempts when the AI returns malformed responses.
+- **Configurable Step Limit**: Built-in safeguard (`MAX_STEPS=100` by default) prevents infinite loops during task execution.
 
 ## Operating Modes
 
 The agent supports two distinct modes of operation, allowing you to choose the level of control that best fits your workflow:
 
 ### Collaborative Mode (Interactive)
-In this mode, the agent works as your collaborative partner. Before executing any bash command, the agent presents it to you and asks for confirmation. You can approve (`y`) or reject (`N`) each command individually, giving you full oversight of all actions performed on your system.
+In this mode, the agent works as your collaborative partner. Before executing any bash command, file operation, or web search, the agent presents it to you and asks for confirmation. You can approve (`y`) or reject (`N`) each action individually, giving you full oversight of all actions performed on your system.
 
 **When to use:**
 - Learning new commands and their effects
@@ -77,6 +87,141 @@ The main terminal agent is a powerful tool designed to streamline your command-l
 - **Script Creation**: Develop custom scripts for automation.
 - **Configuration Files**: Manage configuration files, such as those for Ansible.
 - **Software Development**: Build and deploy applications.
+- **Internet Research**: Search the web for information needed to complete tasks.
+
+## Agent Tools
+
+The agent communicates via JSON tool calls. Each tool is available to the AI during task execution:
+
+### Execution Tools
+| Tool | Description |
+|------|-------------|
+| `bash` | Execute shell commands locally or via SSH. Supports custom timeout. |
+| `web_search_agent` | Search the internet using DuckDuckGo or SearxNG. |
+
+### File Operation Tools
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read file content, optionally specifying start/end line numbers. |
+| `write_file` | Create or overwrite a file with specified content. |
+| `edit_file` | Edit a file: `replace`, `insert_after`, `insert_before`, or `delete_line`. |
+| `list_directory` | List directory contents, optionally recursive with glob pattern. |
+| `copy_file` | Copy a file to a new location (with optional overwrite). |
+| `delete_file` | Delete a file (with optional backup). |
+
+### Plan & Communication Tools
+| Tool | Description |
+|------|-------------|
+| `update_plan_step` | Mark a plan step as `completed`, `failed`, `skipped`, or `in_progress`. |
+| `ask_user` | Ask the user a question (only available in Collaborative Mode). |
+
+### Completion Tool
+| Tool | Description |
+|------|-------------|
+| `finish` | Signal task completion with a detailed summary. Triggers the optional Deep Analysis Sub-Agent. |
+
+All file and search operations in **Collaborative Mode** ask for user confirmation (`[y/N]`) before proceeding. If refused, the user is prompted for a justification that is fed back to the AI.
+
+## Action Plan Management
+
+Before starting task execution, the agent automatically generates a step-by-step action plan based on your goal.
+
+### How it works:
+1. **Plan Generation**: The AI creates a structured plan with numbered steps, each with a description and optional command.
+2. **Plan Review** (Collaborative Mode only): The plan is displayed and you are asked:
+   - `y` — Accept the plan and start execution
+   - `n` / `e` — Reject or edit: describe your changes, the AI revises the plan accordingly
+3. **Plan Execution**: The agent executes steps in order, marking each as `completed`, `failed`, or `skipped` using the `update_plan_step` tool.
+4. **Finish Guard**: The agent cannot call `finish` until all plan steps are completed (or marked as failed/skipped). If it tries, it is reminded to complete the remaining steps first.
+5. **Progress Display**: After each action, a compact plan progress summary is shown.
+
+### Example plan display:
+```
+ ACTION PLAN
+ Step 1: [✓] Analyze goal and requirements
+ Step 2: [✓] Install required packages
+ Step 3: [⟳] Configure the service
+ Step 4: [ ] Verify the installation
+ Progress: 2/4 (50%)
+```
+
+## Deep Analysis Sub-Agent
+
+After the agent finishes a task, you are offered an optional **Deep Analysis Sub-Agent** that performs a comprehensive post-task report.
+
+```
+VaultAI> Run Deep Analysis Sub-Agent for a detailed session report? [y/N]:
+```
+
+### What it analyzes:
+- ✅ Full conversation history (user, agent, system messages)
+- ✅ All executed bash commands and their outputs
+- ✅ File operations performed (read, write, edit, copy, delete)
+- ✅ Web search results gathered during the session
+- ✅ Action plan steps with statuses and results
+- ✅ Agent's own finish summary
+
+### Report structure:
+| Section | Content |
+|---------|---------|
+| **Goal Achievement Assessment** | Was the goal achieved? Success rating (1–10). |
+| **Execution Summary** | Total steps, key actions, critical decisions. |
+| **What Worked Well** | Successful operations with specific details. |
+| **Problems & Failures** | Failed commands, root cause analysis, workarounds. |
+| **Deep Technical Analysis** | Key outputs, system state changes, security notes. |
+| **Recommendations** | Next steps, potential risks, improvements. |
+| **Final Verdict** | COMPLETED / PARTIALLY COMPLETED / FAILED |
+
+The report is rendered as formatted Markdown in the terminal with Vault-Tec themed panels.
+
+## Web Search Agent
+
+The agent can search the internet during task execution using the built-in **WebSearchAgent**.
+
+### Supported search engines:
+| Engine | Setup | Notes |
+|--------|-------|-------|
+| **DuckDuckGo** | No API key required | Default engine |
+| **SearxNG** | Requires self-hosted instance | More control, no rate limits |
+
+### Features:
+- **Multi-source aggregation**: Iterative internal loop gathers data from multiple sources
+- **Content extraction**: Extracts and cleans main content from web pages (requires `beautifulsoup4`)
+- **AI-powered evaluation**: Uses AI to assess search completeness and refine queries
+- **Relevance scoring**: Keyword-based relevance scoring for each source (0.0–1.0)
+- **Confidence scoring**: Overall confidence metric based on source count, relevance, and content depth
+
+### Required dependencies for web search:
+```bash
+pip install duckduckgo-search beautifulsoup4 lxml
+```
+
+### Web search `.env` configuration:
+```ini
+# Search engine: duckduckgo or searxng
+WEB_SEARCH_ENGINE=duckduckgo
+
+# SearxNG URL (only needed if using searxng engine)
+SEARXNG_URL=http://localhost:8888
+
+# Maximum search iterations per query (default: 5)
+WEB_SEARCH_MAX_ITERATIONS=5
+
+# Maximum sources per iteration (default: 5)
+WEB_SEARCH_MAX_SOURCES=5
+
+# Minimum confidence to stop searching (default: 0.7)
+WEB_SEARCH_MIN_CONFIDENCE=0.7
+
+# HTTP timeout in seconds (default: 30)
+WEB_SEARCH_TIMEOUT=30
+
+# Enable page content extraction (default: true)
+WEB_SEARCH_EXTRACT_CONTENT=true
+
+# Max characters extracted per page (default: 10000)
+WEB_SEARCH_MAX_CONTENT_LENGTH=10000
+```
 
 ## Prompt Creator
 
@@ -97,6 +242,11 @@ The **Prompt Creator** is an interactive assistant that helps you build high-qua
 - API key for the selected AI engine
 - `.env` configuration file (see below)
 - Linux or macOS
+
+### Optional dependencies (for web search):
+```bash
+pip install duckduckgo-search beautifulsoup4 lxml
+```
 
 ## Installation
 
@@ -214,10 +364,20 @@ AUTO_ACCEPT=false
 # auto explain generated commands before execution
 AUTO_EXPLAIN_COMMAND=true
 
- # logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+# logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO
 LOG_FILE=app.log
 LOG_TO_CONSOLE=false
+
+# web search agent configuration (optional)
+WEB_SEARCH_ENGINE=duckduckgo        # duckduckgo or searxng
+SEARXNG_URL=http://localhost:8888   # only needed for searxng engine
+WEB_SEARCH_MAX_ITERATIONS=5
+WEB_SEARCH_MAX_SOURCES=5
+WEB_SEARCH_MIN_CONFIDENCE=0.7
+WEB_SEARCH_TIMEOUT=30
+WEB_SEARCH_EXTRACT_CONTENT=true
+WEB_SEARCH_MAX_CONTENT_LENGTH=10000
 ```
 
 ## Usage
@@ -260,14 +420,32 @@ You can load a prompt or goal from a file by typing:
 
 The agent will read the file and use its contents as your goal or question.
 
+### Continuing a session after task completion
+
+After a task finishes, the agent asks if you want to continue:
+
+```
+VaultAI> Do you want continue this thread? [y/N]:
+```
+
+If you answer `y`, you can type a new goal. The full conversation history is preserved, giving the AI context from the previous task.
+
 ## Files
 
 - `term_ag.py` – main agent, automation, tasks, agent class, AI and command handling.
 - `term_ask.py` – AI chat, questions, dialogs.
 - `VaultAIAskRunner.py` – chat logic.
-- `VaultAiAgentRunner.py` – agent logic.
+- `VaultAiAgentRunner.py` – agent execution logic, tool dispatch, plan management.
 - `PromptCreator.py` – interactive prompt builder.
-
+- `ai/AICommunicationHandler.py` – AI API abstraction layer (OpenAI, Gemini, Ollama, OpenRouter).
+- `context/ContextManager.py` – conversation context and sliding window management.
+- `plan/ActionPlanManager.py` – action plan creation, step tracking, progress display.
+- `finish/FinishSubAgent.py` – deep analysis sub-agent for post-task reporting.
+- `web_search/WebSearchAgent.py` – web search sub-agent (DuckDuckGo, SearxNG).
+- `file_operator/FileOperator.py` – file read/write/edit/copy/delete operations.
+- `security/SecurityValidator.py` – command security validation.
+- `json_validator/JsonValidator.py` – enhanced JSON parsing with auto-correction.
+- `user/UserInteractionHandler.py` – user input handling.
 
 The agent will read the file and use its contents as your goal or question.
 
@@ -301,7 +479,8 @@ source ~/.bashrc
 
 ## TODO
 
-- ...
+- Add SearxNG Docker Compose example for easy self-hosted web search setup
+- Add support for additional web search engines
 
 ## License
 
@@ -374,50 +553,47 @@ AgentAI (cogito:8b) is online. What can I do for you today?
 Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI
 ```
 
-**VaultAI agent:**
+**VaultAI agent — plan phase:**
 ```
-VaultAI AI agent started with goal: Create a bash deploy script that does: git pull, pip install, database migrations, and restarts uWSGI on 
-root@192.168.200.198.
+Creating action plan...
+[OK] Created plan with 4 steps
 
-> 'mkdir -p deploy_script'. Execute? [y/N]: y
+ ACTION PLAN
+ Step 1: [ ] Create deploy_script directory
+ Step 2: [ ] Create deploy.sh script file
+ Step 3: [ ] Add deployment commands to the script
+ Step 4: [ ] Make script executable and verify
+
+Accept this plan? [y/n/e(edit)]:
+```
+
+**VaultAI agent — execution phase:**
+```
+VaultAI> Agent suggests to run command: 'mkdir -p deploy_script'. Execute? [y/N]: y
 Executing: mkdir -p deploy_script
 Result (code 0):
 
-Agent asks: Do you want to create a bash script named 'deploy.sh' inside the 'deploy_script' directory?
-Your answer: y
+...
 
-> 'touch deploy_script/deploy.sh'. Execute? [y/N]: y
-Executing: touch deploy_script/deploy.sh
-Result (code 0):
+VaultAI> Agent finished its task.
+Summary: Created a bash deployment script at deploy_script/deploy.sh that performs git pull, pip install, database migrations, and uWSGI service restart.
 
-> 'chmod 755 deploy_script/deploy.sh'. Execute? [y/N]: y
-Executing: chmod 755 deploy_script/deploy.sh
-Result (code 0):
+VaultAI> Run Deep Analysis Sub-Agent for a detailed session report? [y/N]: y
 
-Agent asks: Do you want to add a shebang line at the top of the script?
-Your answer: y
+Vault 3000 Deep Analysis Sub-Agent initializing...
+Sub-agent analyzing all available sources...
 
-> 'echo '#!/bin/bash' > deploy_script/deploy.sh'. Execute? [y/N]: y
-Executing: echo '#!/bin/bash' > deploy_script/deploy.sh
-Result (code 0):
+╔══════════════════════════════════════════════════════════════════════╗
+║  VAULT 3000 — DEEP ANALYSIS COMPLETE                                 ║
+║  Goal: Create a bash deploy script...                                ║
+╚══════════════════════════════════════════════════════════════════════╝
 
-> 'echo -e "#!/bin/bash
-cd /to/project
+### GOAL ACHIEVEMENT ASSESSMENT
+- Was the goal achieved? **Yes**
+- Overall success rating: **9/10**
+...
 
-git pull
-pip install -r requirements.txt
-python manage.py migrate
-sudo systemctl restart uwsgi" >> deploy_script/deploy.sh'. Execute? [y/N]: y
-Executing: echo -e "#!/bin/bash
-cd /to/project
-
-git pull
-pip install -r requirements.txt
-python manage.py migrate
-sudo systemctl restart uwsgi" >> deploy_script/deploy.sh
-Result (code 0):
-
-Agent finished its task. Summary: I've created a bash deployment script that does the following steps: 1) Created an empty deploy script file, 2) Made it executable, 3) Added a shebang line at the top, and 4) Appended all the required commands to execute git pull, pip install, database migrations, and restart uWSGI service.
+VaultAI> Do you want continue this thread? [y/N]:
 ```
 
 ## Support & Issues
@@ -473,3 +649,4 @@ Pull requests are welcome! For major changes, please open an issue first to disc
  ........................................................................................ 
  ..................find me on: https://www.linkedin.com/in/sebastian-wielgosz-linux-admin
  ........................................................................................
+```
