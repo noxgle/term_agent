@@ -295,7 +295,7 @@ class ActionPlanManager:
         
         # Header with goal
         header = f"PLAN: {self.goal or 'No goal'}"
-        self.console.print(f"\n[bold cyan]{header}[/]")
+        self.console.print(f"\n{header}")
         self.console.print("-" * min(len(header) + 5, 80))
         
         # Steps table

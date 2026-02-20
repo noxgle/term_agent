@@ -780,6 +780,7 @@ def main():
 Usage:
   term_ag.py                    # Run locally
   term_ag.py user@host          # Run remotely via SSH
+  term_ag.py -p, --prompt       # Run Prompt Creator sub-agent
   term_ag.py --help             # Show this help message
 
 Controls:
@@ -789,6 +790,8 @@ Controls:
         """
     )
     parser.add_argument('remote', nargs='?', help='Remote host in format user@host (optional)')
+    parser.add_argument('-p', '--prompt', action='store_true', 
+                        help='Run Prompt Creator sub-agent to create a prompt with AI assistance')
 
     args = parser.parse_args()
     
@@ -817,6 +820,42 @@ Controls:
         agent.console.print("[red]Model: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
+
+    # Handle --prompt flag: Run Prompt Creator Sub-Agent
+    if args.prompt:
+        from prompt.PromptCreatorSubAgent import PromptCreatorSubAgent
+        from ai.AICommunicationHandler import AICommunicationHandler
+        
+        ai_handler = AICommunicationHandler(agent, logger=agent.logger)
+        prompt_creator = PromptCreatorSubAgent(
+            terminal=agent,
+            ai_handler=ai_handler,
+            logger=agent.logger
+        )
+        
+        try:
+            final_prompt, should_execute = prompt_creator.run(prompt_for_agent=True)
+            
+            if should_execute and final_prompt:
+                # Run VaultAIAgentRunner with the created prompt
+                agent.console.print(f"\nExecuting created prompt with VaultAI Agent...")
+                runner = VaultAIAgentRunner(agent, final_prompt)
+                runner.run()
+                agent.console.print(f"\n{agent.maybe_print_finding()}")
+            elif final_prompt:
+                agent.console.print("\n[yellow]Prompt created but not executed.[/]")
+                agent.console.print(f"\n[cyan]Your prompt:[/]\n{final_prompt}")
+            else:
+                agent.console.print("\n[yellow]No prompt was created.[/]")
+                
+        except KeyboardInterrupt:
+            agent.console.print("\n[red][Vault 3000] Prompt Creator interrupted by user.[/]")
+            sys.exit(1)
+        except Exception as e:
+            agent.console.print(f"[Vault 3000] ERROR: {e}", style="red", markup=False)
+            sys.exit(1)
+        
+        return
 
     if args.remote:
         remote = args.remote
