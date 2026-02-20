@@ -927,7 +927,7 @@ Controls:
         agent.user = None
         agent.host = None
         input_text = "local"
-        agent.console.print("\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("\n\n\n\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
     
     try:
         user_input = prompt(

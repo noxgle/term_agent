@@ -13,3 +13,4 @@ json5
 ddgs>=2.0.0
 beautifulsoup4>=4.12.0
 lxml
+aiohttp>=3.9.0

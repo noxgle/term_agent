@@ -112,7 +112,7 @@ class PromptCreatorSubAgent:
 
         system_prompt = SYSTEM_PROMPT_FOR_AGENT if prompt_for_agent else SYSTEM_PROMPT_GENERAL
         
-        self.terminal.print_console("\nDescribe your idea (Ctrl+S):")
+        self.terminal.print_console("\nValutAI> Describe your idea (Ctrl+S):")
 
         try:
             user_goal = self.session.prompt(HTML("> "))
@@ -146,7 +146,7 @@ class PromptCreatorSubAgent:
                         self.final_prompt = prompt_draft
                         return self._ask_final_action()
                     else:
-                        self.console.print(f"\n[cyan]VaultAI>[/] {question}")
+                        self.console.print(f"\nVaultAI> {question}")
                         user_answer = self.session.prompt(HTML(">    "))
                         self.prompt_history.append({"ai": ai_reply, "user": user_answer})
                         current_prompt += "\n" + user_answer
