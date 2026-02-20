@@ -6,12 +6,14 @@ Supports two search engines:
 - SearxNG (self-hosted instance required)
 
 Features internal loop for multi-source data aggregation.
+Async implementation for parallel content fetching.
 """
 
 import os
 import re
 import json
 import time
+import asyncio
 from typing import Optional, Dict, List, Any
 from urllib.parse import urljoin, urlparse
 
@@ -33,6 +35,12 @@ except ImportError:
     REQUESTS_AVAILABLE = False
 
 try:
+    import aiohttp
+    AIOHTTP_AVAILABLE = True
+except ImportError:
+    AIOHTTP_AVAILABLE = False
+
+try:
     from bs4 import BeautifulSoup
     BS4_AVAILABLE = True
 except ImportError:
@@ -46,7 +54,7 @@ class WebSearchAgent:
     Features:
     - Internal loop for iterative search refinement
     - Multi-source data aggregation
-    - Content extraction from web pages
+    - Async parallel content extraction from web pages
     - AI-powered evaluation of search completeness
     
     Supported engines:
@@ -65,6 +73,7 @@ class WebSearchAgent:
         'extract_content': True,
         'max_content_length': 10000,
         'user_agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'max_concurrent_fetches': 5,  # Limit concurrent async requests
     }
     
     def __init__(self, ai_handler=None, logger=None, config: Dict[str, Any] = None):
@@ -114,6 +123,7 @@ class WebSearchAgent:
             'WEB_SEARCH_EXTRACT_CONTENT': ('extract_content', lambda x: x.lower() == 'true'),
             'WEB_SEARCH_MAX_CONTENT_LENGTH': ('max_content_length', int),
             'WEB_SEARCH_USER_AGENT': 'user_agent',
+            'WEB_SEARCH_MAX_CONCURRENT_FETCHES': ('max_concurrent_fetches', int),
         }
         
         for env_var, config_key in env_mappings.items():
@@ -139,11 +149,43 @@ class WebSearchAgent:
         if self.config['extract_content'] and not BS4_AVAILABLE:
             self.logger.warning("beautifulsoup4 not available. Content extraction will be limited.")
             self.config['extract_content'] = False
+        
+        if not AIOHTTP_AVAILABLE:
+            self.logger.warning("aiohttp not available. Falling back to synchronous requests.")
     
     def execute(self, query: str, engine: str = None, max_sources: int = None,
                 deep_search: bool = True) -> Dict[str, Any]:
         """
-        Execute web search with internal loop for data aggregation.
+        Execute web search (synchronous wrapper for async implementation).
+        
+        Args:
+            query: Search query
+            engine: Search engine to use ('duckduckgo' or 'searxng')
+            max_sources: Maximum number of sources per iteration
+            deep_search: Enable internal loop for multi-source aggregation
+            
+        Returns:
+            Dictionary with search results
+        """
+        try:
+            # Try to run in existing event loop if available
+            loop = asyncio.get_running_loop()
+            # If we're already in an async context, create a task
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(
+                    asyncio.run,
+                    self.execute_async(query, engine, max_sources, deep_search)
+                )
+                return future.result()
+        except RuntimeError:
+            # No running loop, create new one
+            return asyncio.run(self.execute_async(query, engine, max_sources, deep_search))
+    
+    async def execute_async(self, query: str, engine: str = None, max_sources: int = None,
+                            deep_search: bool = True) -> Dict[str, Any]:
+        """
+        Execute web search with internal loop for data aggregation (async implementation).
         
         Args:
             query: Search query
@@ -173,7 +215,7 @@ class WebSearchAgent:
         
         current_query = query
         
-        self.logger.info(f"Starting web search agent for query: {query}")
+        self.logger.info(f"Starting async web search agent for query: {query}")
         
         # Internal loop
         while self.iteration_count < max_iterations:
@@ -187,8 +229,11 @@ class WebSearchAgent:
                 self.logger.error(f"Search failed: {e}")
                 return self._build_response(success=False, error=str(e))
             
-            # Step 2: Extract content from new sources
+            # Step 2: Extract content from new sources (ASYNC PARALLEL)
             new_sources = 0
+            urls_to_fetch = []
+            results_to_process = []
+            
             for result in search_results:
                 url = result.get('url', '')
                 
@@ -196,24 +241,28 @@ class WebSearchAgent:
                 if any(s['url'] == url for s in self.aggregated_sources):
                     continue
                 
-                # Extract content
-                if self.config['extract_content']:
-                    content = self._extract_content(url)
-                else:
-                    content = result.get('snippet', '')
+                urls_to_fetch.append(url)
+                results_to_process.append(result)
+            
+            # Parallel content extraction
+            if urls_to_fetch:
+                contents = await self._extract_content_batch_async(urls_to_fetch)
                 
-                # Calculate relevance
-                relevance = self._calculate_relevance(content, query)
-                
-                self.aggregated_sources.append({
-                    'url': url,
-                    'title': result.get('title', ''),
-                    'snippet': result.get('snippet', ''),
-                    'content': content,
-                    'relevance': relevance,
-                    'iteration': self.iteration_count
-                })
-                new_sources += 1
+                for result, content in zip(results_to_process, contents):
+                    url = result.get('url', '')
+                    
+                    # Calculate relevance
+                    relevance = self._calculate_relevance(content, query)
+                    
+                    self.aggregated_sources.append({
+                        'url': url,
+                        'title': result.get('title', ''),
+                        'snippet': result.get('snippet', ''),
+                        'content': content,
+                        'relevance': relevance,
+                        'iteration': self.iteration_count
+                    })
+                    new_sources += 1
             
             self.logger.info(f"Found {new_sources} new sources in iteration {self.iteration_count}")
             
@@ -237,7 +286,7 @@ class WebSearchAgent:
     
     def _search(self, query: str, engine: str, max_results: int) -> List[Dict]:
         """
-        Execute search using specified engine.
+        Execute search using specified engine (synchronous - DDGS library is sync).
         
         Args:
             query: Search query
@@ -326,9 +375,127 @@ class WebSearchAgent:
         
         return results
     
+    async def _extract_content_batch_async(self, urls: List[str]) -> List[str]:
+        """
+        Extract content from multiple URLs in parallel using aiohttp.
+        
+        Args:
+            urls: List of URLs to extract content from
+            
+        Returns:
+            List of extracted text contents (same order as urls)
+        """
+        if not AIOHTTP_AVAILABLE:
+            # Fallback to synchronous
+            return [self._extract_content(url) for url in urls]
+        
+        # Limit concurrent requests using semaphore
+        semaphore = asyncio.Semaphore(self.config['max_concurrent_fetches'])
+        
+        async def fetch_with_semaphore(url: str, session: aiohttp.ClientSession) -> str:
+            async with semaphore:
+                return await self._extract_content_async(url, session)
+        
+        timeout = aiohttp.ClientTimeout(total=self.config['timeout'])
+        
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            tasks = [fetch_with_semaphore(url, session) for url in urls]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            # Handle exceptions - return empty string for failed requests
+            processed_results = []
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    self.logger.warning(f"Failed to extract content from {urls[i]}: {result}")
+                    processed_results.append("")
+                else:
+                    processed_results.append(result)
+            
+            return processed_results
+    
+    async def _extract_content_async(self, url: str, session: aiohttp.ClientSession) -> str:
+        """
+        Extract main content from a web page asynchronously.
+        
+        Args:
+            url: URL to extract content from
+            session: aiohttp ClientSession
+            
+        Returns:
+            Extracted text content
+        """
+        if not BS4_AVAILABLE:
+            return ""
+        
+        headers = {
+            'User-Agent': self.config['user_agent'],
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+        }
+        
+        try:
+            async with session.get(url, headers=headers) as response:
+                if response.status != 200:
+                    self.logger.warning(f"HTTP {response.status} for {url}")
+                    return ""
+                
+                html = await response.text()
+                
+                # Parse HTML
+                soup = BeautifulSoup(html, 'lxml')
+                
+                # Remove unwanted elements
+                for element in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript']):
+                    element.decompose()
+                
+                # Try to find main content
+                main_content = None
+                
+                # Common main content selectors
+                selectors = [
+                    'article',
+                    '[role="main"]',
+                    'main',
+                    '.post-content',
+                    '.article-content',
+                    '.content',
+                    '#content',
+                    '.entry-content',
+                    '.post-body',
+                ]
+                
+                for selector in selectors:
+                    main_content = soup.select_one(selector)
+                    if main_content:
+                        break
+                
+                if not main_content:
+                    main_content = soup.body if soup.body else soup
+                
+                # Extract text
+                text = main_content.get_text(separator='\n', strip=True)
+                
+                # Clean up text
+                lines = [line.strip() for line in text.split('\n') if line.strip()]
+                text = '\n'.join(lines)
+                
+                # Limit length
+                max_len = self.config['max_content_length']
+                if len(text) > max_len:
+                    text = text[:max_len] + '...'
+                
+                return text
+                
+        except asyncio.TimeoutError:
+            self.logger.warning(f"Timeout while extracting content from {url}")
+            return ""
+        except Exception as e:
+            self.logger.warning(f"Content extraction failed for {url}: {e}")
+            return ""
+    
     def _extract_content(self, url: str) -> str:
         """
-        Extract main content from a web page.
+        Extract main content from a web page (synchronous fallback).
         
         Args:
             url: URL to extract content from
