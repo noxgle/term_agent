@@ -166,9 +166,12 @@ class ActionPlanManager:
         #     "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
         # )
         
+        # Get current date and time for context
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         default_prompt = (
-            "You are a task planner. Based on the user's goal, create a detailed action plan. "
+            f"You are a task planner. Current date and time: {current_datetime}. "
+            "Based on the user's goal, create a detailed action plan. "
             "Return response in JSON format with list of steps. "
             "Each step should have fields: 'description' and optionally 'command'. "
             "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"

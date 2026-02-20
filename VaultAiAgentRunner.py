@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import time
 import uuid
+from datetime import datetime
 from user.UserInteractionHandler import UserInteractionHandler
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
@@ -63,8 +64,13 @@ class VaultAIAgentRunner:
             raise RuntimeError("Linux distribution detection failed.")
         
         self.user_goal = user_goal
+        
+        # Get current date and time for context
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         if system_prompt_agent is None:
             self.system_prompt_agent = (
+                f"Current date and time: {current_datetime}\n\n"
                 f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal.\n"
                 "Your task is to achieve the user's goal by executing shell commands and file operations.\n\n"
                 "## ACTION PLAN\n"

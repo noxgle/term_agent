@@ -14,6 +14,7 @@ import re
 import json
 import time
 import asyncio
+from datetime import datetime
 from typing import Optional, Dict, List, Any
 from urllib.parse import urljoin, urlparse
 
@@ -662,6 +663,9 @@ class WebSearchAgent:
         """
         Use AI to evaluate if more data is needed.
         """
+        # Get current date and time for context
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         # Prepare summary of current knowledge
         sources_summary = []
         for source in self.aggregated_sources:
@@ -669,6 +673,8 @@ class WebSearchAgent:
             sources_summary.append(f"- {source['title']}: {snippet}...")
         
         prompt = f"""Analyze the search results for the query: "{original_query}"
+
+Current date and time: {current_datetime}
 
 Current search results:
 {chr(10).join(sources_summary)}
@@ -846,12 +852,17 @@ Respond in JSON format:
         """
         Use AI to generate intelligent summary.
         """
+        # Get current date and time for context
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
         sources_text = []
         for source in sources[:5]:
             content = source.get('content', source.get('snippet', ''))[:1000]
             sources_text.append(f"Source: {source['title']}\nURL: {source['url']}\nContent: {content}\n")
         
-        prompt = f"""Summarize the key information from these search results:
+        prompt = f"""Current date and time: {current_datetime}
+
+Summarize the key information from these search results:
 
 {chr(10).join(sources_text)}
 
