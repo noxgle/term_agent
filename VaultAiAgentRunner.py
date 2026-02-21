@@ -70,7 +70,8 @@ class VaultAIAgentRunner:
         
         if system_prompt_agent is None:
             self.system_prompt_agent = (
-                f"Current date and time: {current_datetime}\n\n"
+                f"Current date and time: {current_datetime}\n"
+                f"Working directory (workspace): {terminal.workspace}\n\n"
                 f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal.\n"
                 "Your task is to achieve the user's goal by executing shell commands and file operations.\n\n"
                 "## ACTION PLAN\n"

@@ -160,8 +160,9 @@ class term_agent:
 
         self.local_linux_distro = self.detect_linux_distribution()
         self.remote_linux_distro = None
-
-       
+        
+        # Workspace directory - defaults to pwd or override from .env
+        self.workspace = os.getenv("WORKSPACE_DIR", "") or os.getcwd()
 
 
     def print_vault_tip(self):
