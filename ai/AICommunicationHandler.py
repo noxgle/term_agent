@@ -3,10 +3,27 @@ import time
 import re
 from typing import Optional, Tuple
 
+# Import enhanced JSON validator
+try:
+    from json_validator.JsonValidator import create_validator, JsonValidationError
+    JSON_VALIDATOR_AVAILABLE = True
+except ImportError:
+    JSON_VALIDATOR_AVAILABLE = False
+
+
 class AICommunicationHandler:
     def __init__(self, terminal, logger=None):
         self.terminal = terminal
         self.logger = logger if logger else self._create_dummy_logger()
+        
+        # Initialize enhanced JSON validator if available
+        self.json_validator = None
+        if JSON_VALIDATOR_AVAILABLE:
+            try:
+                self.json_validator = create_validator("flexible")
+                self.logger.info("AICommunicationHandler: Enhanced JSON validator initialized")
+            except Exception as e:
+                self.logger.warning(f"AICommunicationHandler: Failed to initialize JSON validator: {e}")
 
     def send_request(self, system_prompt: str, user_prompt: str, request_format: str = "json") -> Optional[str]:
         """
@@ -63,12 +80,30 @@ class AICommunicationHandler:
         Extract and validate JSON response.
         Always returns a JSON string (str), never a dict/list.
 
-        Handles multiple formats:
-        - Single JSON object
-        - JSON in markdown code blocks
-        - NDJSON (newline-delimited JSON) - extracts first valid object
-        - Python-style dict with single quotes
+        Uses enhanced JsonValidator with multiple strategies:
+        - Direct JSON parsing
+        - JSON5 parsing (more lenient)
+        - YAML parsing
+        - Markdown code block extraction
+        - AI response cleaning (removes text around JSON)
+        - Control characters removal
+        - Multi-document JSON handling
+        - Streaming JSON repair (for incomplete responses)
+        - Aggressive JSON extraction
         """
+        # Try enhanced validator first if available
+        if self.json_validator:
+            try:
+                success, data, error = self.json_validator.validate_response(response)
+                if success and data is not None:
+                    # Return as JSON string
+                    return json.dumps(data, ensure_ascii=False)
+                else:
+                    self.logger.debug(f"Enhanced validator did not succeed: {error}")
+            except Exception as e:
+                self.logger.debug(f"Enhanced validator exception: {e}")
+        
+        # Fallback to original parsing strategies
         try:
             # Strategy 1: Try to parse the entire response as-is
             try:

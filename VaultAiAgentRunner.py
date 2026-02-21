@@ -1298,9 +1298,17 @@ class VaultAIAgentRunner:
                     user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                     new_instruction = terminal.process_input(user_input)
 
-                    # Append to existing context instead of resetting to preserve conversation history
-                    self.context_manager.add_assistant_message(f"Previous task summary: {self.summary}")
-                    self.context_manager.add_user_message(f"New instruction (this takes priority): {new_instruction}")
+                    # Preserve completed plan history in context before clearing
+                    completed_plan_context = self.plan_manager.get_context_for_ai()
+                    self.context_manager.add_system_message(
+                        f"[COMPLETED TASK]\n"
+                        f"Goal: {self.user_goal}\n"
+                        f"Summary: {self.summary}\n"
+                        f"Plan that was executed:\n{completed_plan_context}\n"
+                        f"[END COMPLETED TASK]\n\n"
+                        f"The above task was fully completed. Now proceed with the new instruction."
+                    )
+                    self.context_manager.add_user_message(f"New instruction: {new_instruction}")
 
                     self.steps = []
                     self.summary = ""
