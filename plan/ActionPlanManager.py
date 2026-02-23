@@ -157,24 +157,39 @@ class ActionPlanManager:
             distro_info = f"{self.linux_distro} {self.linux_version}"
         else:
             distro_info = "unknown Linux distribution"
-
-        # default_prompt = (
-        #     "You are a task planner. Based on the user's goal, create a detailed action plan for autonomous linux terminal agent. "
-        #     f"The agent is running on {distro_info}. "
-        #     "Return response in JSON format with list of steps. "
-        #     "Each step should have fields: 'description' and optionally 'command'. "
-        #     "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
-        # )
         
         # Get current date and time for context
         current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         default_prompt = (
-            f"You are a task planner. Current date and time: {current_datetime}. "
-            "Based on the user's goal, create a detailed action plan. "
-            "Return response in JSON format with list of steps. "
-            "Each step should have fields: 'description' and optionally 'command'. "
-            "Response must be in format: {'steps': [{'description': '...', 'command': '...'}, ...]}"
+            f"You are a planning agent. Current date and time: {current_datetime}. "
+            "Your role is to create a structured action plan for another execution agent. "
+            "You DO NOT execute tasks. You ONLY produce a plan.\n\n"
+            
+            "Based on the user's goal, generate a logically ordered list of atomic steps. "
+            "Each step must represent a single actionable operation.\n\n"
+            
+            "Rules:\n"
+            "- Steps must be ordered logically and respect dependencies.\n"
+            "- Each step must be atomic and independently executable.\n"
+            "- Do not combine multiple logical actions into one step.\n"
+            "- Use the 'command' field only if the step requires a machine-executable instruction.\n"
+            "- The 'command' must contain a single explicit instruction without explanations.\n"
+            "- If the goal is ambiguous, include a clarification step as the first step.\n"
+            "- Avoid redundant or unnecessary steps.\n\n"
+            
+            "Return ONLY valid JSON in the following format:\n"
+            "{\n"
+            '  "steps": [\n'
+            '    {\n'
+            '      "description": "string",\n'
+            '      "command": "string (optional)"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            
+            "Do not include any text outside the JSON object. "
+            "Use double quotes and ensure valid JSON syntax."
         )
 
         prompt = system_prompt or default_prompt

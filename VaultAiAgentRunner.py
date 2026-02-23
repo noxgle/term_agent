@@ -70,84 +70,6 @@ class VaultAIAgentRunner:
         current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if system_prompt_agent is None:
-            # self.system_prompt_agent = (
-            #     f"Current date and time: {current_datetime}\n"
-            #     f"Working directory (workspace): {terminal.workspace}\n\n"
-            #     f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal.\n"
-            #     "Your task is to achieve the user's goal by executing shell commands and file operations.\n\n"
-            #     "## ACTION PLAN (OPTIONAL)\n"
-            #     "For COMPLEX tasks, create an action plan first using 'create_action_plan' tool.\n"
-            #     "For SIMPLE tasks (single command, quick check), execute directly without creating a plan.\n"
-            #     "If you have a plan:\n"
-            #     "- Follow steps sequentially and wait for results before proceeding\n"
-            #     "- Only mark a step as completed after verifying success\n"
-            #     "- Do NOT call 'finish' until all steps are completed (or unrecoverable error)\n"
-            #     "- Use 'update_plan_step' tool to mark steps: completed, failed, or skipped\n\n"
-            #     "## AVAILABLE TOOLS (always reply with JSON object, use double quotes)\n\n"
-            #     "### Planning\n"
-            #     '- {"tool": "create_action_plan", "goal": "...", "explain": "why plan is needed"}\n'
-            #     "  Use this tool when the task is COMPLEX:\n"
-            #     "  - Multi-step tasks (3+ commands)\n"
-            #     "  - Tasks requiring coordination (install + configure + start)\n"
-            #     "  - Tasks with dependencies between steps\n"
-            #     "  - Complex deployments or configurations\n"
-            #     "  DO NOT use for:\n"
-            #     "  - Single command execution\n"
-            #     "  - Quick checks (ls, cat, pwd, whoami)\n"
-            #     "  - Simple file operations\n"
-            #     "  - Information gathering tasks\n\n"
-            #     "### Execution\n"
-            #     '- {"tool": "bash", "command": "...", "timeout": seconds, "explain": "what it does"}\n'
-            #     '- {"tool": "web_search_agent", "query": "...", "engine": "duckduckgo|searxng", "max_sources": 5, "deep_search": true, "explain": "why search"}\n\n'
-            #     "### File Operations\n"
-            #     '- {"tool": "read_file", "path": "...", "start_line": N, "end_line": M, "explain": "..."}\n'
-            #     '- {"tool": "write_file", "path": "...", "content": "...", "explain": "..."}\n'
-            #     '- {"tool": "edit_file", "path": "...", "action": "replace|insert_after|insert_before|delete_line", "search": "...", "replace": "...", "line": "...", "explain": "..."}\n'
-            #     '- {"tool": "list_directory", "path": "...", "recursive": true|false, "pattern": "glob", "explain": "..."}\n'
-            #     '- {"tool": "copy_file", "source": "...", "destination": "...", "overwrite": true|false, "explain": "..."}\n'
-            #     '- {"tool": "delete_file", "path": "...", "backup": true|false, "explain": "..."}\n\n'
-            #     "### Plan Management\n"
-            #     '- {"tool": "update_plan_step", "step_number": N, "status": "completed|failed|skipped", "result": "description"}\n'
-            #     "  Only use if you have created a plan with 'create_action_plan'\n\n"
-            #     "### Communication\n"
-            #     '- {"tool": "ask_user", "question": "..."}  (NOT available in autonomous mode)\n\n'
-            #     "### Completion\n"
-            #     '- {"tool": "finish", "summary": "detailed summary of what was achieved"}\n'
-            #     "  NOTE: When you call 'finish', a Deep Analysis Sub-Agent will automatically\n"
-            #     "  review ALL sources from this session (commands, outputs, files, searches, plan)\n"
-            #     "  and generate a comprehensive final report. Your 'summary' field should be\n"
-            #     "  a thorough description of what was done and achieved.\n\n"
-            #     "## ERROR HANDLING (for bash commands)\n"
-            #     "After each command, analyze exit_code:\n"
-            #     "- exit_code=0: SUCCESS → mark step completed, continue to next\n"
-            #     "- exit_code≠0: FAILURE → decide action:\n"
-            #     "  - RETRY: transient error (timeout, network) → retry same/modified command\n"
-            #     "  - FIX: wrong command (syntax, missing file) → fix and retry\n"
-            #     "  - SKIP: non-critical error → skip and continue\n"
-            #     "  - FAIL: critical error → mark failed, ask user or stop\n\n"
-            #     "## IDEMPOTENCY\n"
-            #     "- Before modifying a file, check if the change is already applied\n"
-            #     "- Before installing packages, verify if already installed\n"
-            #     "- Before creating files/directories, check if they already exist\n"
-            #     "- Avoid duplicate operations and repeated side effects\n"
-            #     "- Prefer safe overwrite patterns only when necessary\n"
-            #     "- When retrying, ensure the previous partial attempt does not cause duplication\n\n"
-            #     "## CONSTRAINTS\n"
-            #     "- Each command runs in a separate shell process; 'cd' does not persist between commands\n"
-            #     "- Never use interactive commands: nano, vi, vim, less, more, top, htop, mc, passwd\n"
-            #     "- In autonomous mode: DO NOT use 'ask_user', make decisions yourself\n"
-            #     "- Always include 'tool' field in every response\n"
-            #     "- Provide detailed summary in 'finish' explaining achievements and issues\n\n"
-            #     "## RESOURCE MANAGEMENT\n"
-            #     "- Always set reasonable timeout for potentially long-running commands\n"
-            #     "- Avoid scanning entire filesystem unless explicitly required\n"
-            #     "- Prefer scoped paths instead of root-level operations\n"
-            #     "- Avoid commands with unbounded output\n"
-            #     "- Do not execute infinite loops or background daemons\n"
-            #     "- Minimize CPU, memory, and disk usage\n\n"
-            #     "## RESPONSE FORMAT\n"
-            #     "Reply ONLY with a valid JSON object (no explanations outside JSON):\n"
-            # )
             self.system_prompt_agent = (
                 f"Current date and time: {current_datetime}\n"
                 f"Working directory (workspace): {terminal.workspace}\n\n"
@@ -182,7 +104,9 @@ class VaultAIAgentRunner:
                 '- {"tool":"copy_file","source":"...","destination":"...","overwrite":true|false,"explain":"..."}\n'
                 '- {"tool":"delete_file","path":"...","backup":true|false,"explain":"..."}\n'
                 "Plan:\n"
+                '- {"tool":"create_action_plan","goal":"...","explain":"..."}\n'
                 '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
+                "Completion:\n"
                 '- {"tool":"finish","summary":"detailed summary"}\n\n'
 
                 "## ERROR HANDLING\n"
@@ -889,7 +813,7 @@ class VaultAIAgentRunner:
                                     terminal.print_console(f"\n[WARN] Deep Analysis Sub-Agent encountered an error: {e}")
                                     self.logger.warning("FinishSubAgent.run failed: %s", e)
                             else:
-                                terminal.print_console("[dim]Deep Analysis skipped.[/dim]")
+                                terminal.print_console("Deep Analysis skipped.")
                         # --- End FinishSubAgent ---
 
                         break 
@@ -1422,8 +1346,8 @@ class VaultAIAgentRunner:
 
             if task_finished_successfully:
                 # Display final plan
-                self.terminal.print_console("\nFinal Action Plan:")
-                self.plan_manager.display_plan(show_details=True)
+                #self.terminal.print_console("\nFinal Action Plan:")
+                #self.plan_manager.display_plan(show_details=True)
                 
                 continue_choice = self._get_user_input("\nVaultAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
                 if continue_choice == 'y':
@@ -1449,7 +1373,7 @@ class VaultAIAgentRunner:
                     self.user_goal = new_instruction
                     self.plan_manager.clear()
                     # Create a new plan for the new goal
-                    self._initialize_plan()
+                    #self._initialize_plan()
                     # Continue the while loop
                 else:
                     keep_running = False
