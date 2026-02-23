@@ -793,6 +793,8 @@ Controls:
     parser.add_argument('remote', nargs='?', help='Remote host in format user@host (optional)')
     parser.add_argument('-p', '--prompt', action='store_true', 
                         help='Run Prompt Creator sub-agent to create a prompt with AI assistance')
+    parser.add_argument('--plan', action='store_true',
+                        help='Force action plan creation for the task')
 
     args = parser.parse_args()
     
@@ -948,6 +950,24 @@ Controls:
         sys.exit(1)
 
     runner = VaultAIAgentRunner(agent, user_input_text, user=user, host=host)
+    
+    # Check for --plan flag or [plan] keyword in prompt
+    force_plan = args.plan
+    if not force_plan:
+        # Check for [plan] or plan: keyword in the prompt
+        prompt_lower = user_input_text.lower()
+        if prompt_lower.startswith('[plan]') or prompt_lower.startswith('plan:'):
+            force_plan = True
+            # Remove the keyword from the goal
+            if user_input_text.lower().startswith('[plan]'):
+                user_input_text = user_input_text[6:].strip()
+            elif user_input_text.lower().startswith('plan:'):
+                user_input_text = user_input_text[5:].strip()
+            runner.user_goal = user_input_text
+            agent.console.print("[cyan]Plan mode: Action plan will be created automatically.[/]")
+    
+    runner.force_plan = force_plan
+    
     try:
         runner.run()
         agent.console.print(f"\n{agent.maybe_print_finding()}")
