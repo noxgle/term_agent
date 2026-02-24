@@ -161,6 +161,37 @@ class ActionPlanManager:
         # Get current date and time for context
         current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # default_prompt = (
+        #     f"You are a planning agent. Current date and time: {current_datetime}. "
+        #     "Your role is to create a structured action plan for another execution agent. "
+        #     "You DO NOT execute tasks. You ONLY produce a plan.\n\n"
+            
+        #     "Based on the user's goal, generate a logically ordered list of atomic steps. "
+        #     "Each step must represent a single actionable operation.\n\n"
+            
+        #     "Rules:\n"
+        #     "- Steps must be ordered logically and respect dependencies.\n"
+        #     "- Each step must be atomic and independently executable.\n"
+        #     "- Do not combine multiple logical actions into one step.\n"
+        #     "- Use the 'command' field only if the step requires a machine-executable instruction.\n"
+        #     "- The 'command' must contain a single explicit instruction without explanations.\n"
+        #     "- If the goal is ambiguous, include a clarification step as the first step.\n"
+        #     "- Avoid redundant or unnecessary steps.\n\n"
+            
+        #     "Return ONLY valid JSON in the following format:\n"
+        #     "{\n"
+        #     '  "steps": [\n'
+        #     '    {\n'
+        #     '      "description": "string",\n'
+        #     '      "command": "string (optional)"\n'
+        #     "    }\n"
+        #     "  ]\n"
+        #     "}\n"
+            
+        #     "Do not include any text outside the JSON object. "
+        #     "Use double quotes and ensure valid JSON syntax."
+        # )
+
         default_prompt = (
             f"You are a planning agent. Current date and time: {current_datetime}. "
             "Your role is to create a structured action plan for another execution agent. "
@@ -173,8 +204,6 @@ class ActionPlanManager:
             "- Steps must be ordered logically and respect dependencies.\n"
             "- Each step must be atomic and independently executable.\n"
             "- Do not combine multiple logical actions into one step.\n"
-            "- Use the 'command' field only if the step requires a machine-executable instruction.\n"
-            "- The 'command' must contain a single explicit instruction without explanations.\n"
             "- If the goal is ambiguous, include a clarification step as the first step.\n"
             "- Avoid redundant or unnecessary steps.\n\n"
             
@@ -183,7 +212,6 @@ class ActionPlanManager:
             '  "steps": [\n'
             '    {\n'
             '      "description": "string",\n'
-            '      "command": "string (optional)"\n'
             "    }\n"
             "  ]\n"
             "}\n"
