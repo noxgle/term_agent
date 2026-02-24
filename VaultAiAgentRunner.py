@@ -86,6 +86,13 @@ class VaultAIAgentRunner:
                 "- Update plan after every step\n"
                 "- Do not re-plan unless plan fails\n\n"
 
+                "## ADAPTIVE EXECUTION\n"
+                "If outputs contradict assumptions or environment differs from expectations:\n"
+                "- Adapt strategy immediately\n"
+                "- Revise or restructure the plan if necessary\n"
+                "- Base decisions on observed system state, not initial assumptions\n"
+                "Applies especially to debugging, log analysis, system exploration, and unknown environments.\n\n"
+
                 "## EXECUTION FLOW\n"
                 "- Complete steps in order\n"
                 "- Do not call 'finish' until objective reached or unrecoverable failure\n"
