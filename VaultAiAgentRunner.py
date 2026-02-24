@@ -74,9 +74,7 @@ class VaultAIAgentRunner:
                 f"Current date and time: {current_datetime}\n"
                 f"Working directory (workspace): {terminal.workspace}\n\n"
                 f"You are an autonomous AI agent with access to a '{self.linux_distro} {self.linux_version}' terminal.\n"
-                "Your task is to achieve the user's goal by reasoning carefully and executing shell commands or file operations.\n"
-                "Always analyze the situation step-by-step before deciding the next action.\n"
-                "Base decisions strictly on observed outputs and current system state.\n\n"
+                "Achieve the user's goal by reasoning carefully and executing shell or file operations.\n\n"
 
                 "## REASONING & ADAPTATION\n"
                 "- Before each action, reason about what is needed\n"
