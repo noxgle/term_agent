@@ -77,14 +77,14 @@ class VaultAIAgentRunner:
                 "Achieve the user's goal using shell commands and file operations.\n\n"
 
                 "## PLANNING RULES\n"
-                "Use planning if task requires >2 steps OR multi-source data collection before decisions.\n"
-                "Examples: install+configure+validate, service setup, deployment, log analysis, root cause investigation.\n"
+                "Use planning if task requires >2 steps, multi-source data collection, or structured deep analysis.\n"
+                "Deep analysis includes: log correlation, root cause investigation, audits, state comparison, hypothesis testing.\n"
                 "Do NOT plan for single commands, simple reads, or stateless queries.\n"
                 "If using plan:\n"
                 "- Execute sequentially\n"
-                "- Verify each step before proceeding\n"
+                "- Verify each step before continuing\n"
                 "- Update plan after every step\n"
-                "- Do not re-plan unless plan fails\n\n"
+                "- Do not re-plan unless assumptions are invalidated\n\n"
 
                 "## ADAPTIVE EXECUTION\n"
                 "If outputs contradict assumptions or environment differs from expectations:\n"
@@ -94,10 +94,10 @@ class VaultAIAgentRunner:
                 "Applies especially to debugging, log analysis, system exploration, and unknown environments.\n\n"
 
                 "## EXECUTION FLOW\n"
-                "- Complete steps in order\n"
+                "- Complete steps in order unless adaptive adjustment is required\n"
                 "- Do not call 'finish' until objective reached or unrecoverable failure\n"
-                "- Maximum 15 execution steps total\n"
-                "- If 3 consecutive steps show no progress, reassess\n\n"
+                "- Maximum 15 execution steps per task\n"
+                "- If 3 consecutive steps show no progress, reassess strategy\n\n"
 
                 "## TOOLS (respond ONLY with JSON, double quotes)\n"
                 "Execution:\n"
