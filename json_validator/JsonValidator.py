@@ -19,6 +19,7 @@ import yaml
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
+from collections import defaultdict
 
 
 class ValidationMode(Enum):
@@ -39,6 +40,8 @@ class JsonValidator:
     def __init__(self, mode: ValidationMode = ValidationMode.FLEXIBLE):
         self.mode = mode
         self.validation_attempts = []
+        self.strategy_cache = defaultdict(dict)  # Cache for strategy results
+        self.error_cache = defaultdict(list)     # Cache for error patterns
     
     def validate_response(self, ai_response: str) -> Tuple[bool, Any, str]:
         """
@@ -59,10 +62,29 @@ class JsonValidator:
         # Try different parsing strategies based on mode
         strategies = self._get_parsing_strategies()
         
+        # Early exit optimization - check if we have cached result
+        cache_key = self._generate_cache_key(cleaned_response, self.mode)
+        if cache_key in self.strategy_cache:
+            cached_result = self.strategy_cache[cache_key]
+            if cached_result['success']:
+                return True, cached_result['data'], ""
+        
         for strategy_name, strategy_func in strategies:
             try:
+                # Check cache first
+                if cache_key in self.strategy_cache:
+                    cached_result = self.strategy_cache[cache_key]
+                    if cached_result['success']:
+                        return True, cached_result['data'], ""
+                
                 result = strategy_func(cleaned_response)
                 if result is not None:
+                    # Cache successful result
+                    self.strategy_cache[cache_key] = {
+                        'success': True,
+                        'data': result,
+                        'strategy': strategy_name
+                    }
                     return True, result, ""
             except Exception as e:
                 error_msg = f"{strategy_name}: {str(e)}"
@@ -130,14 +152,16 @@ class JsonValidator:
         """Try to parse response directly as JSON"""
         try:
             return json.loads(response)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
+            self._cache_error_pattern(e, response)
             return None
     
     def _parse_json5(self, response: str) -> Optional[Any]:
         """Parse response using JSON5 (more lenient than standard JSON)"""
         try:
             return json5.loads(response)
-        except Exception:
+        except Exception as e:
+            self._cache_error_pattern(e, response)
             return None
     
     def _parse_yaml(self, response: str) -> Optional[Any]:
@@ -148,7 +172,8 @@ class JsonValidator:
             if isinstance(result, (dict, list)):
                 return result
             return None
-        except Exception:
+        except Exception as e:
+            self._cache_error_pattern(e, response)
             return None
     
     def _parse_json_with_regex(self, response: str) -> Optional[Any]:
@@ -168,7 +193,8 @@ class JsonValidator:
                     result = json5.loads(match)  # Use JSON5 for better error recovery
                     if isinstance(result, (dict, list)):
                         return result
-                except Exception:
+                except Exception as e:
+                    self._cache_error_pattern(e, match)
                     continue
         
         return None
@@ -178,12 +204,13 @@ class JsonValidator:
         try:
             # Try JSON5 first (handles more cases)
             return json5.loads(response)
-        except Exception:
+        except Exception as e:
             # Try to fix common issues
             fixed = self._fix_common_json_issues(response)
             try:
                 return json5.loads(fixed)
-            except Exception:
+            except Exception as e2:
+                self._cache_error_pattern(e2, fixed)
                 return None
     
     def _parse_partial_json(self, response: str) -> Optional[Any]:
@@ -201,31 +228,36 @@ class JsonValidator:
                     result = json5.loads(match)
                     if isinstance(result, (dict, list)):
                         return result
-                except Exception:
+                except Exception as e:
+                    self._cache_error_pattern(e, match)
                     continue
         
         return None
     
     def _fix_common_json_issues(self, json_str: str) -> str:
-        """Fix common JSON formatting issues"""
+        """Fix common JSON formatting issues with enhanced logic"""
         fixed = json_str
         
         # Fix trailing commas
         fixed = re.sub(r',(\s*[}\]])', r'\1', fixed)
         
-        # Fix single quotes to double quotes (basic cases)
-        # This is a simplified approach - more complex cases might need better handling
+        # Enhanced single quotes handling
         if "'" in fixed and '"' not in fixed:
             # Only convert if there are no double quotes already
             fixed = re.sub(r"'([^']*)':", r'"\1":', fixed)
             fixed = re.sub(r"'([^']*)'", r'"\1"', fixed)
+            # Handle escaped single quotes
+            fixed = re.sub(r"\\'", "'", fixed)
         
-        # Fix unquoted keys (basic cases)
-        fixed = re.sub(r'(\w+):', r'"\1":', fixed)
+        # Fix unquoted keys (enhanced)
+        fixed = re.sub(r'(\b\w+\b)\s*:', r'"\1":', fixed)
         
-        # Remove comments (/* */ and // style)
+        # Remove comments (enhanced)
         fixed = re.sub(r'/\*.*?\*/', '', fixed, flags=re.DOTALL)
         fixed = re.sub(r'//.*$', '', fixed, flags=re.MULTILINE)
+        
+        # Fix unescaped newlines in strings
+        fixed = re.sub(r'(["\'])(.*?)\n(.*?)\1', r'\1\2\\n\3\1', fixed, flags=re.DOTALL)
         
         return fixed.strip()
     
@@ -288,12 +320,13 @@ class JsonValidator:
                     json_str = response[start:i + 1]
                     try:
                         return json5.loads(json_str)
-                    except Exception:
+                    except Exception as e:
                         # Try with additional fixes
                         fixed = self._fix_common_json_issues(json_str)
                         try:
                             return json5.loads(fixed)
-                        except Exception:
+                        except Exception as e2:
+                            self._cache_error_pattern(e2, fixed)
                             pass
                     break
         
@@ -318,7 +351,8 @@ class JsonValidator:
             # Try direct parsing
             try:
                 return json5.loads(candidate)
-            except Exception:
+            except Exception as e:
+                self._cache_error_pattern(e, candidate)
                 pass
             
             # Try extracting JSON from cleaned response
@@ -351,11 +385,13 @@ class JsonValidator:
                         obj = json5.loads(part)
                         if isinstance(obj, (dict, list)):
                             valid_objects.append(obj)
-                    except Exception:
+                    except Exception as e:
                         # Try extracting JSON from the part
                         result = self._parse_ai_response_cleaning(part)
                         if result is not None:
                             valid_objects.append(result)
+                        else:
+                            self._cache_error_pattern(e, part)
                 
                 if len(valid_objects) == 1:
                     return valid_objects[0]
@@ -373,14 +409,15 @@ class JsonValidator:
                 obj = json5.loads(line)
                 if isinstance(obj, (dict, list)):
                     valid_objects.append(obj)
-            except Exception:
+            except Exception as e:
                 # Try fixing the line
                 fixed = self._fix_common_json_issues(line)
                 try:
                     obj = json5.loads(fixed)
                     if isinstance(obj, (dict, list)):
                         valid_objects.append(obj)
-                except Exception:
+                except Exception as e2:
+                    self._cache_error_pattern(e2, fixed)
                     continue
         
         if len(valid_objects) == 1:
@@ -469,12 +506,13 @@ class JsonValidator:
         # Try to parse the repaired JSON
         try:
             return json5.loads(repaired)
-        except Exception:
+        except Exception as e:
             # Try with fixes
             fixed = self._fix_common_json_issues(repaired)
             try:
                 return json5.loads(fixed)
-            except Exception:
+            except Exception as e2:
+                self._cache_error_pattern(e2, fixed)
                 pass
         
         return None
@@ -493,7 +531,8 @@ class JsonValidator:
         json_chars_only = re.sub(r'[^\{\}\[\]\"\'\:\,\-\d\.\w\s]', '', response)
         try:
             return json5.loads(json_chars_only)
-        except Exception:
+        except Exception as e:
+            self._cache_error_pattern(e, json_chars_only)
             pass
         
         # Strategy 3: Find JSON key-value patterns and construct object
@@ -519,12 +558,14 @@ class JsonValidator:
                 elif match[5]:  # Nested object
                     try:
                         constructed[key] = json5.loads(match[5])
-                    except Exception:
+                    except Exception as e:
+                        self._cache_error_pattern(e, match[5])
                         pass
                 elif match[6]:  # Nested array
                     try:
                         constructed[key] = json5.loads(match[6])
-                    except Exception:
+                    except Exception as e:
+                        self._cache_error_pattern(e, match[6])
                         pass
             
             if constructed:
@@ -539,7 +580,8 @@ class JsonValidator:
                     result = json5.loads(substr)
                     if isinstance(result, (dict, list)):
                         return result
-                except Exception:
+                except Exception as e:
+                    self._cache_error_pattern(e, substr)
                     continue
         
         return None
@@ -584,12 +626,13 @@ class JsonValidator:
                             json_str = text[i:j + 1]
                             try:
                                 return json5.loads(json_str)
-                            except Exception:
+                            except Exception as e:
                                 # Try fixing and parsing
                                 fixed = self._fix_common_json_issues(json_str)
                                 try:
                                     return json5.loads(fixed)
-                                except Exception:
+                                except Exception as e2:
+                                    self._cache_error_pattern(e2, fixed)
                                     break  # This start position didn't work
                         elif depth < 0:
                             # Unbalanced, break
@@ -598,12 +641,18 @@ class JsonValidator:
         return None
     
     def _format_error_details(self, original_response: str) -> str:
-        """Format detailed error information"""
+        """Format detailed error information with enhanced diagnostics"""
         error_msg = "JSON validation failed with the following errors:\n"
         
         # Add all validation attempt errors
         for i, attempt_error in enumerate(self.validation_attempts, 1):
             error_msg += f"  {i}. {attempt_error}\n"
+        
+        # Add error pattern analysis
+        if self.error_cache:
+            error_msg += "\nCommon error patterns detected:\n"
+            for pattern, count in self.error_cache.items():
+                error_msg += f"  - {pattern}: {count} occurrences\n"
         
         # Add sample of the original response
         sample_length = min(200, len(original_response))
@@ -619,13 +668,37 @@ class JsonValidator:
         error_msg += "  - Remove markdown formatting if present\n"
         error_msg += "  - Check for balanced braces and brackets\n"
         error_msg += "  - Use JSON5-compatible syntax for more flexibility\n"
+        error_msg += "  - Check for unescaped special characters\n"
+        error_msg += "  - Verify that all strings are properly quoted\n"
         
         return error_msg
+    
+    def _cache_error_pattern(self, error: Exception, context: str):
+        """Cache error patterns for better diagnostics"""
+        error_type = type(error).__name__
+        if hasattr(error, 'msg'):
+            error_msg = error.msg
+        else:
+            error_msg = str(error)
+        
+        # Extract relevant part of context for pattern matching
+        context_sample = context[:100] if len(context) > 100 else context
+        
+        # Create a pattern key
+        pattern_key = f"{error_type}: {error_msg[:50]}"
+        
+        # Cache the pattern with context
+        self.error_cache[pattern_key].append(context_sample)
+    
+    def _generate_cache_key(self, response: str, mode: ValidationMode) -> str:
+        """Generate cache key based on response and mode"""
+        return f"{mode.value}:{hash(response) % (10**8)}"
     
     def set_mode(self, mode: ValidationMode):
         """Change validation mode"""
         self.mode = mode
         self.validation_attempts = []
+        self.error_cache.clear()  # Clear error cache when mode changes
 
 
 def create_validator(mode: str = "flexible") -> JsonValidator:
