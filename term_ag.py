@@ -104,16 +104,44 @@ class term_agent:
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         log_file = os.getenv("LOG_FILE", "")
         log_to_console = os.getenv("LOG_TO_CONSOLE", "true").lower() == "true"
+
+        # Create thread-safe logging configuration
+        from logging.handlers import QueueHandler, QueueListener
+        import queue
+
+        log_queue = queue.Queue(-1)  # Infinite queue size
         handlers = []
+
+        # File handler with proper error handling
         if log_file:
-            handlers.append(logging.FileHandler(f"{self.basedir}/{log_file}", encoding="utf-8"))
+            try:
+                file_handler = logging.FileHandler(f"{self.basedir}/{log_file}", encoding="utf-8")
+                file_handler.setLevel(getattr(logging, log_level, logging.INFO))
+                file_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+                handlers.append(file_handler)
+            except Exception as e:
+                print(f"[Vault 3000] WARNING: Could not create log file handler: {e}")
+
+        # Console handler
         if log_to_console or not handlers:
-            handlers.append(logging.StreamHandler())
-        logging.basicConfig(
-            level=getattr(logging, log_level, logging.INFO),
-            format='[%(asctime)s] %(levelname)s: %(message)s',
-            handlers=handlers
-        )
+            console_handler = logging.StreamHandler()
+            console_handler.setLevel(getattr(logging, log_level, logging.INFO))
+            console_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+            handlers.append(console_handler)
+
+        # Set up queue-based logging to prevent reentrant calls
+        root_logger = logging.getLogger()
+        root_logger.setLevel(getattr(logging, log_level, logging.INFO))
+        for handler in handlers:
+            handler.setLevel(getattr(logging, log_level, logging.INFO))
+            handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
+            root_logger.addHandler(handler)
+
+        # Create queue listener for thread-safe logging
+        queue_listener = QueueListener(log_queue, *handlers)
+        queue_listener.start()
+        self.logger = logging.getLogger("TerminalAIAgent")
+        self.logger.addHandler(QueueHandler(log_queue))
         self.logger = logging.getLogger("TerminalAIAgent")
         self.ai_engine = os.getenv("AI_ENGINE", "openai")
         # API key selection logic
