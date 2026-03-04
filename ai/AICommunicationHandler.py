@@ -40,11 +40,26 @@ class AICommunicationHandler:
         max_attempts = 5
         base_delay = 10  # seconds
         
+        # Calculate input tokens for tracking
+        input_text = f"{system_prompt}\n{user_prompt}"
+        input_tokens = self._estimate_tokens(input_text)
+        
         for attempt in range(1, max_attempts + 1):
             try:
                 response = self._call_ai_api(system_prompt, user_prompt)
                 if not response:
                     raise ValueError("Empty response from AI")
+                
+                # Calculate output tokens
+                output_tokens = self._estimate_tokens(response)
+                
+                # Track token usage
+                self._track_token_usage(
+                    operation="ai_request",
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    attempt=attempt
+                )
                 
                 if request_format == "json":
                     return self._process_json_response(response)
@@ -254,3 +269,64 @@ class AICommunicationHandler:
             def warning(self, *args, **kwargs): pass
             def error(self, *args, **kwargs): pass
         return DummyLogger()
+
+    def _estimate_tokens(self, text: str) -> int:
+        """
+        Estimate token count for text using a simple approximation.
+        This is a rough estimate - actual token counts may vary by model.
+        
+        Args:
+            text: Text to estimate tokens for
+            
+        Returns:
+            Estimated token count
+        """
+        if not text:
+            return 0
+        
+        # Simple approximation: ~4 characters per token for English text
+        # More accurate would be to use the actual tokenizer, but this is a good estimate
+        return max(1, len(text) // 4)
+
+    def _track_token_usage(self, operation: str, input_tokens: int, output_tokens: int, attempt: int = 1):
+        """
+        Track token usage for this AI communication.
+        
+        Args:
+            operation: Type of operation (e.g., "ai_request", "plan_creation")
+            input_tokens: Number of input tokens used
+            output_tokens: Number of output tokens generated
+            attempt: Retry attempt number
+        """
+        # Initialize token tracking if not already done
+        if not hasattr(self, 'token_usage'):
+            self.token_usage = {
+                'total_input_tokens': 0,
+                'total_output_tokens': 0,
+                'total_tokens': 0,
+                'operations': [],
+                'cost_estimates': {}
+            }
+        
+        # Calculate total tokens for this operation
+        total_tokens = input_tokens + output_tokens
+        
+        # Add to running totals
+        self.token_usage['total_input_tokens'] += input_tokens
+        self.token_usage['total_output_tokens'] += output_tokens
+        self.token_usage['total_tokens'] += total_tokens
+        
+        # Record this operation
+        operation_record = {
+            'operation': operation,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'total_tokens': total_tokens,
+            'attempt': attempt,
+            'timestamp': time.time()
+        }
+        self.token_usage['operations'].append(operation_record)
+        
+        # Log token usage
+        self.logger.debug(f"Token usage - {operation} (attempt {attempt}): "
+                         f"input={input_tokens}, output={output_tokens}, total={total_tokens}")

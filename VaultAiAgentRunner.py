@@ -7,6 +7,7 @@ import subprocess
 import time
 import uuid
 from datetime import datetime
+from typing import Dict, Optional
 from user.UserInteractionHandler import UserInteractionHandler
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
@@ -221,6 +222,284 @@ class VaultAIAgentRunner:
                 self.logger.warning(f"Failed to initialize FinishSubAgent: {e}")
         else:
             self.logger.warning("FinishSubAgent not available")
+
+        # Initialize timing tracking for performance monitoring
+        self.timings: Dict[str, Dict[str, float]] = {}
+        self._timing_starts: Dict[str, float] = {}
+        
+        # Initialize token usage tracking
+        self.token_usage: Dict[str, Dict[str, int]] = {}
+
+    def _start_timing(self, action_name: str) -> str:
+        """
+        Start timing for an action and return a unique timing ID.
+        
+        Args:
+            action_name: Descriptive name of the action being timed
+            
+        Returns:
+            Unique timing ID for this timing session
+        """
+        timing_id = f"{action_name}_{time.perf_counter():.6f}"
+        self._timing_starts[timing_id] = time.perf_counter()
+        return timing_id
+
+    def _end_timing(self, timing_id: str, action_name: str, success: bool = True) -> float:
+        """
+        End timing for an action and log the duration.
+        
+        Args:
+            timing_id: Unique timing ID returned by _start_timing
+            action_name: Descriptive name of the action
+            success: Whether the action completed successfully
+            
+        Returns:
+            Duration in seconds
+        """
+        if timing_id not in self._timing_starts:
+            self.logger.warning(f"Timing ID {timing_id} not found for action '{action_name}'")
+            return 0.0
+            
+        start_time = self._timing_starts.pop(timing_id)
+        duration = time.perf_counter() - start_time
+        
+        # Store timing data
+        if action_name not in self.timings:
+            self.timings[action_name] = {
+                "total_time": 0.0,
+                "call_count": 0,
+                "min_time": float('inf'),
+                "max_time": 0.0,
+                "success_count": 0,
+                "last_duration": 0.0
+            }
+        
+        stats = self.timings[action_name]
+        stats["total_time"] += duration
+        stats["call_count"] += 1
+        stats["min_time"] = min(stats["min_time"], duration)
+        stats["max_time"] = max(stats["max_time"], duration)
+        stats["last_duration"] = duration
+        if success:
+            stats["success_count"] += 1
+        
+        # Log timing information
+        status = "SUCCESS" if success else "FAILED"
+        self.logger.debug(f"Timing: {action_name} {status} - {duration:.3f}s (avg: {stats['total_time']/stats['call_count']:.3f}s)")
+        
+        return duration
+
+    def _get_timing_summary(self) -> str:
+        """
+        Get a summary of all timing statistics.
+        
+        Returns:
+            Formatted string with timing statistics
+        """
+        if not self.timings:
+            return "No timing data available."
+        
+        summary_lines = ["\n=== TIMING SUMMARY ==="]
+        for action_name, stats in self.timings.items():
+            avg_time = stats["total_time"] / stats["call_count"]
+            success_rate = (stats["success_count"] / stats["call_count"]) * 100
+            summary_lines.append(
+                f"{action_name}: {stats['call_count']} calls, "
+                f"avg: {avg_time:.3f}s, min: {stats['min_time']:.3f}s, "
+                f"max: {stats['max_time']:.3f}s, success: {success_rate:.1f}%"
+            )
+        
+        return "\n".join(summary_lines)
+
+    def _display_timing_summary(self):
+        """
+        Display timing summary to the user and log it.
+        """
+        timing_summary = self._get_timing_summary()
+        self.terminal.print_console(timing_summary)
+        self.logger.info("Timing summary: %s", timing_summary)
+
+    def _get_token_summary(self) -> str:
+        """
+        Get a summary of all token usage statistics.
+        
+        Returns:
+            Formatted string with token usage statistics
+        """
+        if not hasattr(self.ai_handler, 'token_usage') or not self.ai_handler.token_usage:
+            return "No token usage data available."
+        
+        token_data = self.ai_handler.token_usage
+        summary_lines = ["\n=== TOKEN USAGE SUMMARY ==="]
+        
+        # Overall statistics
+        summary_lines.append(f"Total Input Tokens: {token_data['total_input_tokens']:,}")
+        summary_lines.append(f"Total Output Tokens: {token_data['total_output_tokens']:,}")
+        summary_lines.append(f"Total Tokens Used: {token_data['total_tokens']:,}")
+        
+        # Calculate average tokens per operation
+        if token_data['operations']:
+            avg_input = token_data['total_input_tokens'] / len(token_data['operations'])
+            avg_output = token_data['total_output_tokens'] / len(token_data['operations'])
+            avg_total = token_data['total_tokens'] / len(token_data['operations'])
+            
+            summary_lines.append(f"Average Input Tokens per Request: {avg_input:.1f}")
+            summary_lines.append(f"Average Output Tokens per Request: {avg_output:.1f}")
+            summary_lines.append(f"Average Total Tokens per Request: {avg_total:.1f}")
+        
+        # Operation breakdown
+        if token_data['operations']:
+            summary_lines.append("\nOperation Breakdown:")
+            
+            # Categorize operations for better analysis
+            operation_categories = {}
+            for op in token_data['operations']:
+                category = op['operation']
+                if category not in operation_categories:
+                    operation_categories[category] = []
+                operation_categories[category].append(op)
+            
+            # Show categorized operations with counts
+            for category, ops in operation_categories.items():
+                total_input = sum(op['input_tokens'] for op in ops)
+                total_output = sum(op['output_tokens'] for op in ops)
+                total_tokens = sum(op['total_tokens'] for op in ops)
+                count = len(ops)
+                
+                if count == 1:
+                    summary_lines.append(
+                        f"  {category}: Input: {total_input:,}, Output: {total_output:,}, Total: {total_tokens:,}"
+                    )
+                else:
+                    avg_input = total_input // count
+                    avg_output = total_output // count
+                    summary_lines.append(
+                        f"  {category} ({count} calls): Input: {total_input:,} (avg: {avg_input:,}), "
+                        f"Output: {total_output:,} (avg: {avg_output:,}), Total: {total_tokens:,}"
+                    )
+            
+            # Add efficiency analysis
+            summary_lines.append("\nEfficiency Analysis:")
+            
+            # Find most and least efficient operations
+            if len(token_data['operations']) > 1:
+                most_efficient = min(token_data['operations'], key=lambda x: x['total_tokens'])
+                least_efficient = max(token_data['operations'], key=lambda x: x['total_tokens'])
+                
+                summary_lines.append(
+                    f"  Most Efficient: {most_efficient['operation']} - {most_efficient['total_tokens']:,} tokens"
+                )
+                summary_lines.append(
+                    f"  Least Efficient: {least_efficient['operation']} - {least_efficient['total_tokens']:,} tokens"
+                )
+                efficiency_ratio = least_efficient['total_tokens'] / most_efficient['total_tokens'] if most_efficient['total_tokens'] > 0 else 0
+                summary_lines.append(
+                    f"  Efficiency Ratio: {efficiency_ratio:.1f}x difference"
+                )
+        
+        # Cost estimation (using rough estimates)
+        # Assuming $0.0005 per 1000 input tokens and $0.0015 per 1000 output tokens (GPT-4o rates)
+        input_cost = (token_data['total_input_tokens'] / 1000) * 0.0005
+        output_cost = (token_data['total_output_tokens'] / 1000) * 0.0015
+        total_cost = input_cost + output_cost
+        
+        summary_lines.append(f"\nEstimated Cost: ${total_cost:.4f}")
+        summary_lines.append(f"  Input tokens cost: ${input_cost:.4f}")
+        summary_lines.append(f"  Output tokens cost: ${output_cost:.4f}")
+        
+        return "\n".join(summary_lines)
+
+    def _display_token_summary(self):
+        """
+        Display token usage summary to the user and log it.
+        """
+        token_summary = self._get_token_summary()
+        self.terminal.print_console(token_summary)
+        self.logger.info("Token usage summary: %s", token_summary)
+
+    def _get_cost_optimization_recommendations(self) -> str:
+        """
+        Generate cost optimization recommendations based on token usage patterns.
+        
+        Returns:
+            Formatted string with optimization recommendations
+        """
+        if not hasattr(self.ai_handler, 'token_usage') or not self.ai_handler.token_usage:
+            return "No token usage data available for optimization recommendations."
+        
+        token_data = self.ai_handler.token_usage
+        recommendations = ["\n=== COST OPTIMIZATION RECOMMENDATIONS ==="]
+        
+        # Analyze token efficiency
+        if token_data['operations']:
+            avg_input = token_data['total_input_tokens'] / len(token_data['operations'])
+            avg_output = token_data['total_output_tokens'] / len(token_data['operations'])
+            
+            # Check for high input token usage
+            if avg_input > 5000:
+                recommendations.append(
+                    "⚠️  HIGH INPUT TOKEN USAGE: Average input tokens per request is high."
+                    "\n   - Consider shortening system prompts"
+                    "\n   - Use more concise user queries"
+                    "\n   - Implement context window management"
+                    "\n   - Remove unnecessary context from requests"
+                )
+            
+            # Check for high output token usage
+            if avg_output > 2000:
+                recommendations.append(
+                    "⚠️  HIGH OUTPUT TOKEN USAGE: Average output tokens per request is high."
+                    "\n   - Request more concise responses"
+                    "\n   - Use bullet points instead of paragraphs"
+                    "\n   - Set max_tokens limits when possible"
+                    "\n   - Ask for summaries instead of detailed explanations"
+                )
+            
+            # Check for inefficient operations
+            if len(token_data['operations']) > 10:
+                # Look for patterns that might be inefficient
+                operation_types = [op['operation'] for op in token_data['operations']]
+                ai_requests = [op for op in operation_types if 'ai_request' in op]
+                
+                if len(ai_requests) > len(set(ai_requests)):
+                    recommendations.append(
+                        "⚠️  POTENTIAL REDUNDANCY: Multiple similar AI requests detected."
+                        "\n   - Consider batching similar requests"
+                        "\n   - Cache responses for repeated queries"
+                        "\n   - Use more specific prompts to reduce iterations"
+                    )
+        
+        # General recommendations
+        recommendations.extend([
+            "\n💡 GENERAL OPTIMIZATION TIPS:",
+            "   - Use cheaper models for simple tasks (e.g., GPT-3.5 vs GPT-4)",
+            "   - Implement early stopping for long-running tasks",
+            "   - Use streaming responses when possible",
+            "   - Cache frequently used responses",
+            "   - Monitor token usage regularly",
+            "   - Set budget alerts for high-usage scenarios"
+        ])
+        
+        # Calculate potential savings
+        current_cost = (token_data['total_input_tokens'] / 1000) * 0.0005 + (token_data['total_output_tokens'] / 1000) * 0.0015
+        
+        # Estimate optimized cost (assuming 30% reduction with optimizations)
+        optimized_cost = current_cost * 0.7
+        potential_savings = current_cost - optimized_cost
+        
+        recommendations.append(f"\n💰 POTENTIAL SAVINGS: ${potential_savings:.4f} per session (30% reduction)")
+        recommendations.append(f"   Current cost: ${current_cost:.4f}")
+        recommendations.append(f"   Optimized cost: ${optimized_cost:.4f}")
+        
+        return "\n".join(recommendations)
+
+    def _display_cost_optimization_recommendations(self):
+        """
+        Display cost optimization recommendations to the user and log them.
+        """
+        recommendations = self._get_cost_optimization_recommendations()
+        self.terminal.print_console(recommendations)
+        self.logger.info("Cost optimization recommendations: %s", recommendations)
 
 
     def _cleanup_request_history(self, max_entries: int = 1000):
@@ -456,9 +735,15 @@ class VaultAIAgentRunner:
         Returns:
             tuple: (success, data, ai_reply_json_string, corrected_successfully, error_message)
         """
+        # Start timing JSON validation
+        json_timing_id = self._start_timing("JSON_VALIDATION")
+        
         if not self.json_validator:
             # Fallback to original parsing if enhanced validator is not available
-            return self._parse_ai_response_original(ai_reply, request_id)
+            result = self._parse_ai_response_original(ai_reply, request_id)
+            # End timing JSON validation (fallback path)
+            self._end_timing(json_timing_id, "JSON_VALIDATION", result[0])
+            return result
         
         try:
             success, data, error = self.json_validator.validate_response(ai_reply)
@@ -467,15 +752,23 @@ class VaultAIAgentRunner:
                 # Successfully parsed with enhanced validator - always serialize to JSON string
                 ai_reply_json_string = json.dumps(data, ensure_ascii=False)
                 self.logger.debug(f"Enhanced JSON validator successfully parsed response. request_id={request_id}")
+                # End timing JSON validation (success with enhanced validator)
+                self._end_timing(json_timing_id, "JSON_VALIDATION", True)
                 return True, data, ai_reply_json_string, False, ""
             else:
                 # Enhanced validator failed, try original parsing as fallback
                 self.logger.warning(f"Enhanced JSON validator failed: {error}. Trying original parsing. request_id={request_id}")
-                return self._parse_ai_response_original(ai_reply, request_id)
+                result = self._parse_ai_response_original(ai_reply, request_id)
+                # End timing JSON validation (fallback path)
+                self._end_timing(json_timing_id, "JSON_VALIDATION", result[0])
+                return result
                 
         except Exception as e:
             self.logger.error(f"Error in enhanced JSON validation: {e}. Falling back to original parsing. request_id={request_id}")
-            return self._parse_ai_response_original(ai_reply, request_id)
+            result = self._parse_ai_response_original(ai_reply, request_id)
+            # End timing JSON validation (exception path)
+            self._end_timing(json_timing_id, "JSON_VALIDATION", result[0])
+            return result
 
     def _parse_ai_response_original(self, ai_reply: str, request_id: str) -> tuple:
         """
@@ -533,11 +826,17 @@ class VaultAIAgentRunner:
                     correction_llm_prompt_parts.append(f"{m_corr['role']}: {m_corr['content']}")
                 correction_llm_prompt_text = "\n".join(correction_llm_prompt_parts)
 
+                # Start timing JSON correction attempt
+                correction_timing_id = self._start_timing("JSON_CORRECTION")
+                
                 corrected_ai_reply = self.ai_handler.send_request(
                     system_prompt=self.system_prompt_agent, 
                     user_prompt=correction_llm_prompt_text,
                     request_format="json"
                 )
+
+                # End timing JSON correction attempt
+                self._end_timing(correction_timing_id, "JSON_CORRECTION", corrected_ai_reply is not None)
 
                 self.terminal.print_console(f"AI agent correction attempt {correction_attempt}: {corrected_ai_reply}")
 
@@ -624,11 +923,17 @@ class VaultAIAgentRunner:
                     prompt_text_parts.append(f"{m['role']}: {m['content']}")
                 prompt_text = "\n".join(prompt_text_parts)
 
+                # Start timing AI response generation
+                ai_timing_id = self._start_timing("AI_RESPONSE_GENERATION")
+                
                 ai_reply = self.ai_handler.send_request(
                     system_prompt=self.system_prompt_agent, 
                     user_prompt=prompt_text,
                     request_format="json"
                 )
+                
+                # End timing AI response generation
+                ai_duration = self._end_timing(ai_timing_id, "AI_RESPONSE_GENERATION", ai_reply is not None)
 
                 try:
                     self.logger.debug("AI reply received (nil? %s) request_id=%s", ai_reply is None, request_id)
@@ -733,6 +1038,9 @@ class VaultAIAgentRunner:
                         if explain:
                             terminal.print_console(f"Reason: {explain}")
                         
+                        # Start timing plan creation
+                        plan_timing_id = self._start_timing(f"PLAN_CREATION_{goal[:50]}")
+                        
                         # Check if plan already exists
                         if self.plan_manager.steps:
                             terminal.print_console("[WARN] A plan already exists. Clearing old plan.")
@@ -758,18 +1066,27 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(
                                     f"Action plan created with {len(steps)} steps. Begin execution with step 1."
                                 )
+                                
+                                # End timing plan creation (success)
+                                self._end_timing(plan_timing_id, f"PLAN_CREATION_{goal[:50]}", True)
                             else:
                                 terminal.print_console("[WARN] Failed to create action plan. Proceeding without plan.")
                                 self.context_manager.add_user_message(
                                     "Failed to create action plan. You can proceed without a plan or try again. "
                                     "For simple tasks, just execute commands directly."
                                 )
+                                
+                                # End timing plan creation (failed)
+                                self._end_timing(plan_timing_id, f"PLAN_CREATION_{goal[:50]}", False)
                         except Exception as e:
                             terminal.print_console(f"[ERROR] Failed to create action plan: {e}")
                             self.context_manager.add_user_message(
                                 f"Failed to create action plan due to error: {e}. "
                                 "You can proceed without a plan for simple tasks."
                             )
+                            
+                            # End timing plan creation (exception)
+                            self._end_timing(plan_timing_id, f"PLAN_CREATION_{goal[:50]}", False)
                         continue
 
                     elif tool == "finish":
@@ -866,6 +1183,10 @@ class VaultAIAgentRunner:
                             self.logger.info("\nVaultAI> Executing bash command: %s; request_id=%s", command, request_id)
                         except Exception:
                             pass
+                        
+                        # Start timing command execution
+                        cmd_timing_id = self._start_timing(f"COMMAND_EXECUTION_{command[:50]}")
+                        
                         out, code = "", 1
                         if self.terminal.ssh_connection:
                             remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
@@ -873,6 +1194,9 @@ class VaultAIAgentRunner:
                             out, code = self.terminal.execute_remote_pexpect(command, remote, password=password, timeout=timeout)
                         else:
                             out, code = self.terminal.execute_local(command, timeout=timeout) # Corrected method call
+                        
+                        # End timing command execution
+                        cmd_duration = self._end_timing(cmd_timing_id, f"COMMAND_EXECUTION_{command[:50]}", code == 0)
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
                         #terminal.print_console(f"Result (exit code: {code}):\n{out}")
@@ -979,8 +1303,13 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(f"User refused to read file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
-                        result = self.file_operator.read_file(file_path, start_line, end_line, explain)
+                        # Start timing file read operation
+                        read_timing_id = self._start_timing(f"FILE_READ_{file_path}")
+                        
+                        result = self.file_operator.read_file(file_path, start_line or None, end_line or None, explain)
                         if result.get("success"):
+                            # End timing file read operation
+                            self._end_timing(read_timing_id, f"FILE_READ_{file_path}", True)
                             content = result.get("content", "")
                             total_lines = result.get("total_lines", "unknown")
                             lines_read = result.get("lines_count", 0)
@@ -1057,7 +1386,7 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(f"User refused to list directory '{dir_path}' with justification: {justification}. Based on this, what should be the next step?")
                                 continue
                         
-                        result = self.file_operator.list_directory(dir_path, recursive, pattern, explain)
+                        result = self.file_operator.list_directory(dir_path, recursive, pattern or None, explain)
                         if result.get("success"):
                             entries = result.get("entries", [])
                             total_count = result.get("total_count", 0)
@@ -1278,6 +1607,9 @@ class VaultAIAgentRunner:
                         except Exception:
                             pass
                         
+                        # Start timing web search operation
+                        search_timing_id = self._start_timing(f"WEB_SEARCH_{query[:50]}")
+                        
                         try:
                             # Use singleton WebSearchAgent (initialized in __init__)
                             search_result = self.web_search_agent.execute(
@@ -1313,17 +1645,26 @@ class VaultAIAgentRunner:
                                             result_text += f"   Content: {content[:500]}{'...' if len(content) > 500 else ''}\n"
                                         result_text += "\n"
                                 
+                                # End timing web search operation
+                                self._end_timing(search_timing_id, f"WEB_SEARCH_{query[:50]}", True)
+                                
                                 # Update plan progress
                                 self._update_plan_progress(f"Web search: {query}", success=True)
                                 
                                 self.context_manager.add_user_message(result_text)
                             else:
+                                # End timing web search operation (failed)
+                                self._end_timing(search_timing_id, f"WEB_SEARCH_{query[:50]}", False)
+                                
                                 error_msg = search_result.get('summary', 'Unknown error')
                                 terminal.print_console(f"\n[ERROR] Web search failed: {error_msg}")
                                 self._update_plan_progress(f"Web search failed: {query}", success=False)
                                 self.context_manager.add_user_message(f"Web search for '{query}' failed: {error_msg}. Try an alternative approach.")
                                 
                         except Exception as e:
+                            # End timing web search operation (exception)
+                            self._end_timing(search_timing_id, f"WEB_SEARCH_{query[:50]}", False)
+                            
                             terminal.print_console(f"\n[ERROR] Web search exception: {e}")
                             self.logger.error(f"Web search exception: {e}")
                             self._update_plan_progress(f"Web search error: {query}", success=False)
@@ -1389,3 +1730,37 @@ class VaultAIAgentRunner:
             else:
                 # If the loop broke for any other reason (error, user cancellation), stop.
                 keep_running = False
+
+            # Display comprehensive performance summary at the end of each task
+            if self.timings or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage):
+                self.terminal.print_console("\n" + "="*60)
+                self.terminal.print_console("PERFORMANCE SUMMARY")
+                self.terminal.print_console("="*60)
+                
+                # Display cost optimization recommendations
+                if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                    self._display_cost_optimization_recommendations()
+                
+                # Display timing summary
+                if self.timings:
+                    self._display_timing_summary()
+                
+                # Display token usage summary
+                if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                    self._display_token_summary()
+                
+                # Display plan summary if available
+                if self.plan_manager.steps:
+                    self.terminal.print_console("\n" + "="*60)
+                    self.terminal.print_console("TASK COMPLETION SUMMARY")
+                    self.terminal.print_console("="*60)
+                    progress = self.plan_manager.get_progress()
+                    self.terminal.print_console(f"Plan Progress: {progress['completed']}/{progress['total']} steps completed ({progress['percentage']}%)")
+                    if progress['failed'] > 0:
+                        self.terminal.print_console(f"Failed Steps: {progress['failed']}")
+                    if progress['skipped'] > 0:
+                        self.terminal.print_console(f"Skipped Steps: {progress['skipped']}")
+                    if progress['pending'] > 0:
+                        self.terminal.print_console(f"Pending Steps: {progress['pending']}")
+                
+                self.terminal.print_console("="*60)
