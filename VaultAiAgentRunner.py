@@ -653,7 +653,7 @@ class VaultAIAgentRunner:
 
     def _update_plan_progress(self, action_description: str, success: bool = True):
         """
-        Update plan progress after action execution.
+        Update plan progress after action execution using ActionPlanManager.
         
         Args:
             action_description: Description of executed action
@@ -665,21 +665,28 @@ class VaultAIAgentRunner:
         # Find first pending or in-progress step
         current_step = self.plan_manager.get_current_step()
         if current_step:
-            if success:
-                self.plan_manager.mark_step_done(current_step.number, action_description)
-            else:
-                self.plan_manager.mark_step_failed(current_step.number, action_description)
+            # Use the proper ActionPlanManager method
+            status = StepStatus.COMPLETED if success else StepStatus.FAILED
+            self.plan_manager.mark_step_status(current_step.number, status, action_description)
         else:
             # If no step in progress, mark next pending one
             next_step = self.plan_manager.get_next_pending_step()
             if next_step:
-                if success:
-                    self.plan_manager.mark_step_done(next_step.number, action_description)
-                else:
-                    self.plan_manager.mark_step_failed(next_step.number, action_description)
+                # Use the proper ActionPlanManager method
+                status = StepStatus.COMPLETED if success else StepStatus.FAILED
+                self.plan_manager.mark_step_status(next_step.number, status, action_description)
         
         # Display compact progress
         self.plan_manager.display_compact()
+
+    def _plan_exists(self) -> bool:
+        """
+        Check if an action plan exists and has steps.
+        
+        Returns:
+            True if plan exists and has steps, False otherwise
+        """
+        return bool(self.plan_manager.steps)
 
     def _get_plan_status_for_ai(self) -> str:
         """
@@ -688,21 +695,21 @@ class VaultAIAgentRunner:
         Returns:
             String with current plan status
         """
-        if not self.plan_manager.steps:
+        if not self._plan_exists():
             return ""
         
         progress = self.plan_manager.get_progress()
         lines = ["PLAN STATUS:"]
-        lines.append(f"Progress: {progress['completed']}/{progress['total']} ({progress['percentage']}%)")
+        lines.append("Progress: {}/{} ({}%)".format(progress['completed'], progress['total'], progress['percentage']))
         
         # Show next pending step
         next_step = self.plan_manager.get_next_pending_step()
         if next_step:
-            lines.append(f"Next step to complete: Step {next_step.number}: {next_step.description}")
+            lines.append("Next step to complete: Step {}: {}".format(next_step.number, next_step.description))
         
         # Show warning if plan not complete
         if progress['pending'] > 0:
-            lines.append(f"[WARN] You still have {progress['pending']} pending step(s) to complete before finishing.")
+            lines.append("[WARN] You still have {} pending step(s) to complete before finishing.".format(progress['pending']))
         
         return "\n".join(lines)
 
@@ -1557,6 +1564,15 @@ class VaultAIAgentRunner:
                         }
                         step_status = status_map[status]
                         
+                        # Check if plan exists before attempting to update
+                        if not self.plan_manager.steps:
+                            terminal.print_console(f"[WARN] No action plan exists. Cannot update step {step_number}.")
+                            self.context_manager.add_user_message(
+                                f"You tried to update plan step {step_number}, but no action plan exists. "
+                                f"Create a plan first using the 'create_action_plan' tool, or proceed without a plan."
+                            )
+                            continue
+                        
                         # Update the plan step
                         success = self.plan_manager.mark_step_status(step_number, step_status, result)
                         if success:
@@ -1565,7 +1581,7 @@ class VaultAIAgentRunner:
                             # Display updated plan
                             self.plan_manager.display_compact()
                         else:
-                            terminal.print_console(f"[WARN] Failed to update plan step {step_number}")
+                            terminal.print_console(f"[WARN] Failed to update plan step {step_number}. Step may not exist in the plan.")
                             self.context_manager.add_user_message(f"Failed to update plan step {step_number}. Step may not exist in the plan.")
                         continue
 
