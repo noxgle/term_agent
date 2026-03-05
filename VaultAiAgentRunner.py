@@ -553,12 +553,13 @@ class VaultAIAgentRunner:
                 if not terminal.auto_accept:
                     self._interactive_plan_acceptance()
                 
-                # Add plan to AI context
+                # Add plan to AI context - THIS IS CRITICAL
                 plan_context = self.plan_manager.get_context_for_ai()
                 self.context_manager.add_system_message(
                     f"You have the following action plan available. "
                     f"Execute steps sequentially and update the status of each step after completion.\n\n{plan_context}"
                 )
+                self.logger.info(f"[PLAN ADDED TO CONTEXT] Plan with {len(steps)} steps added to AI context")
             else:
                 # If AI didn't return a plan, create a simple default plan
                 self._create_default_plan()
@@ -928,6 +929,14 @@ class VaultAIAgentRunner:
                     if m["role"] == "system": # System prompt is handled by connect methods or prepended
                         continue
                     prompt_text_parts.append(f"{m['role']}: {m['content']}")
+                
+                # Add current plan status to the prompt if plan exists
+                # This ensures AI is always aware of plan progress
+                if self._plan_exists():
+                    plan_status = self._get_plan_status_for_ai()
+                    if plan_status:
+                        prompt_text_parts.append(f"system: {plan_status}")
+                
                 prompt_text = "\n".join(prompt_text_parts)
 
                 # Start timing AI response generation
@@ -1064,7 +1073,7 @@ class VaultAIAgentRunner:
                                 if not terminal.auto_accept:
                                     self._interactive_plan_acceptance()
                                 
-                                # Add plan to AI context
+                                # Add plan to AI context - THIS IS CRITICAL FOR AI TO SEE THE PLAN
                                 plan_context = self.plan_manager.get_context_for_ai()
                                 self.context_manager.add_system_message(
                                     f"Action plan created successfully. "
@@ -1073,6 +1082,7 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(
                                     f"Action plan created with {len(steps)} steps. Begin execution with step 1."
                                 )
+                                self.logger.info(f"[PLAN ADDED TO CONTEXT] Dynamic plan with {len(steps)} steps added to AI context during execution")
                                 
                                 # End timing plan creation (success)
                                 self._end_timing(plan_timing_id, f"PLAN_CREATION_{goal[:50]}", True)
