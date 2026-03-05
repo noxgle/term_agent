@@ -535,15 +535,37 @@ class VaultAIAgentRunner:
                 ai_reply_json_string = None
                 corrected_ai_reply_string = None # Stores the string of a successfully parsed corrected reply
 
-                # Use the enhanced JSON validator to parse the AI response
+                # Use the enhanced JSON validator to parse the AI response with comprehensive logging
+                import time
+                validation_start_time = time.time()
+                
+                # Log the start of validation with truncated response
+                response_preview = ai_reply[:200] + ("..." if len(ai_reply) > 200 else "") if ai_reply else "None"
+                try:
+                    self.logger.info("Starting JSON validation for AI response (request_id=%s). Preview: %s", request_id, response_preview)
+                    self.logger.debug("Using enhanced JSON validator with flexible mode (request_id=%s)", request_id)
+                except Exception:
+                    pass
+                
                 success, data, error_message = self.json_validator.validate_response(ai_reply)
+                validation_duration = time.time() - validation_start_time
                 
                 if success:
                     # Successfully parsed with enhanced validator
                     ai_reply_json_string = json.dumps(data, ensure_ascii=False)
-                    terminal.logger.debug(f"Successfully parsed with enhanced validator: {ai_reply_json_string}")
+                    try:
+                        self.logger.info("JSON validation successful (request_id=%s, duration=%.3fs). Parsed type: %s", 
+                                       request_id, validation_duration, type(data).__name__)
+                        self.logger.debug("Validated JSON content: %s", ai_reply_json_string)
+                    except Exception:
+                        pass
                 else:
                     # Enhanced validator failed, try original parsing as fallback
+                    try:
+                        self.logger.warning("Enhanced JSON validator failed (request_id=%s, duration=%.3fs). Error: %s", 
+                                          request_id, validation_duration, error_message[:200])
+                    except Exception:
+                        pass
                     try:
                         json_match = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', ai_reply, re.DOTALL)
                         if not json_match:
