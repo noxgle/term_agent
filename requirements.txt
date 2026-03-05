@@ -7,3 +7,4 @@ pexpect
 rich
 requests
 ollama
+json5
