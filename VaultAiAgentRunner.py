@@ -8,6 +8,9 @@ import time
 import uuid
 from prompt_toolkit import prompt
 
+# Import the enhanced JSON validator
+from json_validator.JsonValidator import JsonValidator, ValidationMode, create_validator
+
 class VaultAIAgentRunner:
     def __init__(self, 
                 terminal, 
@@ -92,6 +95,9 @@ class VaultAIAgentRunner:
         self.summary = ""
         # Keep a history of assistant responses mapped to request IDs for tracing
         self.request_history = []
+        
+        # Initialize the enhanced JSON validator
+        self.json_validator = create_validator("flexible")
 
         # Security: Dangerous commands that should be blocked
         self.dangerous_commands = {
@@ -529,7 +535,15 @@ class VaultAIAgentRunner:
                 ai_reply_json_string = None
                 corrected_ai_reply_string = None # Stores the string of a successfully parsed corrected reply
 
-                if ai_reply:
+                # Use the enhanced JSON validator to parse the AI response
+                success, data, error_message = self.json_validator.validate_response(ai_reply)
+                
+                if success:
+                    # Successfully parsed with enhanced validator
+                    ai_reply_json_string = json.dumps(data, ensure_ascii=False)
+                    terminal.logger.debug(f"Successfully parsed with enhanced validator: {ai_reply_json_string}")
+                else:
+                    # Enhanced validator failed, try original parsing as fallback
                     try:
                         json_match = re.search(r'```json\s*(\{.*\}|\[.*\])\s*```', ai_reply, re.DOTALL)
                         if not json_match:
