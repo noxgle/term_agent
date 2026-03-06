@@ -281,6 +281,88 @@ class term_agent:
             self.logger.warning(f"detect_remote_linux_distribution: uname failed: {e}")
 
         return ("Unknown", "")
+
+    def check_user_privileges(self, remote=None):
+        """
+        Check user privileges on local or remote system.
+        
+        Args:
+            remote (str, optional): Remote host in format user@host:port
+            
+        Returns:
+            str: "root", "sudo user", "sudo user passwordless", or "user"
+        """
+        self.logger.info(f"Checking user privileges on {'remote host ' + remote if remote else 'local system'}")
+        
+        try:
+            # Check if user is root (UID 0)
+            if remote:
+                stdout, returncode = self.execute_remote_pexpect("id -u", remote, timeout=10)
+            else:
+                stdout, returncode = self.execute_local("id -u", timeout=10)
+            
+            if returncode == 0:
+                uid = stdout.strip()
+                if uid == "0":
+                    self.logger.info("User is root")
+                    return "root"
+            
+            # User is not root, check sudo privileges
+            if remote:
+                stdout, returncode = self.execute_remote_pexpect("sudo -l", remote, timeout=10)
+            else:
+                stdout, returncode = self.execute_local("sudo -l", timeout=10)
+            
+            if returncode == 0:
+                # User has sudo privileges, check if passwordless
+                if remote:
+                    # For remote, we need to handle the password prompt differently
+                    # Try sudo -S -l with empty password to test passwordless sudo
+                    child = pexpect.spawn(f"ssh {remote} 'sudo -S -l'", encoding='utf-8', timeout=10)
+                    try:
+                        i = child.expect([
+                            r"[Pp]assword:",
+                            r"are not allowed to run sudo",
+                            pexpect.EOF,
+                            pexpect.TIMEOUT
+                        ])
+                        if i == 0:
+                            # Password required
+                            child.sendline("")  # Send empty password
+                            child.expect([pexpect.EOF, pexpect.TIMEOUT], timeout=5)
+                            child.close()
+                            self.logger.info("User has sudo privileges but requires password")
+                            return "sudo user"
+                        elif i == 1:
+                            # No sudo privileges
+                            child.close()
+                            self.logger.info("User does not have sudo privileges")
+                            return "user"
+                        else:
+                            # Passwordless sudo
+                            child.close()
+                            self.logger.info("User has passwordless sudo privileges")
+                            return "sudo user passwordless"
+                    except Exception as e:
+                        child.close()
+                        self.logger.warning(f"Error checking passwordless sudo: {e}")
+                        return "sudo user"
+                else:
+                    # For local, use a simple approach
+                    stdout, returncode = self.execute_local("sudo -S -l < /dev/null", timeout=10)
+                    if returncode == 0:
+                        self.logger.info("User has passwordless sudo privileges")
+                        return "sudo user passwordless"
+                    else:
+                        self.logger.info("User has sudo privileges but requires password")
+                        return "sudo user"
+            else:
+                self.logger.info("User does not have sudo privileges")
+                return "user"
+                
+        except Exception as e:
+            self.logger.error(f"Error checking user privileges: {e}")
+            return "user"  # Return safe default for regular user
     
     # --- Gemini Function ---
 
@@ -418,7 +500,10 @@ class term_agent:
                     # Sometimes 'message' is a dict with 'content'
                     if isinstance(content, dict) and "content" in content:
                         content = content["content"]
-                    return content.strip()
+                    if isinstance(content, str):
+                        return content.strip()
+                    else:
+                        return str(content)
             # If nothing found, log and return None
             self.logger.error(f"Unexpected Ollama response format: {result}")
             return None
@@ -465,9 +550,17 @@ class term_agent:
 
             # Extract the response content
             if 'response' in response:
-                return response['response'].strip()
+                response_content = response['response']
+                if isinstance(response_content, str):
+                    return response_content.strip()
+                else:
+                    return str(response_content)
             elif 'content' in response:
-                return response['content'].strip()
+                content = response['content']
+                if isinstance(content, str):
+                    return content.strip()
+                else:
+                    return str(content)
             else:
                 self.logger.error(f"Unexpected Ollama Cloud response format: {response}")
                 return None
@@ -688,7 +781,7 @@ class term_agent:
             else:
                 exit_code = 1
 
-        return output, exit_code
+        return str(output), exit_code
 
     def check_ai_online(self):
         if self.ai_engine == "openai":
@@ -911,7 +1004,7 @@ Controls:
         agent.remote_host = remote
         agent.user = user
         agent.host = host
-        agent.port = port
+        agent.port = port if port is not None else None
         try:
             output, returncode = agent.execute_remote_pexpect("echo Connection successful", remote, auto_yes=agent.auto_accept, timeout=5)
             if agent.ssh_password is not None:
