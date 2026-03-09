@@ -2,16 +2,71 @@ import os
 import re
 import shutil
 import fnmatch
+import shlex
 import tempfile
 import subprocess
 import logging
 import time
+import unicodedata
+from urllib.parse import unquote
 from typing import Dict, Any, Optional, Tuple, List
 
 class FileOperator:
     def __init__(self, terminal, logger=None):
         self.terminal = terminal
         self.logger = logger or logging.getLogger(__name__)
+        self._blocked_local_paths = (
+            "/proc",
+            "/sys",
+            "/dev",
+            "/etc/shadow",
+            "/root/.ssh",
+        )
+
+    def _normalize_input_path(self, file_path: str) -> str:
+        if not isinstance(file_path, str) or not file_path.strip():
+            raise ValueError("Path must be a non-empty string")
+        normalized = unicodedata.normalize("NFKC", file_path).strip()
+        decoded = unquote(normalized)
+        if "\x00" in decoded or "\n" in decoded or "\r" in decoded:
+            raise ValueError("Path contains forbidden control characters")
+        return decoded
+
+    def _resolve_local_path(self, file_path: str) -> str:
+        decoded = self._normalize_input_path(file_path)
+        abs_path = decoded if os.path.isabs(decoded) else os.path.join(os.getcwd(), decoded)
+        real_path = os.path.realpath(os.path.abspath(abs_path))
+        real_path = os.path.normpath(real_path)
+
+        workspace_base = os.path.realpath(getattr(self.terminal, "workspace", os.getcwd()) or os.getcwd())
+        workspace_base = os.path.normpath(workspace_base)
+        if not os.path.isabs(decoded):
+            if os.path.commonpath([real_path, workspace_base]) != workspace_base:
+                raise ValueError(f"Relative path escapes workspace: '{file_path}'")
+
+        for blocked in self._blocked_local_paths:
+            if real_path == blocked or real_path.startswith(blocked + os.sep):
+                raise ValueError(f"Access to blocked path is not allowed: '{file_path}'")
+
+        return real_path
+
+    def _sanitize_remote_path(self, file_path: str) -> str:
+        decoded = self._normalize_input_path(file_path)
+        normalized = os.path.normpath(decoded)
+        if ".." in normalized.split("/"):
+            raise ValueError(f"Path traversal detected in remote path: '{file_path}'")
+        return normalized
+
+    def _prepare_path(self, file_path: str) -> str:
+        if self.terminal.ssh_connection:
+            return self._sanitize_remote_path(file_path)
+        return self._resolve_local_path(file_path)
+
+    def _q(self, value: str) -> str:
+        return shlex.quote(value)
+
+    def _scp_target(self, remote: str, path: str) -> str:
+        return f"{remote}:{self._q(path)}"
 
     def write_file(self, file_path, content, explain=""):
         """
@@ -25,8 +80,11 @@ class FileOperator:
         Returns:
             bool: True if successful, False otherwise
         """
-        if file_path and not file_path.startswith("/"):
-            file_path = os.path.join(os.getcwd(), file_path)
+        try:
+            file_path = self._prepare_path(file_path)
+        except ValueError as e:
+            self.logger.error("Path validation failed for write_file '%s': %s", file_path, e)
+            return False
 
         preview = content[:100] + ("..." if len(content) > 100 else "")
 
@@ -59,15 +117,21 @@ class FileOperator:
             password = getattr(self.terminal, "ssh_password", None)
 
             remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
+            q_file_path = self._q(file_path)
+            q_remote_tmp_path = self._q(remote_tmp_path)
 
             # Remove existing file on remote host if exists
-            rm_cmd = f"rm -f '{file_path}'"
+            rm_cmd = f"rm -f {q_file_path}"
             self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
             # Remove existing temp file on remote host if exists
-            rm_tmp_cmd = f"rm -f '{remote_tmp_path}'"
+            rm_tmp_cmd = f"rm -f {q_remote_tmp_path}"
             self.terminal.execute_remote_pexpect(rm_tmp_cmd, remote, password=password)
 
-            scp_cmd = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [tmpf_path, f"{remote}:{remote_tmp_path}"]
+            scp_cmd = (
+                ["scp"]
+                + (["-P", str(self.terminal.port)] if self.terminal.port else [])
+                + [tmpf_path, self._scp_target(remote, remote_tmp_path)]
+            )
             try:
                 result = subprocess.run(scp_cmd, capture_output=True, text=True)
                 if result.returncode == 0:
@@ -77,9 +141,12 @@ class FileOperator:
                         out = ""
                     else:
                         if needs_sudo:
-                            cp_cmd = f"sudo cp '{remote_tmp_path}' '{file_path}' && sudo rm '{remote_tmp_path}'"
+                            cp_cmd = (
+                                f"sudo cp {q_remote_tmp_path} {q_file_path} "
+                                f"&& sudo rm {q_remote_tmp_path}"
+                            )
                         else:
-                            cp_cmd = f"mv '{remote_tmp_path}' '{file_path}'"
+                            cp_cmd = f"mv {q_remote_tmp_path} {q_file_path}"
                         out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                     if code == 0:
                         self.logger.info(f"File '{file_path}' copied to remote host. Preview: {preview}")
@@ -114,8 +181,11 @@ class FileOperator:
         Returns:
             bool: True if successful, False otherwise
         """
-        if file_path and not file_path.startswith("/"):
-            file_path = os.path.join(os.getcwd(), file_path)
+        try:
+            file_path = self._prepare_path(file_path)
+        except ValueError as e:
+            self.logger.error("Path validation failed for edit_file '%s': %s", file_path, e)
+            return False
 
         if self.terminal.ssh_connection:
             return self._edit_file_remote(file_path, action, search, replace, line, explain)
@@ -182,9 +252,14 @@ class FileOperator:
                 remote_tmp_path = f"/tmp/{os.path.basename(file_path)}"
                 remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
                 password = getattr(self.terminal, "ssh_password", None)
+                q_file_path = self._q(file_path)
 
                 # Get remote file
-                scp_get = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [f"{remote}:{file_path}", local_tmp_path]
+                scp_get = (
+                    ["scp"]
+                    + (["-P", str(self.terminal.port)] if self.terminal.port else [])
+                    + [self._scp_target(remote, file_path), local_tmp_path]
+                )
                 result = subprocess.run(scp_get, capture_output=True, text=True)
                 if result.returncode != 0:
                     self.logger.error(f"Failed to fetch remote file '{file_path}': {result.stderr}")
@@ -195,11 +270,15 @@ class FileOperator:
 
                 if success:
                     # Remove existing target file on remote if it exists
-                    rm_cmd = f"rm -f '{file_path}'"
+                    rm_cmd = f"rm -f {q_file_path}"
                     self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
 
                     # Send back edited file directly to target location
-                    scp_put = ["scp"] + (["-P", str(self.terminal.port)] if self.terminal.port else []) + [local_tmp_path, f"{remote}:{file_path}"]
+                    scp_put = (
+                        ["scp"]
+                        + (["-P", str(self.terminal.port)] if self.terminal.port else [])
+                        + [local_tmp_path, self._scp_target(remote, file_path)]
+                    )
                     result = subprocess.run(scp_put, capture_output=True, text=True)
                     if result.returncode == 0:
                         self.logger.info(f"File '{file_path}' edited and uploaded to remote host with action '{action}'")
@@ -235,8 +314,14 @@ class FileOperator:
         Returns:
             Dictionary with 'success', 'content', 'path', 'lines_count', and optionally 'error'
         """
-        if file_path and not file_path.startswith("/"):
-            file_path = os.path.join(os.getcwd(), file_path)
+        try:
+            file_path = self._prepare_path(file_path)
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "path": file_path
+            }
 
         if self.terminal.ssh_connection:
             return self._read_file_remote(file_path, start_line, end_line, explain)
@@ -254,21 +339,28 @@ class FileOperator:
                     "path": file_path
                 }
             
+            content_parts: List[str] = []
+            total_lines = 0
+            lines_returned = 0
+            start = max((start_line or 1) - 1, 0)
+            end = end_line
+
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                all_lines = f.readlines()
-            
-            total_lines = len(all_lines)
-            
-            # Apply line filtering
-            if start_line is not None or end_line is not None:
-                start = (start_line or 1) - 1  # Convert to 0-based
-                end = end_line or total_lines
-                selected_lines = all_lines[start:end]
-                content = "".join(selected_lines)
-                lines_returned = len(selected_lines)
-            else:
-                content = "".join(all_lines)
-                lines_returned = total_lines
+                for idx, line in enumerate(f):
+                    total_lines += 1
+                    if start_line is None and end_line is None:
+                        content_parts.append(line)
+                        lines_returned += 1
+                        continue
+
+                    if idx < start:
+                        continue
+                    if end is not None and idx + 1 > end:
+                        continue
+                    content_parts.append(line)
+                    lines_returned += 1
+
+            content = "".join(content_parts)
             
             self.logger.info(f"File '{file_path}' read successfully. Lines: {lines_returned}/{total_lines}")
             
@@ -301,15 +393,15 @@ class FileOperator:
             if start_line is not None or end_line is not None:
                 start = start_line or 1
                 end = end_line or "$"
-                cmd = f"sed -n '{start},{end}p' '{file_path}'"
+                cmd = f"sed -n '{start},{end}p' {self._q(file_path)}"
             else:
-                cmd = f"cat '{file_path}'"
+                cmd = f"cat {self._q(file_path)}"
             
             out, code = self.terminal.execute_remote_pexpect(cmd, remote, password=password)
             
             if code == 0:
                 # Get total line count
-                wc_cmd = f"wc -l '{file_path}'"
+                wc_cmd = f"wc -l {self._q(file_path)}"
                 wc_out, wc_code = self.terminal.execute_remote_pexpect(wc_cmd, remote, password=password)
                 total_lines = int(wc_out.split()[0]) if wc_code == 0 else "unknown"
                 
@@ -355,8 +447,14 @@ class FileOperator:
         Returns:
             Dictionary with 'success', 'entries', 'path', and optionally 'error'
         """
-        if dir_path and not dir_path.startswith("/"):
-            dir_path = os.path.join(os.getcwd(), dir_path)
+        try:
+            dir_path = self._prepare_path(dir_path)
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "path": dir_path
+            }
 
         if self.terminal.ssh_connection:
             return self._list_directory_remote(dir_path, recursive, pattern, explain)
@@ -467,16 +565,25 @@ class FileOperator:
                 # Using find for recursive listing
                 if pattern:
                     # Escape pattern for shell
-                    escaped_pattern = pattern.replace("'", "'\\''")
-                    cmd = f"find '{dir_path}' -name '{escaped_pattern}' -exec ls -ld {{}} \\;"
+                    escaped_pattern = self._q(pattern)
+                    cmd = (
+                        f"find {self._q(dir_path)} -name {escaped_pattern} "
+                        f"-exec ls -ld {{}} \\;"
+                    )
                 else:
-                    cmd = f"find '{dir_path}' -exec ls -ld {{}} \\;"
+                    cmd = f"find {self._q(dir_path)} -exec ls -ld {{}} \\;"
             else:
                 if pattern:
-                    escaped_pattern = pattern.replace("'", "'\\''")
-                    cmd = f"ls -ld '{dir_path}'/{escaped_pattern} 2>/dev/null || ls -ld '{dir_path}'/*"
+                    escaped_pattern = self._q(pattern)
+                    cmd = (
+                        f"find {self._q(dir_path)} -maxdepth 1 -name {escaped_pattern} "
+                        f"-exec ls -ld {{}} \\;"
+                    )
                 else:
-                    cmd = f"ls -ld '{dir_path}'/* '{dir_path}'/.* 2>/dev/null | grep -v '^d.*\\.$'"
+                    cmd = (
+                        f"ls -ld {self._q(dir_path)}/* {self._q(dir_path)}/.* "
+                        f"2>/dev/null | grep -v '^d.*\\.$'"
+                    )
             
             out, code = self.terminal.execute_remote_pexpect(cmd, remote, password=password)
             
@@ -574,10 +681,16 @@ class FileOperator:
         Returns:
             Dictionary with 'success', 'source', 'destination', and optionally 'error'
         """
-        if source and not source.startswith("/"):
-            source = os.path.join(os.getcwd(), source)
-        if destination and not destination.startswith("/"):
-            destination = os.path.join(os.getcwd(), destination)
+        try:
+            source = self._prepare_path(source)
+            destination = self._prepare_path(destination)
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "source": source,
+                "destination": destination
+            }
 
         if self.terminal.ssh_connection:
             return self._copy_file_remote(source, destination, overwrite, explain)
@@ -649,7 +762,9 @@ class FileOperator:
             password = getattr(self.terminal, "ssh_password", None)
             
             # Check if source exists
-            check_cmd = f"test -e '{source}' && echo exists || echo not_found"
+            q_source = self._q(source)
+            q_destination = self._q(destination)
+            check_cmd = f"test -e {q_source} && echo exists || echo not_found"
             check_out, _ = self.terminal.execute_remote_pexpect(check_cmd, remote, password=password)
             
             if "not_found" in check_out:
@@ -661,7 +776,7 @@ class FileOperator:
                 }
             
             # Check if destination exists
-            check_dest_cmd = f"test -e '{destination}' && echo exists || echo not_found"
+            check_dest_cmd = f"test -e {q_destination} && echo exists || echo not_found"
             check_dest_out, _ = self.terminal.execute_remote_pexpect(check_dest_cmd, remote, password=password)
             
             if "exists" in check_dest_out and not overwrite:
@@ -673,23 +788,23 @@ class FileOperator:
                 }
             
             # Determine if source is directory
-            is_dir_cmd = f"test -d '{source}' && echo dir || echo file"
+            is_dir_cmd = f"test -d {q_source} && echo dir || echo file"
             is_dir_out, _ = self.terminal.execute_remote_pexpect(is_dir_cmd, remote, password=password)
             is_dir = "dir" in is_dir_out
             
             # Build copy command
             if "exists" in check_dest_out and overwrite:
-                rm_cmd = f"rm -rf '{destination}'"
+                rm_cmd = f"rm -rf {q_destination}"
                 self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
             
             # Create parent directory for destination
             dest_dir = os.path.dirname(destination)
             if dest_dir:
-                mkdir_cmd = f"mkdir -p '{dest_dir}'"
+                mkdir_cmd = f"mkdir -p {self._q(dest_dir)}"
                 self.terminal.execute_remote_pexpect(mkdir_cmd, remote, password=password)
             
             # Copy
-            cp_cmd = f"cp -{'r' if is_dir else ''}p '{source}' '{destination}'"
+            cp_cmd = f"cp -{'r' if is_dir else ''}p {q_source} {q_destination}"
             out, code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
             
             if code == 0:
@@ -730,8 +845,14 @@ class FileOperator:
         Returns:
             Dictionary with 'success', 'path', and optionally 'error' or 'backup_path'
         """
-        if file_path and not file_path.startswith("/"):
-            file_path = os.path.join(os.getcwd(), file_path)
+        try:
+            file_path = self._prepare_path(file_path)
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "path": file_path
+            }
 
         if self.terminal.ssh_connection:
             return self._delete_file_remote(file_path, backup, explain)
@@ -794,7 +915,8 @@ class FileOperator:
             password = getattr(self.terminal, "ssh_password", None)
             
             # Check if path exists
-            check_cmd = f"test -e '{file_path}' && echo exists || echo not_found"
+            q_file_path = self._q(file_path)
+            check_cmd = f"test -e {q_file_path} && echo exists || echo not_found"
             check_out, _ = self.terminal.execute_remote_pexpect(check_cmd, remote, password=password)
             
             if "not_found" in check_out:
@@ -805,7 +927,7 @@ class FileOperator:
                 }
             
             # Check if directory
-            is_dir_cmd = f"test -d '{file_path}' && echo dir || echo file"
+            is_dir_cmd = f"test -d {q_file_path} && echo dir || echo file"
             is_dir_out, _ = self.terminal.execute_remote_pexpect(is_dir_cmd, remote, password=password)
             is_dir = "dir" in is_dir_out
             
@@ -816,7 +938,7 @@ class FileOperator:
                 import time
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
                 backup_path = f"{file_path}.backup_{timestamp}"
-                cp_cmd = f"cp -{'r' if is_dir else ''} '{file_path}' '{backup_path}'"
+                cp_cmd = f"cp -{'r' if is_dir else ''} {q_file_path} {self._q(backup_path)}"
                 cp_out, cp_code = self.terminal.execute_remote_pexpect(cp_cmd, remote, password=password)
                 if cp_code == 0:
                     self.logger.info(f"Created backup: {backup_path}")
@@ -825,7 +947,7 @@ class FileOperator:
                     backup_path = None
             
             # Delete
-            rm_cmd = f"rm -rf '{file_path}'"
+            rm_cmd = f"rm -rf {q_file_path}"
             out, code = self.terminal.execute_remote_pexpect(rm_cmd, remote, password=password)
             
             if code == 0:

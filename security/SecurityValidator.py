@@ -1,4 +1,8 @@
+import os
 import re
+import shlex
+import unicodedata
+from urllib.parse import unquote
 from typing import Set, List, Tuple
 
 class SecurityValidator:
@@ -21,36 +25,32 @@ class SecurityValidator:
             dangerous_commands: Set of dangerous command patterns to block
             allowed_paths: List of allowed paths for file operations
         """
-        # Default dangerous commands that should be blocked.
-        # Only truly destructive operations are listed - common admin tools
-        # like curl, wget, systemctl, chmod +x, etc. are intentionally NOT blocked
-        # because they are required for normal Linux administration tasks.
+        # String patterns retained for compatibility with add/remove APIs.
         self.dangerous_commands = dangerous_commands or {
-            # Recursive filesystem destruction
             'rm -rf /', 'rm -rf /*', 'rm -rf /home', 'rm -rf /etc', 'rm -rf /var',
             'rm -rf /usr', 'rm -rf /boot', 'rm -rf /root',
-            # Disk/partition operations
             'dd if=/dev/', 'mkfs.', 'fdisk /dev/', 'wipefs', 'shred /dev/',
-            # Direct credential modification
             'passwd root', 'usermod -p ', 'chpasswd',
-            # Privilege escalation
             'sudo su', 'su root', 'sudo -i', 'sudo -s',
-            # Audit trail destruction
             'crontab -r', 'history -c', 'unset HISTFILE',
-            # Setuid/setgid (privilege escalation via file permissions)
             'chmod u+s', 'chmod g+s', 'chmod 4', 'chmod 2',
-            # Firewall destruction
             'iptables -F', 'iptables -X', 'ufw --force disable',
-            # System halt/reboot (destructive in automated context)
             'reboot', 'shutdown', 'halt', 'poweroff',
-            # Root filesystem unmount
             'umount /', 'umount -a',
-            # Find with mass delete/exec on root
             'find / -delete', 'find / -exec rm',
         }
 
         # Allowed paths for file operations
         self.allowed_paths = allowed_paths or ['/tmp', '/var/tmp', '/home', '/usr/local', '/opt']
+        self._dangerous_regexes = self._build_dangerous_regexes(self.dangerous_commands)
+        self._chain_split_re = re.compile(r'\s*(?:&&|\|\||;|\n)\s*')
+        self._blocked_paths = (
+            "/proc",
+            "/sys",
+            "/dev",
+            "/etc/shadow",
+            "/root/.ssh",
+        )
 
     def validate_command(self, command: str) -> Tuple[bool, str]:
         """
@@ -65,49 +65,23 @@ class SecurityValidator:
         if not command or not isinstance(command, str):
             return False, "Command must be a non-empty string"
 
-        # Check for dangerous command patterns
-        cmd_lower = command.lower().strip()
-        for dangerous in self.dangerous_commands:
-            if dangerous in cmd_lower:
-                return False, f"Command contains dangerous pattern: '{dangerous}'"
+        normalized = self._normalize_command(command)
+        if not normalized:
+            return False, "Command must be a non-empty string"
 
-        # Check for shell injection patterns.
-        # NOTE: Shell redirections (>, <, 2>, &>, |) are intentionally NOT blocked here
-        # because they are standard and necessary for Linux administration.
-        # Only true injection metacharacters are checked.
-        injection_patterns = [';', '`', '$(', '${']
-        for pattern in injection_patterns:
-            if pattern in command:
-                return False, f"Command contains potential shell injection: '{pattern}'"
+        # Block command substitution and indirect expansions commonly used to bypass checks.
+        for token in ('`', '$(', '${'):
+            if token in normalized:
+                return False, f"Command contains potential shell injection: '{token}'"
 
-        # Special handling for && and || - allow when used for legitimate command chaining
-        # Check if && appears to be used for command injection vs legitimate chaining
-        if '&&' in command:
-            # Split by && and check if each part looks like a separate command
-            parts = command.split('&&')
-            for part in parts:
-                part = part.strip()
-                if not part:  # Empty part suggests malformed command
-                    return False, "Command contains malformed '&&' usage"
-                # If any part contains suspicious patterns, block it
-                if any(suspicious in part for suspicious in ['$(', '${', '`', ';']):
-                    return False, f"Command contains suspicious pattern near '&&': '{part}'"
+        segments = [seg.strip() for seg in self._chain_split_re.split(normalized) if seg.strip()]
+        if not segments:
+            return False, "Command is empty after normalization"
 
-        if '||' in command:
-            # Similar logic for ||
-            parts = command.split('||')
-            for part in parts:
-                part = part.strip()
-                if not part:
-                    return False, "Command contains malformed '||' usage"
-                if any(suspicious in part for suspicious in ['$(', '${', '`', ';']):
-                    return False, f"Command contains suspicious pattern near '||': '{part}'"
-
-        # Check for interactive commands
-        interactive_cmds = ['vi', 'vim', 'nano', 'emacs', 'less', 'more', 'top', 'htop', 'mc', 'passwd', 'su', 'sudo -i', 'sudo -s']
-        cmd_parts = command.split()
-        if cmd_parts and any(cmd_parts[0].endswith(interactive) for interactive in interactive_cmds):
-            return False, f"Interactive command not allowed: '{cmd_parts[0]}'"
+        for segment in segments:
+            is_safe, reason = self._validate_segment(segment)
+            if not is_safe:
+                return False, reason
 
         return True, ""
 
@@ -124,10 +98,26 @@ class SecurityValidator:
         if not file_path or not isinstance(file_path, str):
             return False, "File path must be a non-empty string"
 
-        # Check if path starts with any allowed path
-        for allowed_path in self.allowed_paths:
-            if file_path.startswith(allowed_path):
-                return True, ""
+        normalized_input = unicodedata.normalize("NFKC", file_path).strip()
+        decoded_input = unquote(normalized_input)
+        if "\x00" in decoded_input:
+            return False, "File path contains null bytes"
+
+        abs_path = os.path.abspath(decoded_input)
+        real_path = os.path.realpath(abs_path)
+        real_path_norm = os.path.normpath(real_path)
+
+        for blocked in self._blocked_paths:
+            if real_path_norm == blocked or real_path_norm.startswith(blocked + os.sep):
+                return False, f"File path '{file_path}' points to blocked location '{blocked}'"
+
+        allowed_real_paths = [os.path.realpath(p) for p in self.allowed_paths]
+        for allowed_real in allowed_real_paths:
+            try:
+                if os.path.commonpath([real_path_norm, allowed_real]) == allowed_real:
+                    return True, ""
+            except ValueError:
+                continue
 
         return False, f"File path '{file_path}' is not in allowed paths: {self.allowed_paths}"
 
@@ -140,6 +130,7 @@ class SecurityValidator:
         """
         if command_pattern and isinstance(command_pattern, str):
             self.dangerous_commands.add(command_pattern)
+            self._dangerous_regexes = self._build_dangerous_regexes(self.dangerous_commands)
 
     def remove_dangerous_command(self, command_pattern: str):
         """
@@ -150,6 +141,7 @@ class SecurityValidator:
         """
         if command_pattern in self.dangerous_commands:
             self.dangerous_commands.remove(command_pattern)
+            self._dangerous_regexes = self._build_dangerous_regexes(self.dangerous_commands)
 
     def add_allowed_path(self, path: str):
         """
@@ -170,3 +162,53 @@ class SecurityValidator:
         """
         if path in self.allowed_paths:
             self.allowed_paths.remove(path)
+
+    def _normalize_command(self, command: str) -> str:
+        return unicodedata.normalize("NFKC", command).strip().lower()
+
+    def _build_dangerous_regexes(self, patterns: Set[str]) -> List[re.Pattern]:
+        regexes = [
+            re.compile(r'\brm\s+-[^\n]*\brf\b'),
+            re.compile(r'\bdd\b[^\n]*(if|of)\s*=\s*/dev/'),
+            re.compile(r'\b(?:mkfs|wipefs|fdisk|parted|sfdisk|shred)\b'),
+            re.compile(r'\b(?:reboot|shutdown|halt|poweroff)\b'),
+            re.compile(r'\b(?:iptables\s+-f|iptables\s+-x|ufw\s+--force\s+disable)\b'),
+            re.compile(r'\bcurl\b[^\n|>]*\|\s*(?:bash|sh)\b'),
+            re.compile(r'\bwget\b[^\n|>]*\|\s*(?:bash|sh)\b'),
+            re.compile(r'>\s*/dev/(?:sd[a-z]\d*|nvme\d+n\d+(?:p\d+)?|vd[a-z]\d*|xvd[a-z]\d*)'),
+            re.compile(r':\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:'),
+        ]
+
+        for pattern in patterns:
+            escaped = re.escape(pattern.lower().strip())
+            if escaped:
+                regexes.append(re.compile(escaped))
+        return regexes
+
+    def _validate_segment(self, segment: str) -> Tuple[bool, str]:
+        for regex in self._dangerous_regexes:
+            if regex.search(segment):
+                return False, f"Command contains dangerous pattern: '{regex.pattern}'"
+
+        try:
+            tokens = shlex.split(segment)
+        except ValueError:
+            return False, "Command parsing failed (possibly malformed quoting)"
+
+        if not tokens:
+            return False, "Empty command segment detected"
+
+        interactive_cmds = {'vi', 'vim', 'nano', 'emacs', 'less', 'more', 'top', 'htop', 'mc', 'passwd'}
+        cmd = os.path.basename(tokens[0])
+        if cmd in interactive_cmds:
+            return False, f"Interactive command not allowed: '{cmd}'"
+
+        if cmd == "sudo" and len(tokens) > 1:
+            sudo_target = os.path.basename(tokens[1])
+            if sudo_target in interactive_cmds or sudo_target in {"-i", "-s", "su"}:
+                return False, f"Interactive/shell escalation command not allowed: 'sudo {tokens[1]}'"
+
+        if cmd == "su":
+            return False, "Command 'su' is not allowed in automated mode"
+
+        return True, ""

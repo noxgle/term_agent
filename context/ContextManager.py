@@ -218,8 +218,17 @@ class ContextManager:
     def _safe_log(self, level: str, msg: str, *args) -> None:
         try:
             getattr(self.logger, level)(msg, *args)
-        except Exception:
-            pass
+        except Exception as exc:
+            if level in ("error", "critical", "exception"):
+                try:
+                    import sys
+                    rendered = msg % args if args else msg
+                    print(
+                        f"[ContextManager:{level}] {rendered} (logging fallback: {exc})",
+                        file=sys.stderr,
+                    )
+                except Exception:
+                    pass
 
     # ------------------------------------------------------------------
     # Maintenance / metrics

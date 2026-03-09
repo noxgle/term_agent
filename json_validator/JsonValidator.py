@@ -19,7 +19,7 @@ import yaml
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Union
 from enum import Enum
-from collections import defaultdict
+from collections import defaultdict, deque, OrderedDict
 
 
 class ValidationMode(Enum):
@@ -37,11 +37,24 @@ class JsonValidationError(Exception):
 class JsonValidator:
     """Enhanced JSON validator with multiple parsing strategies"""
     
-    def __init__(self, mode: ValidationMode = ValidationMode.FLEXIBLE):
+    def __init__(
+        self,
+        mode: ValidationMode = ValidationMode.FLEXIBLE,
+        max_strategy_cache: int = 512,
+        max_error_patterns: int = 128,
+        max_pattern_contexts: int = 10,
+        max_validation_attempts: int = 128,
+    ):
         self.mode = mode
-        self.validation_attempts = []
-        self.strategy_cache = defaultdict(dict)  # Cache for strategy results
-        self.error_cache = defaultdict(list)     # Cache for error patterns
+        self.max_strategy_cache = max_strategy_cache
+        self.max_error_patterns = max_error_patterns
+        self.max_pattern_contexts = max_pattern_contexts
+        self.max_validation_attempts = max_validation_attempts
+        self.validation_attempts = deque(maxlen=max_validation_attempts)
+        self.strategy_cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+        self.error_cache = defaultdict(
+            lambda: deque(maxlen=self.max_pattern_contexts)
+        )
     
     def validate_response(self, ai_response: str) -> Tuple[bool, Any, str]:
         """
@@ -55,6 +68,8 @@ class JsonValidator:
         """
         if not ai_response or not isinstance(ai_response, str):
             return False, None, "Response must be a non-empty string"
+
+        self.validation_attempts.clear()
         
         # Clean up the response
         cleaned_response = self._clean_response(ai_response)
@@ -64,27 +79,27 @@ class JsonValidator:
         
         # Early exit optimization - check if we have cached result
         cache_key = self._generate_cache_key(cleaned_response, self.mode)
-        if cache_key in self.strategy_cache:
-            cached_result = self.strategy_cache[cache_key]
+        cached_result = self._get_cached_strategy(cache_key)
+        if cached_result:
             if cached_result['success']:
                 return True, cached_result['data'], ""
         
         for strategy_name, strategy_func in strategies:
             try:
                 # Check cache first
-                if cache_key in self.strategy_cache:
-                    cached_result = self.strategy_cache[cache_key]
+                cached_result = self._get_cached_strategy(cache_key)
+                if cached_result:
                     if cached_result['success']:
                         return True, cached_result['data'], ""
                 
                 result = strategy_func(cleaned_response)
                 if result is not None:
                     # Cache successful result
-                    self.strategy_cache[cache_key] = {
+                    self._set_cached_strategy(cache_key, {
                         'success': True,
                         'data': result,
                         'strategy': strategy_name
-                    }
+                    })
                     return True, result, ""
             except Exception as e:
                 error_msg = f"{strategy_name}: {str(e)}"
@@ -651,8 +666,8 @@ class JsonValidator:
         # Add error pattern analysis
         if self.error_cache:
             error_msg += "\nCommon error patterns detected:\n"
-            for pattern, count in self.error_cache.items():
-                error_msg += f"  - {pattern}: {count} occurrences\n"
+            for pattern, contexts in self.error_cache.items():
+                error_msg += f"  - {pattern}: {len(contexts)} occurrences\n"
         
         # Add sample of the original response
         sample_length = min(200, len(original_response))
@@ -688,7 +703,23 @@ class JsonValidator:
         pattern_key = f"{error_type}: {error_msg[:50]}"
         
         # Cache the pattern with context
+        if pattern_key not in self.error_cache and len(self.error_cache) >= self.max_error_patterns:
+            oldest_key = next(iter(self.error_cache))
+            del self.error_cache[oldest_key]
         self.error_cache[pattern_key].append(context_sample)
+
+    def _get_cached_strategy(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        if cache_key not in self.strategy_cache:
+            return None
+        self.strategy_cache.move_to_end(cache_key)
+        return self.strategy_cache[cache_key]
+
+    def _set_cached_strategy(self, cache_key: str, value: Dict[str, Any]) -> None:
+        if cache_key in self.strategy_cache:
+            self.strategy_cache.move_to_end(cache_key)
+        self.strategy_cache[cache_key] = value
+        if len(self.strategy_cache) > self.max_strategy_cache:
+            self.strategy_cache.popitem(last=False)
     
     def _generate_cache_key(self, response: str, mode: ValidationMode) -> str:
         """Generate cache key based on response and mode"""
@@ -697,7 +728,8 @@ class JsonValidator:
     def set_mode(self, mode: ValidationMode):
         """Change validation mode"""
         self.mode = mode
-        self.validation_attempts = []
+        self.validation_attempts.clear()
+        self.strategy_cache.clear()
         self.error_cache.clear()  # Clear error cache when mode changes
 
 
