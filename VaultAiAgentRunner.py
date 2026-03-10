@@ -105,7 +105,7 @@ class VaultAIAgentRunner:
                 "## TOOLS (respond ONLY with JSON, double quotes)\n"
                 "Execution:\n"
                 '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
-                '- {"tool":"web_search_agent","query":"...","engine":"duckduckgo|searxng","max_sources":5,"deep_search":true,"explain":"..."}\n'
+                '- {"tool":"web_search_agent","query":"...","engine":"searxng|duckduckgo","max_sources":5,"deep_search":true,"explain":"..."}\n'
                 "Files:\n"
                 '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
                 '- {"tool":"write_file","path":"...","content":"...","explain":"..."}\n'

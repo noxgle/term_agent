@@ -20,6 +20,7 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.console import Console
 from rich import box
+from datetime import datetime
 
 
 class FinishSubAgent:
@@ -33,8 +34,10 @@ class FinishSubAgent:
     file operations, web search results) and sends them to the AI for
     a comprehensive, structured analysis aligned with the user's original goal.
     """
+    current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     ANALYST_SYSTEM_PROMPT = (
+        f"Current date and time: {current_datetime}\n"
         "You are an expert AI analyst specializing in post-task analysis and reporting.\n"
         "Your role is to perform a DEEP, COMPREHENSIVE analysis of all data collected during an AI agent's task execution.\n\n"
         "## YOUR MISSION\n"
