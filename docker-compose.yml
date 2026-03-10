@@ -28,5 +28,3 @@ services:
 
 volumes:
   logs:
-  goal:
-  prompt:
