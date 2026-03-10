@@ -105,7 +105,7 @@ class VaultAIAgentRunner:
                 "## TOOLS (respond ONLY with JSON, double quotes)\n"
                 "Execution:\n"
                 '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
-                '- {"tool":"web_search_agent","query":"...","engine":"searxng|duckduckgo","max_sources":5,"deep_search":true,"explain":"..."}\n'
+                '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
                 "Files:\n"
                 '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
                 '- {"tool":"write_file","path":"...","content":"...","explain":"..."}\n'
@@ -1598,7 +1598,6 @@ class VaultAIAgentRunner:
                     elif tool == "web_search_agent":
                         # Web search agent tool for internet research
                         query = action_item.get("query")
-                        engine = action_item.get("engine")
                         max_sources = action_item.get("max_sources", 5)
                         deep_search = action_item.get("deep_search", True)
                         explain = action_item.get("explain", "")
@@ -1620,8 +1619,7 @@ class VaultAIAgentRunner:
                         
                         if not terminal.auto_accept:
                             effective_engine = (
-                                engine
-                                or (self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo")
+                                self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo"
                             )
                             confirm_prompt_text = f"\nVaultAI> Agent suggests to search web for: '{query}' using {effective_engine}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
@@ -1634,8 +1632,7 @@ class VaultAIAgentRunner:
                         terminal.print_console(f"\nVaultAI> Executing web search: {query}")
                         try:
                             effective_engine = (
-                                engine
-                                or (self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo")
+                                self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo"
                             )
                             self.logger.info("Executing web search: query='%s', engine=%s; request_id=%s", query, effective_engine, request_id)
                         except Exception:
@@ -1648,7 +1645,6 @@ class VaultAIAgentRunner:
                             # Use singleton WebSearchAgent (initialized in __init__)
                             search_result = self.web_search_agent.execute(
                                 query=query,
-                                engine=engine,
                                 max_sources=max_sources,
                                 deep_search=deep_search
                             )

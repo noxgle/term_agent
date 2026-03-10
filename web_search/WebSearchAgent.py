@@ -302,13 +302,11 @@ class WebSearchAgent:
         elif engine == 'searxng':
             if not self._is_searxng_available():
                 self.logger.warning("SearxNG unavailable; falling back to DuckDuckGo.")
-                print("[WARN] SearxNG unavailable; falling back to DuckDuckGo.")
                 return self._search_duckduckgo(query, max_results)
             try:
                 return self._search_searxng(query, max_results)
             except Exception as e:
                 self.logger.warning(f"SearxNG failed ({e}); falling back to DuckDuckGo.")
-                print("[WARN] SearxNG failed; falling back to DuckDuckGo.")
                 return self._search_duckduckgo(query, max_results)
         else:
             raise ValueError(f"Unsupported search engine: {engine}")
