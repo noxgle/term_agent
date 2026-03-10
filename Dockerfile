@@ -52,8 +52,8 @@ RUN mkdir -p /root/.ssh && ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Expose SSH port
-EXPOSE 22
+# Expose SSH and API ports
+EXPOSE 22 8000
 
 # Set entrypoint script as entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -36,12 +36,25 @@ echo "Available Commands:"
 echo "  ag              - Start term_ag.py AI agent"
 echo "  ask             - Start term_ask.py chat mode"
 echo "  prom            - Start PromptCreator.py"
+echo "API:"
+echo "  FastAPI server runs automatically on port 8000"
 echo ""
 echo "Connection Example:"
 echo "  ssh root@localhost -p 2222"
 echo "  ssh root@<host-ip> -p 2222"
 echo ""
 echo "=========================================="
+if [ "${API_ENABLE:-true}" != "false" ]; then
+    echo "Starting API server..."
+    mkdir -p /app/logs
+    API_HOST="${API_HOST:-0.0.0.0}"
+    API_PORT="${API_PORT:-8000}"
+    /app/.venv/bin/python /app/term_api.py > /app/logs/api.log 2>&1 &
+    echo "API server running at http://${API_HOST}:${API_PORT}"
+else
+    echo "API server disabled (API_ENABLE=false)"
+fi
+
 echo "Starting SSH daemon..."
 echo "=========================================="
 

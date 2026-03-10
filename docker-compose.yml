@@ -7,6 +7,7 @@ services:
     container_name: term-agent-container
     ports:
       - "2222:22"  # Map SSH port to host port 2222 to avoid conflicts
+      - "8000:8000"  # API port
     volumes:
       - ./.env:/app/.env:ro  # Mount .env file read-only
       - ./logs:/app/logs  # Volume for logs
@@ -14,6 +15,9 @@ services:
       - ./prompt:/app/prompt  # Volume for prompt files
     environment:
       - TZ=Europe/Warsaw  # Set timezone
+      - API_ENABLE=true
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
     restart: unless-stopped
     stdin_open: true
     tty: true

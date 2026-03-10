@@ -16,6 +16,7 @@ This repository contains Docker setup files to run the Vault 3000 terminal AI ag
 - Volume mounts for configuration files
 - Bash aliases setup (ag, ask, prom)
 - Complete term_agent environment
+- Built-in FastAPI server (optional)
 
 ## Quick Start
 
@@ -42,11 +43,15 @@ docker pull ghcr.io/noxgle/term_agent:latest
 docker run -d \
   --name term-agent-container \
   -p 2222:22 \
+  -p 8000:8000 \
   -v $(pwd)/.env:/app/.env:ro \
   -v $(pwd)/logs:/app/logs \
   -v $(pwd)/goal:/app/goal \
   -v $(pwd)/prompt:/app/prompt \
   -e TZ=Europe/Warsaw \
+  -e API_ENABLE=true \
+  -e API_HOST=0.0.0.0 \
+  -e API_PORT=8000 \
   --restart unless-stopped \
   -it \
   ghcr.io/noxgle/term_agent:latest
@@ -84,6 +89,17 @@ ask
 prom
 ```
 
+## API Usage (HTTP)
+
+The API server starts automatically (unless `API_ENABLE=false`). Example:
+
+```bash
+curl -X POST http://localhost:8000/run \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"list files in current directory"}'
+```
+
 ## Environment Variables
 
 Create a `.env` file with your API keys:
@@ -119,6 +135,7 @@ LOG_TO_CONSOLE=false
 ### Ports
 
 - **22** (SSH) mapped to host port **2222**
+- **8000** (API) mapped to host port **8000**
 
 ### Volumes
 
@@ -136,6 +153,9 @@ docker-compose ps
 # View logs
 docker-compose logs -f
 
+# View API logs
+docker exec -it term-agent-container tail -f /app/logs/api.log
+
 # Stop container
 docker-compose down
 
@@ -152,6 +172,7 @@ docker exec -it term-agent-container /bin/bash
 - Change the default SSH password (123456) in the Dockerfile
 - Consider using SSH keys instead of password authentication
 - The .ssh directory is excluded from Docker build to prevent permission issues
+- If exposing the API publicly, set `API_SERVER_KEY` in your `.env` and pass `X-API-Key`
 
 ## Troubleshooting
 
