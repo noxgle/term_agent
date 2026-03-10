@@ -1598,7 +1598,7 @@ class VaultAIAgentRunner:
                     elif tool == "web_search_agent":
                         # Web search agent tool for internet research
                         query = action_item.get("query")
-                        engine = action_item.get("engine", "duckduckgo")
+                        engine = action_item.get("engine")
                         max_sources = action_item.get("max_sources", 5)
                         deep_search = action_item.get("deep_search", True)
                         explain = action_item.get("explain", "")
@@ -1619,7 +1619,11 @@ class VaultAIAgentRunner:
                             continue
                         
                         if not terminal.auto_accept:
-                            confirm_prompt_text = f"\nVaultAI> Agent suggests to search web for: '{query}' using {engine}. This is intended to: {explain}. Proceed? [y/N]: "
+                            effective_engine = (
+                                engine
+                                or (self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo")
+                            )
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to search web for: '{query}' using {effective_engine}. This is intended to: {explain}. Proceed? [y/N]: "
                             confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
                             if confirm != 'y':
                                 justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing the search and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
@@ -1629,7 +1633,11 @@ class VaultAIAgentRunner:
                         
                         terminal.print_console(f"\nVaultAI> Executing web search: {query}")
                         try:
-                            self.logger.info("Executing web search: query='%s', engine=%s; request_id=%s", query, engine, request_id)
+                            effective_engine = (
+                                engine
+                                or (self.web_search_agent.config.get("engine") if self.web_search_agent else "duckduckgo")
+                            )
+                            self.logger.info("Executing web search: query='%s', engine=%s; request_id=%s", query, effective_engine, request_id)
                         except Exception:
                             pass
                         
