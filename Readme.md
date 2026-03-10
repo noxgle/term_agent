@@ -411,6 +411,27 @@ python term_ag.py user@host
 python PromptCreator.py
 ```
 
+### API mode (FastAPI):
+
+```bash
+python term_api.py
+```
+
+Optional environment variables:
+
+- `API_HOST` (default `0.0.0.0`)
+- `API_PORT` (default `8000`)
+- `API_SERVER_KEY` (if set, pass `X-API-Key` header)
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/run \\
+  -H 'Content-Type: application/json' \\
+  -H 'X-API-Key: your_key_if_set' \\
+  -d '{\"goal\":\"list files in current directory\"}'
+```
+
 ### Loading a prompt/goal from a file
 
 You can load a prompt or goal from a file by typing:
@@ -438,6 +459,9 @@ If you answer `y`, you can type a new goal. The full conversation history is pre
 - `VaultAIAskRunner.py` – chat logic.
 - `VaultAiAgentRunner.py` – agent execution logic, tool dispatch, plan management.
 - `PromptCreator.py` – interactive prompt builder.
+- `term_api.py` – FastAPI entry point for HTTP usage.
+- `api/api_server.py` – FastAPI app and HTTP endpoints.
+- `api/api_agent.py` – non-interactive runner wrapper for API usage.
 - `ai/AICommunicationHandler.py` – AI API abstraction layer (OpenAI, Gemini, Ollama, OpenRouter).
 - `context/ContextManager.py` – conversation context and sliding window management.
 - `plan/ActionPlanManager.py` – action plan creation, step tracking, progress display.

@@ -30,11 +30,15 @@ You are Vault 3000, an AI terminal agent specialized in Linux administration, au
 term_agent/
 ├── term_ag.py                  # Main agent entry point (automation mode)
 ├── term_ask.py                 # Chat mode entry point (Q&A)
+├── term_api.py                 # FastAPI entry point (HTTP mode)
 ├── PromptCreator.py            # Interactive prompt builder tool
 ├── VaultAiAgentRunner.py       # Core agent execution logic
 ├── VaultAIAskRunner.py         # Chat mode logic
 ├── .env                        # Configuration (API keys, settings)
 ├── requirements.txt            # Python dependencies
+├── api/                        # HTTP API server
+│   ├── api_server.py           # FastAPI app and endpoints
+│   └── api_agent.py            # Non-interactive API runner wrapper
 ├── ai/                         # AI communication handlers
 │   └── AICommunicationHandler.py
 ├── context/                    # Context management
@@ -71,6 +75,9 @@ python term_ask.py
 
 # Start prompt creator tool
 python PromptCreator.py
+
+# Start API server
+python term_api.py
 ```
 
 ### Development Commands
@@ -169,6 +176,11 @@ def detect_linux_distribution(self):
    - Abstracts AI API calls
    - Handles retries and error handling
    - JSON response processing
+
+5. **API Server** (`api/api_server.py`, `api/api_agent.py`)
+   - FastAPI wrapper for HTTP execution
+   - Uses a non-interactive runner to avoid prompts
+   - Optional API key via `API_SERVER_KEY`
 
 ### Execution Modes
 
