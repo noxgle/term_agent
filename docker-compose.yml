@@ -11,8 +11,6 @@ services:
     volumes:
       - ./.env:/app/.env:ro  # Mount .env file read-only
       - ./logs:/app/logs  # Volume for logs
-      - ./goal:/app/goal  # Volume for goal files
-      - ./prompt:/app/prompt  # Volume for prompt files
     environment:
       - TZ=Europe/Warsaw  # Set timezone
       - API_ENABLE=true
@@ -22,7 +20,7 @@ services:
     stdin_open: true
     tty: true
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "22"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/22'"]
       interval: 10s
       timeout: 5s
       retries: 3
