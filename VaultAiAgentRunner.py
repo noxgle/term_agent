@@ -200,7 +200,8 @@ class VaultAIAgentRunner:
             try:
                 self.web_search_agent = WebSearchAgent(
                     ai_handler=self.ai_handler,
-                    logger=self.logger
+                    logger=self.logger,
+                    terminal=terminal
                 )
                 self.logger.info("WebSearchAgent initialized successfully")
             except Exception as e:

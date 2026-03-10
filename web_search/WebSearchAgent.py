@@ -77,7 +77,7 @@ class WebSearchAgent:
         'max_concurrent_fetches': 5,  # Limit concurrent async requests
     }
     
-    def __init__(self, ai_handler=None, logger=None, config: Dict[str, Any] = None):
+    def __init__(self, ai_handler=None, logger=None, config: Dict[str, Any] = None, terminal=None):
         """
         Initialize WebSearchAgent.
         
@@ -85,9 +85,11 @@ class WebSearchAgent:
             ai_handler: AI communication handler for intelligent decisions
             logger: Logger instance
             config: Configuration dictionary (overrides defaults and .env)
+            terminal: Terminal instance for console output (optional)
         """
         self.ai_handler = ai_handler
         self.logger = logger or self._create_dummy_logger()
+        self.terminal = terminal
         
         # Load configuration from .env and merge with defaults
         self.config = self.DEFAULT_CONFIG.copy()
@@ -302,11 +304,15 @@ class WebSearchAgent:
         elif engine == 'searxng':
             if not self._is_searxng_available():
                 self.logger.warning("SearxNG unavailable; falling back to DuckDuckGo.")
+                if self.terminal:
+                    self.terminal.print_console("[WARN] SearxNG unavailable; falling back to DuckDuckGo.")
                 return self._search_duckduckgo(query, max_results)
             try:
                 return self._search_searxng(query, max_results)
             except Exception as e:
                 self.logger.warning(f"SearxNG failed ({e}); falling back to DuckDuckGo.")
+                if self.terminal:
+                    self.terminal.print_console("[WARN] SearxNG failed; falling back to DuckDuckGo.")
                 return self._search_duckduckgo(query, max_results)
         else:
             raise ValueError(f"Unsupported search engine: {engine}")
