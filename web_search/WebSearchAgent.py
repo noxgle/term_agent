@@ -300,9 +300,39 @@ class WebSearchAgent:
         if engine == 'duckduckgo':
             return self._search_duckduckgo(query, max_results)
         elif engine == 'searxng':
-            return self._search_searxng(query, max_results)
+            if not self._is_searxng_available():
+                self.logger.warning("SearxNG unavailable; falling back to DuckDuckGo.")
+                print("[WARN] SearxNG unavailable; falling back to DuckDuckGo.")
+                return self._search_duckduckgo(query, max_results)
+            try:
+                return self._search_searxng(query, max_results)
+            except Exception as e:
+                self.logger.warning(f"SearxNG failed ({e}); falling back to DuckDuckGo.")
+                print("[WARN] SearxNG failed; falling back to DuckDuckGo.")
+                return self._search_duckduckgo(query, max_results)
         else:
             raise ValueError(f"Unsupported search engine: {engine}")
+
+    def _is_searxng_available(self) -> bool:
+        """
+        Lightweight availability check for SearxNG.
+        """
+        searxng_url = self.config['searxng_url'].rstrip("/")
+        test_url = f"{searxng_url}/search"
+        params = {
+            'q': 'ping',
+            'format': 'json',
+        }
+        timeout = min(5, int(self.config.get('timeout', 30)))
+        try:
+            response = requests.get(test_url, params=params, timeout=timeout)
+            if response.status_code != 200:
+                return False
+            # SearxNG returns JSON; ensure it parses
+            response.json()
+            return True
+        except Exception:
+            return False
     
     def _search_duckduckgo(self, query: str, max_results: int) -> List[Dict]:
         """
