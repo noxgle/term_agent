@@ -439,53 +439,53 @@ Optional environment variables:
 Example request:
 
 ```bash
-curl -X POST http://localhost:8000/run \\
-  -H 'Content-Type: application/json' \\
-  -H 'X-API-Key: your_key_if_set' \\
-  -d '{\"goal\":\"list files in current directory\"}'
+curl -X POST http://localhost:8000/run \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"list files in current directory"}'
 ```
 
 Async single request:
 
 ```bash
-curl -X POST http://localhost:8000/run_async \\
-  -H 'Content-Type: application/json' \\
-  -H 'X-API-Key: your_key_if_set' \\
-  -d '{\"goal\":\"list files in current directory\"}'
+curl -X POST http://localhost:8000/run_async \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"list files in current directory"}'
 ```
 
 Batch async requests:
 
 ```bash
-curl -X POST http://localhost:8000/runs \\
-  -H 'Content-Type: application/json' \\
-  -H 'X-API-Key: your_key_if_set' \\
-  -d '{\"requests\":[{\"goal\":\"list files\"},{\"goal\":\"show uptime\"}]}'
+curl -X POST http://localhost:8000/runs \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"requests":[{"goal":"list files"},{"goal":"show uptime"}]}'
 ```
 
 Check job status:
 
 ```bash
-curl -X GET http://localhost:8000/runs/<job_id> \\
+curl -X GET http://localhost:8000/runs/<job_id> \
   -H 'X-API-Key: your_key_if_set'
 ```
 
 Remote SSH example:
 
 ```bash
-curl -X POST http://localhost:8000/run_async \\
-  -H 'Content-Type: application/json' \\
-  -H 'X-API-Key: your_key_if_set' \\
-  -d '{\"goal\":\"check disk space\",\"host\":\"192.168.1.10\",\"user\":\"root\",\"port\":22,\"ssh_password\":\"your_password\"}'
+curl -X POST http://localhost:8000/run_async \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"check disk space","host":"192.168.1.10","user":"root","port":22,"ssh_password":"your_password"}'
 ```
 
 Custom system prompt example:
 
 ```bash
-curl -X POST http://localhost:8000/run_async \\
-  -H 'Content-Type: application/json' \\
-  -H 'X-API-Key: your_key_if_set' \\
-  -d '{\"goal\":\"list running services\",\"system_prompt_agent\":\"You are a cautious Linux admin. Avoid destructive commands.\"}'
+curl -X POST http://localhost:8000/run_async \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"list running services","system_prompt_agent":"You are a cautious Linux admin. Avoid destructive commands."}'
 ```
 
 ### Loading a prompt/goal from a file
