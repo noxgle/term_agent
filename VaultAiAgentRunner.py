@@ -117,7 +117,7 @@ class VaultAIAgentRunner:
                 '- {"tool":"create_action_plan","goal":"...","explain":"..."}\n'
                 '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
                 "Completion:\n"
-                '- {"tool":"finish","summary":"detailed summary"}\n\n'
+                '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task"}\n\n'
 
                 "## ERROR HANDLING\n"
                 "After bash execution check exit_code:\n"
