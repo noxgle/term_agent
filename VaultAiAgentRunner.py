@@ -173,6 +173,11 @@ class VaultAIAgentRunner:
         self.steps = []
         self.summary = ""
 
+        # Performance summary visibility (controlled via .env)
+        self.show_performance_summary = (
+            os.getenv("SHOW_PERFORMANCE_SUMMARY", "false").lower() == "true"
+        )
+
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
         self.ai_handler = AICommunicationHandler(terminal, logger=self.logger)
@@ -1763,7 +1768,10 @@ class VaultAIAgentRunner:
                 keep_running = False
 
             # Display comprehensive performance summary at the end of each task
-            if self.timings or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage):
+            if self.show_performance_summary and (
+                self.timings
+                or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage)
+            ):
                 self.terminal.print_console("\n" + "="*60)
                 self.terminal.print_console("PERFORMANCE SUMMARY")
                 self.terminal.print_console("="*60)

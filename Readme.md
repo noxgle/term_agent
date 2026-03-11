@@ -193,7 +193,7 @@ The agent can search the internet during task execution using the built-in **Web
 
 ### Required dependencies for web search:
 ```bash
-pip install duckduckgo-search beautifulsoup4 lxml
+pip install ddgs beautifulsoup4 lxml
 ```
 
 ### Web search `.env` configuration:
@@ -245,7 +245,7 @@ The **Prompt Creator** is an interactive assistant that helps you build high-qua
 
 ### Optional dependencies (for web search):
 ```bash
-pip install duckduckgo-search beautifulsoup4 lxml
+pip install ddgs beautifulsoup4 lxml
 ```
 
 ## Installation
@@ -297,7 +297,7 @@ cp .env.copy .env
 # Edit .env with your API keys (OpenAI, Google, etc.)
 
 # Build the container
-docker-compose.up -d
+docker compose up -d
 
 # Alternative: build manually
 docker build -t vault3000/term-agent .
@@ -364,6 +364,8 @@ SSH_REMOTE_TIMEOUT=300
 AUTO_ACCEPT=false
 # auto explain generated commands before execution
 AUTO_EXPLAIN_COMMAND=true
+# show performance summary after task completion
+SHOW_PERFORMANCE_SUMMARY=false
 
 # logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO
@@ -379,6 +381,13 @@ WEB_SEARCH_MIN_CONFIDENCE=0.7
 WEB_SEARCH_TIMEOUT=30
 WEB_SEARCH_EXTRACT_CONTENT=true
 WEB_SEARCH_MAX_CONTENT_LENGTH=10000
+
+# API server configuration
+API_ENABLE=true
+API_HOST=0.0.0.0
+API_PORT=8000
+API_SERVER_KEY=your_api_key_here
+API_MAX_WORKERS=4
 ```
 
 ## Usage
@@ -419,10 +428,13 @@ python term_api.py
 
 Optional environment variables:
 
-- `API_HOST` (default `0.0.0.0`)
-- `API_PORT` (default `8000`)
-- `API_SERVER_KEY` (if set, pass `X-API-Key` header)
-- `API_MAX_WORKERS` (default `4`, maksymalna liczba zadań wykonywanych równolegle; nadmiar trafia do kolejki)
+| Variable | Default | Description |
+| --- | --- | --- |
+| `API_HOST` | `0.0.0.0` | Adres, na którym nasłuchuje serwer API |
+| `API_PORT` | `8000` | Port serwera API |
+| `API_SERVER_KEY` | (empty) | Opcjonalny klucz wymagany w nagłówku `X-API-Key` |
+| `API_MAX_WORKERS` | `4` | Maksymalna liczba zadań wykonywanych równolegle; nadmiar trafia do kolejki |
+| `API_ENABLE` | `true` | Przełącznik uruchomienia API |
 
 Example request:
 
