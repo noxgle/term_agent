@@ -124,7 +124,7 @@ GOOGLE_API_KEY=google_api_key_here
 SSH_REMOTE_TIMEOUT=360
 AUTO_ACCEPT=false
 
- # poziom logowania: DEBUG, INFO, WARNING, ERROR, CRITICAL
+ # logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=DEBUG         
 LOG_FILE=app.log      
 LOG_TO_CONSOLE=false

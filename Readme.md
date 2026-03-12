@@ -25,13 +25,13 @@
 - [License](#license)
 
 ## Features
-
-- **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
 - **Task automation**: The agent can perform tasks and commands based on user goals.
+- **API**: The agent can be accessed via the API.
 - **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud), OpenRouter (unified API for multiple models).
 - **Local and remote execution (SSH)**: Run commands on your machine or remote hosts.
 - **Configurable via `.env`**: Easily switch engines and settings.
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
+- **Chat mode**: Talk to Vault 3000 in the console, with conversation memory.
 - **Advanced Prompt Creator**: Interactive tool for building precise, detailed prompts for AI agents. Guides you step-by-step, asks clarifying questions, and combines your answers into a single, actionable prompt. Supports multiline input (Ctrl+S), Fallout-style colors, and easy confirmation with Enter.
 - **Two Operating Modes**: Work with the agent in **Collaborative Mode** (interactive confirmation for each command) or **Fully Automatic Mode** (agent executes commands autonomously). Switch dynamically during a session with Ctrl+A or configure via `.env` file.
 - **Interactive Action Plan Management**: Before execution, the agent generates a step-by-step plan. In Collaborative Mode you can accept, reject, or edit the plan. The AI revises the plan based on your feedback.
@@ -422,6 +422,10 @@ python PromptCreator.py
 
 ### API mode (FastAPI):
 
+The HTTP API exposes simple endpoints to run agent tasks synchronously or asynchronously.
+Use `/run` for a single blocking request, `/run_async` for a background job, and `/runs` to submit batches.
+If `API_SERVER_KEY` is set, include it in the `X-API-Key` header for all requests.
+
 ```bash
 python term_api.py
 ```
@@ -430,11 +434,11 @@ Optional environment variables:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `API_HOST` | `0.0.0.0` | Adres, na którym nasłuchuje serwer API |
-| `API_PORT` | `8000` | Port serwera API |
-| `API_SERVER_KEY` | (empty) | Opcjonalny klucz wymagany w nagłówku `X-API-Key` |
-| `API_MAX_WORKERS` | `4` | Maksymalna liczba zadań wykonywanych równolegle; nadmiar trafia do kolejki |
-| `API_ENABLE` | `true` | Przełącznik uruchomienia API |
+| `API_HOST` | `0.0.0.0` | Address where the API server is listening |
+| `API_PORT` | `8000` | API server port |
+| `API_SERVER_KEY` | (empty) | Optional key required in X-API-Key header |
+| `API_MAX_WORKERS` | `4` | Maximum number of tasks executed in parallel; excess goes to queue |
+| `API_ENABLE` | `true` | API startup switch |
 
 Example request:
 
