@@ -68,6 +68,7 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
 
     return {
         "summary": runner.summary,
+        "goal_success": runner.goal_success,
         "steps": runner.steps,
         "timings": runner.timings,
         "token_usage": getattr(runner.ai_handler, "token_usage", None),

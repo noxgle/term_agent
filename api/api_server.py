@@ -52,6 +52,7 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: str
     result: Optional[RunResponse] = None
+    goal_success: Optional[bool] = None
     error: Optional[str] = None
     submitted_at: float
     started_at: Optional[float] = None
@@ -92,16 +93,19 @@ def _run_job(job_id: str, params: ApiRunParams) -> None:
         with _jobs_lock:
             _jobs[job_id]["status"] = "completed"
             _jobs[job_id]["result"] = result
+            _jobs[job_id]["goal_success"] = result.get("goal_success", None)
             _jobs[job_id]["finished_at"] = time.time()
     except ValueError as exc:
         with _jobs_lock:
             _jobs[job_id]["status"] = "failed"
             _jobs[job_id]["error"] = str(exc)
+            _jobs[job_id]["goal_success"] = False
             _jobs[job_id]["finished_at"] = time.time()
     except Exception as exc:
         with _jobs_lock:
             _jobs[job_id]["status"] = "failed"
             _jobs[job_id]["error"] = f"Agent error: {exc}"
+            _jobs[job_id]["goal_success"] = False
             _jobs[job_id]["finished_at"] = time.time()
 
 
@@ -134,6 +138,7 @@ def run_agent_async(payload: RunRequest, x_api_key: Optional[str] = Header(None)
             "finished_at": None,
             "result": None,
             "error": None,
+            "goal_success": None,
         }
 
     params = _build_params(payload)
@@ -156,6 +161,7 @@ def run_agent_batch(payload: BatchRunRequest, x_api_key: Optional[str] = Header(
                 "finished_at": None,
                 "result": None,
                 "error": None,
+                "goal_success": None,
             }
         params = _build_params(request)
         _executor.submit(_run_job, job_id, params)
@@ -178,6 +184,7 @@ def get_run_status(job_id: str, x_api_key: Optional[str] = Header(None)):
     return JobStatusResponse(
         job_id=job_id,
         status=job["status"],
+        goal_success=job["goal_success"],   
         result=RunResponse(**result) if result else None,
         error=job["error"],
         submitted_at=job["submitted_at"],

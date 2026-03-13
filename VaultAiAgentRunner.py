@@ -117,7 +117,7 @@ class VaultAIAgentRunner:
                 '- {"tool":"create_action_plan","goal":"...","explain":"..."}\n'
                 '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
                 "Completion:\n"
-                '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task", "goal_success":"true|false"}\n\n'
+                '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task", "goal_success":true|false}\n\n'
 
                 "## ERROR HANDLING\n"
                 "After bash execution check exit_code:\n"
@@ -172,6 +172,7 @@ class VaultAIAgentRunner:
 
         self.steps = []
         self.summary = ""
+        self.goal_success = False
 
         # Performance summary visibility (controlled via .env)
         self.show_performance_summary = (
@@ -1114,6 +1115,12 @@ class VaultAIAgentRunner:
 
                     elif tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
+                        goal_success = action_item.get("goal_success", None)
+                        if isinstance(goal_success, bool):
+                            self.goal_success = goal_success
+                        else:
+                            self.logger.warning(f"Invalid or missing 'goal_success' value in finish tool: {goal_success}. Expected a boolean. Defaulting to False. request_id={request_id}")
+                            self.goal_success = False
                         
                         # Check if plan exists and if all steps are completed before allowing finish
                         if self.plan_manager.steps:
