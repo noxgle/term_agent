@@ -474,6 +474,13 @@ curl -X GET http://localhost:8000/runs/<job_id> \
   -H 'X-API-Key: your_key_if_set'
 ```
 
+Cancel job:
+
+```bash
+curl -X DELETE http://localhost:8000/runs/<job_id> \
+  -H 'X-API-Key: your_key_if_set'
+```
+
 Remote SSH example:
 
 ```bash

@@ -17,6 +17,11 @@ services:
       - API_SERVER_KEY=${API_SERVER_KEY:-}
       - API_MAX_WORKERS=${API_MAX_WORKERS:-4}
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
     stdin_open: true
     tty: true
     healthcheck:

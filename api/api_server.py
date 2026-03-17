@@ -85,6 +85,9 @@ def _build_params(payload: RunRequest) -> ApiRunParams:
 
 def _run_job(job_id: str, params: ApiRunParams) -> None:
     with _jobs_lock:
+        if _jobs[job_id]["status"] == "canceled":
+            _jobs[job_id]["finished_at"] = time.time()
+            return
         _jobs[job_id]["status"] = "running"
         _jobs[job_id]["started_at"] = time.time()
 
@@ -139,10 +142,13 @@ def run_agent_async(payload: RunRequest, x_api_key: Optional[str] = Header(None)
             "result": None,
             "error": None,
             "goal_success": None,
+            "future": None,
         }
 
     params = _build_params(payload)
-    _executor.submit(_run_job, job_id, params)
+    future = _executor.submit(_run_job, job_id, params)
+    with _jobs_lock:
+        _jobs[job_id]["future"] = future
     return SubmitResponse(job_id=job_id)
 
 
@@ -159,12 +165,15 @@ def run_agent_batch(payload: BatchRunRequest, x_api_key: Optional[str] = Header(
                 "submitted_at": time.time(),
                 "started_at": None,
                 "finished_at": None,
-                "result": None,
-                "error": None,
-                "goal_success": None,
-            }
+            "result": None,
+            "error": None,
+            "goal_success": None,
+            "future": None,
+        }
         params = _build_params(request)
-        _executor.submit(_run_job, job_id, params)
+        future = _executor.submit(_run_job, job_id, params)
+        with _jobs_lock:
+            _jobs[job_id]["future"] = future
         job_ids.append(job_id)
 
     return BatchSubmitResponse(job_ids=job_ids)
@@ -184,7 +193,55 @@ def get_run_status(job_id: str, x_api_key: Optional[str] = Header(None)):
     return JobStatusResponse(
         job_id=job_id,
         status=job["status"],
-        goal_success=job["goal_success"],   
+        goal_success=job["goal_success"],
+        result=RunResponse(**result) if result else None,
+        error=job["error"],
+        submitted_at=job["submitted_at"],
+        started_at=job["started_at"],
+        finished_at=job["finished_at"],
+    )
+
+
+@app.delete("/runs/{job_id}", response_model=JobStatusResponse)
+def cancel_run(job_id: str, x_api_key: Optional[str] = Header(None)):
+    _verify_api_key(x_api_key)
+
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        if job["status"] in {"completed", "failed", "canceled"}:
+            result = job["result"]
+            return JobStatusResponse(
+                job_id=job_id,
+                status=job["status"],
+                goal_success=job["goal_success"],
+                result=RunResponse(**result) if result else None,
+                error=job["error"],
+                submitted_at=job["submitted_at"],
+                started_at=job["started_at"],
+                finished_at=job["finished_at"],
+            )
+
+        future = job.get("future")
+        if future and future.cancel():
+            job["status"] = "canceled"
+            job["goal_success"] = False
+            job["finished_at"] = time.time()
+        elif job["status"] == "queued":
+            job["status"] = "canceled"
+            job["goal_success"] = False
+            job["finished_at"] = time.time()
+        else:
+            job["error"] = "Job already running; cannot cancel"
+
+        result = job["result"]
+
+    return JobStatusResponse(
+        job_id=job_id,
+        status=job["status"],
+        goal_success=job["goal_success"],
         result=RunResponse(**result) if result else None,
         error=job["error"],
         submitted_at=job["submitted_at"],

@@ -115,7 +115,13 @@ class term_agent:
         # File handler with proper error handling
         if log_file:
             try:
-                file_handler = logging.FileHandler(f"{self.basedir}/{log_file}", encoding="utf-8")
+                logs_dir = os.path.join(self.basedir, "logs")
+                os.makedirs(logs_dir, exist_ok=True)
+                if os.path.isabs(log_file) or os.path.dirname(log_file):
+                    log_path = log_file
+                else:
+                    log_path = os.path.join(logs_dir, log_file)
+                file_handler = logging.FileHandler(log_path, encoding="utf-8")
                 file_handler.setLevel(getattr(logging, log_level, logging.INFO))
                 file_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
                 handlers.append(file_handler)
