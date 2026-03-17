@@ -100,7 +100,7 @@ class VaultAIAgentRunner:
                 "Maximum 1 plan creation per task.\n"
                 "If a plan exists:\n"
                 "- Continue execution within the existing plan\n"
-                "- Use update_plan_step after each step if plan was created\n"
+                "- Use update_plan_step after each step\n"
                 "- Adapt inside the plan instead of creating a new one\n\n"
 
                 "## EXECUTION FLOW\n"
