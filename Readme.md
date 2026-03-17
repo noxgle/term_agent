@@ -12,6 +12,7 @@
 - [Agent Tools](#agent-tools)
 - [Action Plan Management](#action-plan-management)
 - [Deep Analysis Sub-Agent](#deep-analysis-sub-agent)
+- [Critic Sub-Agent](#critic-sub-agent)
 - [Web Search Agent](#web-search-agent)
 - [Prompt Creator](#prompt-creator)
 - [Requirements](#requirements)
@@ -38,6 +39,7 @@
 - **Rich File Operations**: Agent has built-in tools to read, write, edit, copy, delete files and list directories — all with user confirmation in Collaborative Mode.
 - **Web Search Agent**: Agent can search the internet during task execution using DuckDuckGo (no API key required) or a self-hosted SearxNG instance. Supports multi-source aggregation and content extraction.
 - **Deep Analysis Sub-Agent**: After task completion, an optional sub-agent performs a comprehensive analysis of all session data (commands, outputs, file operations, web searches, plan steps) and generates a structured final report.
+- **Critic Sub-Agent**: When the agent reports success, a critic sub-agent scores how correct the final answer is (0–10) relative to the original prompt.
 - **Thread Continuation**: After finishing a task, you can continue the session with a new goal while preserving the full conversation history.
 - **Enhanced JSON Validator**: Robust JSON parsing with up to 3 automatic correction attempts when the AI returns malformed responses.
 - **Configurable Step Limit**: Built-in safeguard (`MAX_STEPS=100` by default) prevents infinite loops during task execution.
@@ -118,7 +120,7 @@ The agent communicates via JSON tool calls. Each tool is available to the AI dur
 ### Completion Tool
 | Tool | Description |
 |------|-------------|
-| `finish` | Signal task completion with a detailed summary. Triggers the optional Deep Analysis Sub-Agent. |
+| `finish` | Signal task completion with a detailed summary. On success, triggers the Critic Sub-Agent; also offers the optional Deep Analysis Sub-Agent. |
 
 All file and search operations in **Collaborative Mode** ask for user confirmation (`[y/N]`) before proceeding. If refused, the user is prompted for a justification that is fed back to the AI.
 
@@ -173,6 +175,15 @@ VaultAI> Run Deep Analysis Sub-Agent for a detailed session report? [y/N]:
 | **Final Verdict** | COMPLETED / PARTIALLY COMPLETED / FAILED |
 
 The report is rendered as formatted Markdown in the terminal with Vault-Tec themed panels.
+
+## Critic Sub-Agent
+
+When the agent finishes with `goal_success=true`, the **Critic Sub-Agent** automatically evaluates the answer correctness against the original prompt and assigns a score from 0 to 10.
+
+**Output includes:**
+- Rating (0–10)
+- Verdict (Correct / Partially / Incorrect)
+- Short rationale
 
 ## Web Search Agent
 
@@ -366,6 +377,8 @@ AUTO_ACCEPT=false
 AUTO_EXPLAIN_COMMAND=true
 # show performance summary after task completion
 SHOW_PERFORMANCE_SUMMARY=false
+# enable correctness critic on successful completion
+ENABLE_CRITIC_SUB_AGENT=true
 
 # logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO
@@ -533,6 +546,7 @@ If you answer `y`, you can type a new goal. The full conversation history is pre
 - `context/ContextManager.py` – conversation context and sliding window management.
 - `plan/ActionPlanManager.py` – action plan creation, step tracking, progress display.
 - `finish/FinishSubAgent.py` – deep analysis sub-agent for post-task reporting.
+- `critic/CriticSubAgent.py` – critic sub-agent for correctness scoring on successful completion.
 - `web_search/WebSearchAgent.py` – web search sub-agent (DuckDuckGo, SearxNG).
 - `file_operator/FileOperator.py` – file read/write/edit/copy/delete operations.
 - `security/SecurityValidator.py` – command security validation.

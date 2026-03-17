@@ -138,16 +138,16 @@ class term_agent:
         # Set up queue-based logging to prevent reentrant calls
         root_logger = logging.getLogger()
         root_logger.setLevel(getattr(logging, log_level, logging.INFO))
-        for handler in handlers:
-            handler.setLevel(getattr(logging, log_level, logging.INFO))
-            handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
-            root_logger.addHandler(handler)
 
-        # Create queue listener for thread-safe logging
+        # Route all logs through the queue handler only
+        queue_handler = QueueHandler(log_queue)
+        root_logger.handlers = []
+        root_logger.addHandler(queue_handler)
+
+        # Create queue listener for thread-safe logging (sinks)
         queue_listener = QueueListener(log_queue, *handlers)
         queue_listener.start()
-        self.logger = logging.getLogger("TerminalAIAgent")
-        self.logger.addHandler(QueueHandler(log_queue))
+
         self.logger = logging.getLogger("TerminalAIAgent")
         self.ai_engine = os.getenv("AI_ENGINE", "openai")
         # API key selection logic
@@ -619,10 +619,15 @@ class term_agent:
                 )
             self.logger.info(f"OpenRouter prompt: {prompt}")
             self.logger.debug(f"OpenRouter raw response: {response}")
-            return response.choices[0].message.content.strip()
+            content = response.choices[0].message.content
+            if content is None:
+                self.logger.error("OpenRouter response content is None")
+                return None
+            if isinstance(content, str):
+                return content.strip()
+            return str(content)
         except Exception as e:
             self.logger.error(f"OpenRouter connection error: {e}")
-            self.print_console(f"OpenRouter connection error: {e}")
             return None
 
     def run(self, command, remote=None):

@@ -45,6 +45,8 @@ term_agent/
 │   └── ContextManager.py
 ├── plan/                       # Action plan management
 │   └── ActionPlanManager.py
+├── critic/                     # Answer correctness critic sub-agent
+│   └── CriticSubAgent.py
 ├── file_operator/              # File operations
 │   └── FileOperator.py
 ├── security/                   # Security validation
@@ -181,6 +183,10 @@ def detect_linux_distribution(self):
    - FastAPI wrapper for HTTP execution
    - Uses a non-interactive runner to avoid prompts
    - Optional API key via `API_SERVER_KEY`
+
+6. **CriticSubAgent** (`critic/CriticSubAgent.py`)
+   - Evaluates final answer correctness when `goal_success=true`
+   - Produces a 0–10 rating with a short rationale
 
 ### Execution Modes
 

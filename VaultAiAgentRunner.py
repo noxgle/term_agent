@@ -29,6 +29,13 @@ try:
 except ImportError:
     FINISH_SUB_AGENT_AVAILABLE = False
 
+# Import CriticSubAgent for answer correctness scoring
+try:
+    from critic.CriticSubAgent import CriticSubAgent
+    CRITIC_SUB_AGENT_AVAILABLE = True
+except ImportError:
+    CRITIC_SUB_AGENT_AVAILABLE = False
+
 # Import our enhanced JSON validator
 try:
     from json_validator.JsonValidator import create_validator
@@ -93,7 +100,7 @@ class VaultAIAgentRunner:
                 "Maximum 1 plan creation per task.\n"
                 "If a plan exists:\n"
                 "- Continue execution within the existing plan\n"
-                "- Use update_plan_step after each step\n"
+                "- Use update_plan_step after each step if plan was created\n"
                 "- Adapt inside the plan instead of creating a new one\n\n"
 
                 "## EXECUTION FLOW\n"
@@ -173,10 +180,17 @@ class VaultAIAgentRunner:
         self.steps = []
         self.summary = ""
         self.goal_success = False
+        self.critic_rating = 0
+        self.critic_verdict = ""
+        self.critic_rationale = ""
 
         # Performance summary visibility (controlled via .env)
         self.show_performance_summary = (
             os.getenv("SHOW_PERFORMANCE_SUMMARY", "false").lower() == "true"
+        )
+        # Critic Sub-Agent toggle (controlled via .env)
+        self.enable_critic_sub_agent = (
+            os.getenv("ENABLE_CRITIC_SUB_AGENT", "true").lower() == "true"
         )
 
         # Initialize SecurityValidator for command validation and security checks
@@ -229,6 +243,23 @@ class VaultAIAgentRunner:
                 self.logger.warning(f"Failed to initialize FinishSubAgent: {e}")
         else:
             self.logger.warning("FinishSubAgent not available")
+
+        # Initialize CriticSubAgent for correctness scoring on successful completion
+        self.critic_sub_agent = None
+        if CRITIC_SUB_AGENT_AVAILABLE and self.enable_critic_sub_agent:
+            try:
+                self.critic_sub_agent = CriticSubAgent(
+                    terminal=terminal,
+                    ai_handler=self.ai_handler,
+                    logger=self.logger
+                )
+                self.logger.info("CriticSubAgent initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize CriticSubAgent: {e}")
+        elif CRITIC_SUB_AGENT_AVAILABLE and not self.enable_critic_sub_agent:
+            self.logger.info("CriticSubAgent disabled by ENABLE_CRITIC_SUB_AGENT")
+        else:
+            self.logger.warning("CriticSubAgent not available")
 
         # Initialize timing tracking for performance monitoring
         self.timings: Dict[str, Dict[str, float]] = {}
@@ -1148,6 +1179,25 @@ class VaultAIAgentRunner:
                         except Exception:
                             pass
 
+                        # --- CriticSubAgent: Correctness Score (only on success) ---
+                        if (
+                            self.goal_success
+                            and self.enable_critic_sub_agent
+                            and self.critic_sub_agent is not None
+                        ):
+                            try:
+                                critic_result = self.critic_sub_agent.run(
+                                    user_goal=self.user_goal,
+                                    agent_summary=summary_text,
+                                )
+                                self.critic_rating = critic_result.get("rating", 0)
+                                self.critic_verdict = critic_result.get("verdict", "")
+                                self.critic_rationale = critic_result.get("rationale", "")
+                            except Exception as e:
+                                terminal.print_console(f"\n[WARN] Critic Sub-Agent encountered an error: {e}")
+                                self.logger.warning("CriticSubAgent.run failed: %s", e)
+                        # --- End CriticSubAgent ---
+
                         # --- FinishSubAgent: Deep Analysis ---
                         # Ask user whether to run the deep analysis sub-agent
                         if self.finish_sub_agent is not None:
@@ -1762,6 +1812,9 @@ class VaultAIAgentRunner:
 
                     self.steps = []
                     self.summary = ""
+                    self.critic_rating = 0
+                    self.critic_verdict = ""
+                    self.critic_rationale = ""
                     # Update the goal and reset plan for the new task
                     self.user_goal = new_instruction
                     self.plan_manager.clear()
