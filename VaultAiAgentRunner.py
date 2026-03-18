@@ -1536,6 +1536,10 @@ class VaultAIAgentRunner:
         if self.compact_mode:
             self._run_compact_pipeline()
             if not self.hybrid_mode or not self._compact_should_fallback():
+                summary_text = self.summary or "Agent reported task finished."
+                self.terminal.print_console(
+                    f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}"
+                )
                 if self.show_performance_summary and (
                     self.timings
                     or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage)
