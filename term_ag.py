@@ -947,7 +947,7 @@ Controls:
   Ctrl+A    Toggle automatic mode (one-way)
   Ctrl+C    Exit program
         """)
-
+    
     ai_status, mode_owner, ai_model = agent.check_ai_online()
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print("Mode: Linux Terminal AI Agent.")
@@ -962,18 +962,22 @@ Controls:
         agent.console.print("[red]Model: is offline.[/]\n")
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
-
+    
     compact_mode_override = None
     hybrid_mode_override = None
     if args.compact:
+        agent.console.print("[yellow]Agent Compact mode enabled.[/]\n")
         compact_mode_override = True
         hybrid_mode_override = False
     elif args.legacy:
+        agent.console.print("[yellow]Agent Legacy mode enabled.[/]\n")
         compact_mode_override = False
         hybrid_mode_override = False
-    elif args.hybrid:
+    else:
+        agent.console.print("[yellow]Agent Hybrid mode enabled.[/]\n")
         compact_mode_override = True
         hybrid_mode_override = True
+
 
     # Handle --prompt flag: Run Prompt Creator Sub-Agent
     if args.prompt:

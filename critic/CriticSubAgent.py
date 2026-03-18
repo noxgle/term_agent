@@ -62,7 +62,7 @@ class CriticSubAgent:
             dict: Parsed critic result with rating, verdict, and rationale
         """
         self.terminal.print_console(
-            "\nVault 3000 Critic Sub-Agent initializing..."
+            "\nVaultAI> Critic Sub-Agent initializing..."
         )
         self.logger.info("CriticSubAgent: Starting critique for goal: %s", user_goal)
 
