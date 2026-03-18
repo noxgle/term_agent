@@ -25,7 +25,14 @@ class AICommunicationHandler:
             except Exception as e:
                 self.logger.warning(f"AICommunicationHandler: Failed to initialize JSON validator: {e}")
 
-    def send_request(self, system_prompt: str, user_prompt: str, request_format: str = "json") -> Optional[str]:
+    def send_request(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        request_format: str = "json",
+        operation: str = "ai_request",
+        max_tokens: Optional[int] = None,
+    ) -> Optional[str]:
         """
         Handles AI communication with retries and standardized error handling.
         
@@ -33,11 +40,13 @@ class AICommunicationHandler:
             system_prompt: Base system instructions for the AI
             user_prompt: User-provided prompt content
             request_format: Expected response format ('json' or 'text')
+            operation: Operation name for token accounting
+            max_tokens: Optional max tokens for the model response
             
         Returns:
             AI response content or None on failure
         """
-        max_attempts = 5
+        max_attempts = 1 if operation.startswith("compact_") else 5
         base_delay = 10  # seconds
         
         # Calculate input tokens for tracking
@@ -46,7 +55,7 @@ class AICommunicationHandler:
         
         for attempt in range(1, max_attempts + 1):
             try:
-                response = self._call_ai_api(system_prompt, user_prompt)
+                response = self._call_ai_api(system_prompt, user_prompt, max_tokens=max_tokens)
                 if not response:
                     raise ValueError("Empty response from AI")
                 
@@ -55,7 +64,7 @@ class AICommunicationHandler:
                 
                 # Track token usage
                 self._track_token_usage(
-                    operation="ai_request",
+                    operation=operation,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     attempt=attempt
@@ -73,20 +82,20 @@ class AICommunicationHandler:
         
         return None
 
-    def _call_ai_api(self, system_prompt: str, user_prompt: str) -> Optional[str]:
+    def _call_ai_api(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
         """Route request to appropriate AI engine"""
         engine = self.terminal.ai_engine
         
         if engine == "ollama":
-            return self.terminal.connect_to_ollama(system_prompt, user_prompt)
+            return self.terminal.connect_to_ollama(system_prompt, user_prompt, max_tokens=max_tokens)
         elif engine == "ollama-cloud":
-            return self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt)
+            return self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt, max_tokens=max_tokens)
         elif engine == "google":
-            return self.terminal.connect_to_gemini(f"{system_prompt}\n{user_prompt}")
+            return self.terminal.connect_to_gemini(f"{system_prompt}\n{user_prompt}", max_tokens=max_tokens)
         elif engine == "openai":
-            return self.terminal.connect_to_chatgpt(system_prompt, user_prompt)
+            return self.terminal.connect_to_chatgpt(system_prompt, user_prompt, max_tokens=max_tokens)
         elif engine == "openrouter":
-            return self.terminal.connect_to_openrouter(system_prompt, user_prompt)
+            return self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=max_tokens)
         else:
             raise ValueError(f"Unsupported AI engine: {engine}")
 

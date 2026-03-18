@@ -6,8 +6,9 @@ import shutil
 import subprocess
 import time
 import uuid
+import hashlib
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, Any, List, Tuple
 from user.UserInteractionHandler import UserInteractionHandler
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
@@ -54,7 +55,9 @@ class VaultAIAgentRunner:
                 user=None, 
                 host=None,
                 window_size=20,
-                max_steps=None
+                max_steps=None,
+                compact_mode: Optional[bool] = None,
+                hybrid_mode: Optional[bool] = None
                 ):
         
         self.linux_distro = None
@@ -155,6 +158,52 @@ class VaultAIAgentRunner:
         else:
             self.system_prompt_agent = system_prompt_agent
 
+        # Compact pipeline defaults (can be overridden by env or explicit param)
+        env_raw = os.getenv("AGENT_MODE")
+        if env_raw is None:
+            env_raw = os.getenv("COMPACT_MODE", "hybrid")
+        env_value = env_raw.strip().lower()
+        env_mode = "hybrid"
+        if env_value in ("0", "false", "no", "off", "legacy"):
+            env_mode = "legacy"
+        elif env_value in ("1", "true", "yes", "on", "compact"):
+            env_mode = "compact"
+        elif env_value in ("auto", "hybrid"):
+            env_mode = "hybrid"
+
+        self.hybrid_mode = env_mode == "hybrid"
+        self.compact_mode = env_mode != "legacy"
+
+        if compact_mode is not None:
+            self.compact_mode = bool(compact_mode)
+            if not self.compact_mode:
+                self.hybrid_mode = False
+
+        if hybrid_mode is not None:
+            self.hybrid_mode = bool(hybrid_mode)
+            if self.hybrid_mode:
+                self.compact_mode = True
+        self.compact_max_output_chars = 200
+        self.compact_max_display_chars = 4000
+        self.compact_max_output_tokens = 600
+        self.compact_max_summary_tokens = 800
+
+        self.system_prompt_compact_single = (
+            "You are Vault 3000 Compact. Follow these rules:\n"
+            "- Output JSON only. No prose, no markdown.\n"
+            "- Use ONLY the provided TASK and STATE.\n"
+            "- Do not assume any hidden context or history.\n"
+            "- Keep all strings concise (<200 chars when possible).\n"
+            "- Max 5 actions.\n"
+        )
+        self.system_prompt_compact_repair = (
+            "You are Vault 3000 Compact. Output JSON only. No prose. "
+            "Use ONLY the provided TASK and STATE. Max 5 actions."
+        )
+        self.system_prompt_compact_final = (
+            "You are Vault 3000 Compact summarizer. Output JSON only. No prose outside JSON."
+        )
+
         self.terminal = terminal
         # Use the provided terminal logger for consistent logging across the app
         try:
@@ -183,6 +232,7 @@ class VaultAIAgentRunner:
         self.critic_rating = 0
         self.critic_verdict = ""
         self.critic_rationale = ""
+        self.compact_state = self._init_compact_state()
 
         # Performance summary visibility (controlled via .env)
         self.show_performance_summary = (
@@ -770,6 +820,545 @@ class VaultAIAgentRunner:
         state = getattr(self, "state", None)
         return self.context_manager.get_sliding_window_context(state)
 
+    # ------------------------------------------------------------------
+    # Compact pipeline helpers
+    # ------------------------------------------------------------------
+
+    def _init_compact_state(self) -> Dict[str, Any]:
+        return {
+            "task_id": uuid.uuid4().hex,
+            "goal": self.user_goal,
+            "mode": "compact",
+            "budget": {
+                "max_calls": 3,
+                "calls_used": 0,
+                "max_state_chars": 2000,
+                "max_actions": 5,
+            },
+            "facts": [],
+            "actions": [],
+            "results": [],
+            "errors": [],
+            "status": "new",
+            "final": {"summary": "", "goal_success": False},
+        }
+
+    def _cap_state_size(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        max_chars = int(state.get("budget", {}).get("max_state_chars", 2000))
+        if max_chars <= 0:
+            return state
+
+        def state_len() -> int:
+            try:
+                return len(json.dumps(state, ensure_ascii=False))
+            except Exception:
+                return len(str(state))
+
+        while state_len() > max_chars:
+            if state.get("results"):
+                state["results"].pop(0)
+                continue
+            if state.get("facts"):
+                state["facts"].pop(0)
+                continue
+            if state.get("errors"):
+                state["errors"].pop(0)
+                continue
+            break
+        return state
+
+    def _compress_output(self, text: Any, max_chars: Optional[int] = None) -> Tuple[str, str]:
+        if max_chars is None:
+            max_chars = self.compact_max_output_chars
+        raw = "" if text is None else str(text)
+        truncated = raw if len(raw) <= max_chars else raw[:max_chars]
+        digest = hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()
+        return truncated, f"sha256:{digest}"
+
+    def _compact_state_json(self, state: Dict[str, Any]) -> str:
+        self._cap_state_size(state)
+        return json.dumps(state, ensure_ascii=False, sort_keys=True)
+
+    def _compact_apply_state_update(self, state: Dict[str, Any], update: Any) -> None:
+        if not isinstance(update, dict):
+            return
+        for k, v in update.items():
+            if k in ("actions", "results", "errors", "facts"):
+                if isinstance(v, list):
+                    state[k] = v
+                else:
+                    continue
+            elif k in ("budget", "final"):
+                if isinstance(v, dict):
+                    state[k] = v
+                else:
+                    continue
+            elif k == "status":
+                if isinstance(v, str):
+                    state[k] = v
+            elif k == "goal":
+                if isinstance(v, str):
+                    state[k] = v
+            else:
+                state[k] = v
+
+    def _compact_build_prompt_single(self, state: Dict[str, Any]) -> str:
+        return (
+            f"TASK: {self.user_goal}\n"
+            f"STATE: {self._compact_state_json(state)}\n\n"
+            "Return one of:\n"
+            '1) {"kind":"final","summary":"...","goal_success":true|false,"state_update":{...}}\n'
+            '2) {"kind":"actions","actions":[...],"state_update":{...}}\n\n'
+            "Action schema:\n"
+            '{"tool":"bash|read_file|write_file|edit_file|list_directory|copy_file|delete_file","command_or_path":"...","timeout":30,"explain":"..."}'
+        )
+
+    def _compact_build_prompt_repair(
+        self,
+        state: Dict[str, Any],
+        errors: List[str],
+        results: List[Dict[str, Any]],
+    ) -> str:
+        errors_json = json.dumps(errors, ensure_ascii=False)
+        results_json = json.dumps(results, ensure_ascii=False)
+        return (
+            f"TASK: {self.user_goal}\n"
+            f"STATE: {self._compact_state_json(state)}\n"
+            f"ERRORS: {errors_json}\n"
+            f"LAST_RESULTS: {results_json}\n\n"
+            "Return one of:\n"
+            '1) {"kind":"final","summary":"...","goal_success":false,"state_update":{...}}\n'
+            '2) {"kind":"actions","actions":[...],"state_update":{...}}'
+        )
+
+    def _compact_build_prompt_final(self, state: Dict[str, Any]) -> str:
+        return (
+            f"TASK: {self.user_goal}\n"
+            f"STATE: {self._compact_state_json(state)}\n\n"
+            "Return:\n"
+            '{"summary":"...","goal_success":true|false,"key_results":["..."],"followups":["..."],"state_update":{...}}'
+        )
+
+    def _compact_llm_json_call(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        operation: str,
+        max_tokens: int,
+        state: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        budget = state.get("budget", {})
+        max_calls = int(budget.get("max_calls", 3))
+        calls_used = int(budget.get("calls_used", 0))
+        if calls_used >= max_calls:
+            return None
+
+        budget["calls_used"] = calls_used + 1
+        state["budget"] = budget
+
+        response = self.ai_handler.send_request(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            request_format="json",
+            operation=operation,
+            max_tokens=max_tokens,
+        )
+        if response is None:
+            return None
+        try:
+            data = json.loads(response)
+        except Exception:
+            return None
+        if not isinstance(data, dict):
+            return None
+        return data
+
+    def _compact_record_action(self, state: Dict[str, Any], tool: str, input_text: str, timeout: int) -> str:
+        if not isinstance(state.get("actions"), list):
+            state["actions"] = []
+        action_id = f"a{len(state.get('actions', [])) + 1}"
+        state.setdefault("actions", []).append({
+            "id": action_id,
+            "tool": tool,
+            "input": input_text,
+            "timeout": timeout,
+        })
+        return action_id
+
+    def _compact_record_result(self, state: Dict[str, Any], action_id: str, code: int, out: str, out_hash: str, tool: str) -> None:
+        if not isinstance(state.get("results"), list):
+            state["results"] = []
+        state.setdefault("results", []).append({
+            "id": action_id,
+            "tool": tool,
+            "code": code,
+            "out": out,
+            "out_hash": out_hash,
+        })
+
+    def _compact_execute_single_action(self, action: Dict[str, Any], state: Dict[str, Any]) -> Tuple[bool, Optional[str]]:
+        terminal = self.terminal
+        tool = action.get("tool")
+        allowed_tools = {
+            "bash",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "list_directory",
+            "copy_file",
+            "delete_file",
+        }
+        if tool not in allowed_tools:
+            return False, f"Invalid tool: {tool}"
+
+        timeout = action.get("timeout") or 30
+        try:
+            timeout = int(timeout)
+        except Exception:
+            timeout = 30
+
+        if tool == "bash":
+            command = action.get("command") or action.get("command_or_path") or action.get("input")
+            explain = action.get("explain", "")
+            if not command:
+                return False, "Missing command for bash action"
+
+            if terminal.block_dangerous_commands:
+                is_valid, reason = self.security_validator.validate_command(command)
+                if not is_valid:
+                    return False, f"Command validation failed: {reason}"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Execute command: '{command}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused command execution"
+
+            terminal.print_console(f"\nVaultAI> Executing: {command}")
+            if terminal.ssh_connection:
+                remote = f"{terminal.user}@{terminal.host}" if terminal.user and terminal.host else terminal.host
+                password = getattr(terminal, "ssh_password", None)
+                out, code = terminal.execute_remote_pexpect(command, remote, password=password, timeout=timeout)
+            else:
+                out, code = terminal.execute_local(command, timeout=timeout)
+
+            out_str = out if isinstance(out, str) else str(out)
+            terminal.print_console(f"\n{out_str}")
+
+            out_compact, out_hash = self._compress_output(out_str)
+            action_id = self._compact_record_action(state, tool, command, timeout)
+            self._compact_record_result(state, action_id, int(code), out_compact, out_hash, tool)
+            return code == 0, None if code == 0 else f"Command failed with exit code {code}"
+
+        if tool == "read_file":
+            path = action.get("path") or action.get("command_or_path")
+            start_line = action.get("start_line")
+            end_line = action.get("end_line")
+            if not path:
+                return False, "Missing path for read_file"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Read file '{path}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused file read"
+
+            result = self.file_operator.read_file(path, start_line or None, end_line or None, "")
+            if result.get("success"):
+                content = result.get("content", "")
+                display = content if len(content) <= self.compact_max_display_chars else (
+                    content[: self.compact_max_display_chars] + "\n... (truncated)"
+                )
+                terminal.print_console(f"\n[OK] File '{path}' read successfully.")
+                terminal.print_console(f"\n{display}")
+                out_compact, out_hash = self._compress_output(content)
+                action_id = self._compact_record_action(state, tool, path, timeout)
+                self._compact_record_result(state, action_id, 0, out_compact, out_hash, tool)
+                return True, None
+            error = result.get("error", "Unknown error")
+            action_id = self._compact_record_action(state, tool, path, timeout)
+            out_compact, out_hash = self._compress_output(error)
+            self._compact_record_result(state, action_id, 1, out_compact, out_hash, tool)
+            return False, error
+
+        if tool == "write_file":
+            path = action.get("path") or action.get("command_or_path")
+            content = action.get("content")
+            if not path or content is None:
+                return False, "Missing path or content for write_file"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Write file '{path}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused file write"
+
+            success = self.file_operator.write_file(path, content, "")
+            action_id = self._compact_record_action(state, tool, path, timeout)
+            out_compact, out_hash = self._compress_output("ok" if success else "write failed")
+            self._compact_record_result(state, action_id, 0 if success else 1, out_compact, out_hash, tool)
+            return success, None if success else "Failed to write file"
+
+        if tool == "edit_file":
+            path = action.get("path") or action.get("command_or_path")
+            edit_action = action.get("action")
+            search = action.get("search")
+            replace = action.get("replace")
+            line = action.get("line")
+            if not path or not edit_action:
+                return False, "Missing path or action for edit_file"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Edit file '{path}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused file edit"
+
+            success = self.file_operator.edit_file(path, edit_action, search, replace, line, "")
+            action_id = self._compact_record_action(state, tool, path, timeout)
+            out_compact, out_hash = self._compress_output("ok" if success else "edit failed")
+            self._compact_record_result(state, action_id, 0 if success else 1, out_compact, out_hash, tool)
+            return success, None if success else "Failed to edit file"
+
+        if tool == "list_directory":
+            path = action.get("path") or action.get("command_or_path")
+            recursive = action.get("recursive", False)
+            pattern = action.get("pattern")
+            if not path:
+                return False, "Missing path for list_directory"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> List directory '{path}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused directory listing"
+
+            result = self.file_operator.list_directory(path, recursive, pattern or None, "")
+            if result.get("success"):
+                entries = result.get("entries", [])
+                total_count = result.get("total_count", len(entries))
+                terminal.print_console(f"\n[OK] Directory '{path}' listed ({total_count} entries).")
+                out_compact, out_hash = self._compress_output(json.dumps(entries[:50], ensure_ascii=False))
+                action_id = self._compact_record_action(state, tool, path, timeout)
+                self._compact_record_result(state, action_id, 0, out_compact, out_hash, tool)
+                return True, None
+            error = result.get("error", "Unknown error")
+            action_id = self._compact_record_action(state, tool, path, timeout)
+            out_compact, out_hash = self._compress_output(error)
+            self._compact_record_result(state, action_id, 1, out_compact, out_hash, tool)
+            return False, error
+
+        if tool == "copy_file":
+            source = action.get("source")
+            destination = action.get("destination")
+            overwrite = action.get("overwrite", False)
+            if not source or not destination:
+                spec = action.get("command_or_path") or action.get("input")
+                if spec and "->" in spec:
+                    parts = [p.strip() for p in spec.split("->", 1)]
+                    if len(parts) == 2:
+                        source, destination = parts[0], parts[1]
+            if not source or not destination:
+                return False, "Missing source or destination for copy_file"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Copy '{source}' to '{destination}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused copy"
+
+            result = self.file_operator.copy_file(source, destination, overwrite, "")
+            if result.get("success"):
+                terminal.print_console(f"\n[OK] Copied '{source}' to '{destination}'.")
+                action_id = self._compact_record_action(state, tool, f"{source} -> {destination}", timeout)
+                out_compact, out_hash = self._compress_output("ok")
+                self._compact_record_result(state, action_id, 0, out_compact, out_hash, tool)
+                return True, None
+            error = result.get("error", "Unknown error")
+            action_id = self._compact_record_action(state, tool, f"{source} -> {destination}", timeout)
+            out_compact, out_hash = self._compress_output(error)
+            self._compact_record_result(state, action_id, 1, out_compact, out_hash, tool)
+            return False, error
+
+        if tool == "delete_file":
+            path = action.get("path") or action.get("command_or_path")
+            backup = action.get("backup", False)
+            if not path:
+                return False, "Missing path for delete_file"
+
+            if not terminal.auto_accept:
+                confirm_prompt_text = f"\nVaultAI> Delete '{path}'? [y/N]: "
+                confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                if confirm != 'y':
+                    return False, "User refused delete"
+
+            result = self.file_operator.delete_file(path, backup, "")
+            if result.get("success"):
+                terminal.print_console(f"\n[OK] Deleted '{path}'.")
+                action_id = self._compact_record_action(state, tool, path, timeout)
+                out_compact, out_hash = self._compress_output("ok")
+                self._compact_record_result(state, action_id, 0, out_compact, out_hash, tool)
+                return True, None
+            error = result.get("error", "Unknown error")
+            action_id = self._compact_record_action(state, tool, path, timeout)
+            out_compact, out_hash = self._compress_output(error)
+            self._compact_record_result(state, action_id, 1, out_compact, out_hash, tool)
+            return False, error
+
+        return False, f"Unhandled tool: {tool}"
+
+    def _compact_execute_actions(self, actions: List[Dict[str, Any]], state: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        errors: List[str] = []
+        max_actions = int(state.get("budget", {}).get("max_actions", 5))
+        limited_actions = actions[:max_actions]
+        if len(actions) > max_actions:
+            errors.append(f"Truncated actions to max_actions={max_actions}")
+
+        for action in limited_actions:
+            if not isinstance(action, dict):
+                errors.append("Invalid action item (not object)")
+                continue
+            ok, err = self._compact_execute_single_action(action, state)
+            if not ok and err:
+                errors.append(err)
+
+        state.setdefault("errors", []).extend(errors)
+        self._cap_state_size(state)
+        return len(errors) == 0, errors
+
+    def _compact_local_summary(self, state: Dict[str, Any]) -> Tuple[str, bool]:
+        total_actions = len(state.get("actions", []))
+        total_errors = len(state.get("errors", []))
+        goal_success = total_errors == 0 and total_actions > 0
+        summary = (
+            f"Compact pipeline completed with {total_actions} action(s). "
+            f"Errors: {total_errors}."
+        )
+        return summary, goal_success
+
+    def _compact_should_fallback(self) -> bool:
+        if self.goal_success:
+            errors = self.compact_state.get("errors") if isinstance(self.compact_state, dict) else None
+            if isinstance(errors, list) and len(errors) == 0:
+                return False
+        status = None
+        if isinstance(self.compact_state, dict):
+            status = self.compact_state.get("status")
+        return status in (None, "blocked") or not self.goal_success
+
+    def _run_compact_pipeline(self) -> None:
+        terminal = self.terminal
+        state = self.compact_state or self._init_compact_state()
+        state["goal"] = self.user_goal
+        state["status"] = "running"
+        state["errors"] = []
+        state["actions"] = []
+        state["results"] = []
+        state.setdefault("budget", {}).setdefault("max_calls", 3)
+        state.setdefault("budget", {}).setdefault("max_actions", 5)
+        state.setdefault("budget", {}).setdefault("max_state_chars", 2000)
+        state["budget"]["calls_used"] = 0
+        self.compact_state = state
+
+        # Call 1: single-call decision or actions
+        single_prompt = self._compact_build_prompt_single(state)
+        single_response = self._compact_llm_json_call(
+            self.system_prompt_compact_single,
+            single_prompt,
+            operation="compact_single",
+            max_tokens=self.compact_max_output_tokens,
+            state=state,
+        )
+
+        if single_response is None:
+            summary, goal_success = self._compact_local_summary(state)
+            self.summary = summary
+            self.goal_success = goal_success
+            state["final"] = {"summary": summary, "goal_success": goal_success}
+            state["status"] = "done"
+            return
+
+        self._compact_apply_state_update(state, single_response.get("state_update"))
+
+        if single_response.get("kind") == "final":
+            summary = single_response.get("summary", "")
+            goal_success = bool(single_response.get("goal_success", False))
+            self.summary = summary
+            self.goal_success = goal_success
+            state["final"] = {"summary": summary, "goal_success": goal_success}
+            state["status"] = "done"
+            return
+
+        if single_response.get("kind") != "actions":
+            state.setdefault("errors", []).append("Invalid response kind")
+        else:
+            actions = single_response.get("actions", [])
+            if isinstance(actions, list):
+                success, errors = self._compact_execute_actions(actions, state)
+                state["status"] = "running" if success else "blocked"
+            else:
+                success, errors = False, ["Actions is not a list"]
+                state.setdefault("errors", []).extend(errors)
+                state["status"] = "blocked"
+
+            # Repair pass if needed and budget allows
+            if not success:
+                repair_prompt = self._compact_build_prompt_repair(
+                    state,
+                    state.get("errors", []),
+                    state.get("results", []),
+                )
+                repair_response = self._compact_llm_json_call(
+                    self.system_prompt_compact_repair,
+                    repair_prompt,
+                    operation="compact_repair",
+                    max_tokens=self.compact_max_output_tokens,
+                    state=state,
+                )
+                if repair_response:
+                    self._compact_apply_state_update(state, repair_response.get("state_update"))
+                    if repair_response.get("kind") == "final":
+                        summary = repair_response.get("summary", "")
+                        goal_success = bool(repair_response.get("goal_success", False))
+                        self.summary = summary
+                        self.goal_success = goal_success
+                        state["final"] = {"summary": summary, "goal_success": goal_success}
+                        state["status"] = "done"
+                        return
+                    if repair_response.get("kind") == "actions":
+                        actions = repair_response.get("actions", [])
+                        if isinstance(actions, list):
+                            success, _ = self._compact_execute_actions(actions, state)
+                            state["status"] = "running" if success else "blocked"
+                        else:
+                            state.setdefault("errors", []).append("Repair actions is not a list")
+                            state["status"] = "blocked"
+
+        # Final summary call if budget allows
+        final_prompt = self._compact_build_prompt_final(state)
+        final_response = self._compact_llm_json_call(
+            self.system_prompt_compact_final,
+            final_prompt,
+            operation="compact_final",
+            max_tokens=self.compact_max_summary_tokens,
+            state=state,
+        )
+
+        if final_response and "summary" in final_response:
+            summary = final_response.get("summary", "")
+            goal_success = bool(final_response.get("goal_success", False))
+            self.summary = summary
+            self.goal_success = goal_success
+            state["final"] = {"summary": summary, "goal_success": goal_success}
+            state["status"] = "done"
+            self._compact_apply_state_update(state, final_response.get("state_update"))
+        else:
+            summary, goal_success = self._compact_local_summary(state)
+            self.summary = summary
+            self.goal_success = goal_success
+            state["final"] = {"summary": summary, "goal_success": goal_success}
+            state["status"] = "done"
+
     def _parse_ai_response_with_enhanced_validator(self, ai_reply: str, request_id: str) -> tuple:
         """
         Parse AI response using the enhanced JSON validator for better error recovery.
@@ -939,6 +1528,32 @@ class VaultAIAgentRunner:
     def run(self):
         terminal = self.terminal
         keep_running = True
+
+        if self.force_plan:
+            self.compact_mode = False
+            self.hybrid_mode = False
+
+        if self.compact_mode:
+            self._run_compact_pipeline()
+            if not self.hybrid_mode or not self._compact_should_fallback():
+                if self.show_performance_summary and (
+                    self.timings
+                    or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage)
+                ):
+                    self.terminal.print_console("\n" + "="*60)
+                    self.terminal.print_console("PERFORMANCE SUMMARY")
+                    self.terminal.print_console("="*60)
+                    if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                        self._display_cost_optimization_recommendations()
+                    if self.timings:
+                        self._display_timing_summary()
+                    if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                        self._display_token_summary()
+                    self.terminal.print_console("="*60)
+                return
+            self.terminal.print_console("[WARN] Compact mode fallback to legacy pipeline.")
+            self.summary = ""
+            self.goal_success = False
 
         try:
             self.logger.info("Starting VaultAIAgentRunner.run for goal: %s", self.user_goal)

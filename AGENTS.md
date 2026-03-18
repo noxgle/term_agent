@@ -168,6 +168,7 @@ def detect_linux_distribution(self):
    - Executes agent workflows
    - Manages conversation flow
    - Handles plan execution
+   - Default compact pipeline: 1–3 LLM calls using only task + compact JSON state (no full history)
 
 3. **ActionPlanManager** (`plan/ActionPlanManager.py`)
    - Creates and manages execution plans

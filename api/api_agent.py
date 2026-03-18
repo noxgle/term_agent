@@ -26,6 +26,9 @@ class ApiRunParams:
     window_size: int = 20
     max_steps: Optional[int] = None
     ssh_password: Optional[str] = None
+    compact_mode: Optional[bool] = None
+    force_plan: Optional[bool] = None
+    pipeline_mode: Optional[str] = None
 
 
 def _build_terminal(params: ApiRunParams) -> term_agent:
@@ -54,6 +57,20 @@ def _build_terminal(params: ApiRunParams) -> term_agent:
 def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
     terminal = _build_terminal(params)
 
+    compact_mode = params.compact_mode
+    hybrid_mode = None
+    if params.pipeline_mode:
+        mode = params.pipeline_mode.strip().lower()
+        if mode == "compact":
+            compact_mode = True
+            hybrid_mode = False
+        elif mode == "legacy":
+            compact_mode = False
+            hybrid_mode = False
+        elif mode == "hybrid":
+            compact_mode = True
+            hybrid_mode = True
+
     runner = VaultAIApiAgentRunner(
         terminal=terminal,
         user_goal=params.goal,
@@ -62,7 +79,12 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         host=params.host,
         window_size=params.window_size,
         max_steps=params.max_steps,
+        compact_mode=compact_mode,
+        hybrid_mode=hybrid_mode,
     )
+
+    if params.force_plan:
+        runner.force_plan = True
 
     runner.run()
 

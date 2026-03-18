@@ -927,6 +927,13 @@ Controls:
                         help='Run Prompt Creator sub-agent to create a prompt with AI assistance')
     parser.add_argument('--plan', action='store_true',
                         help='Force action plan creation for the task')
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument('--compact', action='store_true',
+                            help='Force compact pipeline (overrides AGENT_MODE/COMPACT_MODE)')
+    mode_group.add_argument('--legacy', action='store_true',
+                            help='Force legacy pipeline (disables compact mode)')
+    mode_group.add_argument('--hybrid', action='store_true',
+                            help='Force hybrid pipeline (compact then fallback to legacy)')
 
     args = parser.parse_args()
     
@@ -956,6 +963,18 @@ Controls:
         agent.console.print("[red]Please check your API key and network connection.[/]\n")
         sys.exit(1)
 
+    compact_mode_override = None
+    hybrid_mode_override = None
+    if args.compact:
+        compact_mode_override = True
+        hybrid_mode_override = False
+    elif args.legacy:
+        compact_mode_override = False
+        hybrid_mode_override = False
+    elif args.hybrid:
+        compact_mode_override = True
+        hybrid_mode_override = True
+
     # Handle --prompt flag: Run Prompt Creator Sub-Agent
     if args.prompt:
         from prompt.PromptCreatorSubAgent import PromptCreatorSubAgent
@@ -974,7 +993,12 @@ Controls:
             if should_execute and final_prompt:
                 # Run VaultAIAgentRunner with the created prompt
                 agent.console.print(f"\nExecuting created prompt with VaultAI Agent...")
-                runner = VaultAIAgentRunner(agent, final_prompt)
+                runner = VaultAIAgentRunner(
+                    agent,
+                    final_prompt,
+                    compact_mode=compact_mode_override,
+                    hybrid_mode=hybrid_mode_override,
+                )
                 runner.run()
                 agent.console.print(f"\n{agent.maybe_print_finding()}")
             elif final_prompt:
@@ -1081,7 +1105,14 @@ Controls:
         agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
         sys.exit(1)
 
-    runner = VaultAIAgentRunner(agent, user_input_text, user=user, host=host)
+    runner = VaultAIAgentRunner(
+        agent,
+        user_input_text,
+        user=user,
+        host=host,
+        compact_mode=compact_mode_override,
+        hybrid_mode=hybrid_mode_override,
+    )
     
     # Check for --plan flag or [plan] keyword in prompt
     force_plan = args.plan

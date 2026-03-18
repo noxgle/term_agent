@@ -27,6 +27,9 @@ class RunRequest(BaseModel):
     window_size: int = Field(20, ge=5, le=200)
     max_steps: Optional[int] = Field(None, ge=1, le=500)
     ssh_password: Optional[str] = None
+    compact_mode: Optional[bool] = None
+    force_plan: Optional[bool] = None
+    pipeline_mode: Optional[str] = None
 
 
 class RunResponse(BaseModel):
@@ -74,6 +77,10 @@ def healthcheck():
 
 
 def _build_params(payload: RunRequest) -> ApiRunParams:
+    pipeline_mode = payload.pipeline_mode
+    compact_mode = payload.compact_mode
+    if pipeline_mode is None and compact_mode is None:
+        pipeline_mode = "hybrid"
     return ApiRunParams(
         goal=payload.goal,
         system_prompt_agent=payload.system_prompt_agent,
@@ -83,6 +90,9 @@ def _build_params(payload: RunRequest) -> ApiRunParams:
         window_size=payload.window_size,
         max_steps=payload.max_steps,
         ssh_password=payload.ssh_password,
+        compact_mode=compact_mode,
+        force_plan=payload.force_plan,
+        pipeline_mode=pipeline_mode,
     )
 
 

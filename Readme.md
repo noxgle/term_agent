@@ -375,6 +375,8 @@ SSH_REMOTE_TIMEOUT=300
 AUTO_ACCEPT=false
 # auto explain generated commands before execution
 AUTO_EXPLAIN_COMMAND=true
+# agent pipeline mode (compact, legacy, hybrid)
+AGENT_MODE=hybrid
 # show performance summary after task completion
 SHOW_PERFORMANCE_SUMMARY=false
 # enable correctness critic on successful completion
@@ -415,6 +417,14 @@ python term_ask.py
 
 ```bash
 python term_ag.py
+```
+
+Force compact or legacy pipeline:
+
+```bash
+python term_ag.py --compact
+python term_ag.py --legacy
+python term_ag.py --hybrid
 ```
 
 > **Operating Modes:** By default, the agent runs in **Collaborative Mode** and asks for confirmation before executing each command (`[y/N]`). To run in **Fully Automatic Mode**, either:
@@ -460,6 +470,26 @@ curl -X POST http://localhost:8000/run \
   -H 'Content-Type: application/json' \
   -H 'X-API-Key: your_key_if_set' \
   -d '{"goal":"list files in current directory"}'
+```
+
+If neither `pipeline_mode` nor `compact_mode` is provided, the API defaults to `pipeline_mode="hybrid"`.
+
+Force legacy mode and plan creation (API payload):
+
+```bash
+curl -X POST http://localhost:8000/run \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"create an action plan for nginx setup","compact_mode":false,"force_plan":true}'
+```
+
+Hybrid mode (API payload):
+
+```bash
+curl -X POST http://localhost:8000/run \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: your_key_if_set' \
+  -d '{"goal":"list files in /tmp","pipeline_mode":"hybrid"}'
 ```
 
 Async single request:
