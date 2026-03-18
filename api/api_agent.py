@@ -66,12 +66,18 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
 
     runner.run()
 
+    critic_enabled = getattr(runner, "enable_critic_sub_agent", False)
+    critic_available = runner.goal_success and critic_enabled
+
     return {
         "summary": runner.summary,
         "goal_success": runner.goal_success,
         "steps": runner.steps,
         "timings": runner.timings,
         "token_usage": getattr(runner.ai_handler, "token_usage", None),
+        "critic_rating": runner.critic_rating if critic_available else None,
+        "critic_verdict": runner.critic_verdict if critic_available else None,
+        "critic_rationale": runner.critic_rationale if critic_available else None,
     }
 
 

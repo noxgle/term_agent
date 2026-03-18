@@ -31,9 +31,13 @@ class RunRequest(BaseModel):
 
 class RunResponse(BaseModel):
     summary: str
+    goal_success: Optional[bool] = None
     steps: list
     timings: dict
     token_usage: Optional[dict] = None
+    critic_rating: Optional[int] = None
+    critic_verdict: Optional[str] = None
+    critic_rationale: Optional[str] = None
 
 
 class BatchRunRequest(BaseModel):
@@ -52,7 +56,6 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: str
     result: Optional[RunResponse] = None
-    goal_success: Optional[bool] = None
     error: Optional[str] = None
     submitted_at: float
     started_at: Optional[float] = None
@@ -193,7 +196,6 @@ def get_run_status(job_id: str, x_api_key: Optional[str] = Header(None)):
     return JobStatusResponse(
         job_id=job_id,
         status=job["status"],
-        goal_success=job["goal_success"],
         result=RunResponse(**result) if result else None,
         error=job["error"],
         submitted_at=job["submitted_at"],
@@ -216,7 +218,6 @@ def cancel_run(job_id: str, x_api_key: Optional[str] = Header(None)):
             return JobStatusResponse(
                 job_id=job_id,
                 status=job["status"],
-                goal_success=job["goal_success"],
                 result=RunResponse(**result) if result else None,
                 error=job["error"],
                 submitted_at=job["submitted_at"],
@@ -241,7 +242,6 @@ def cancel_run(job_id: str, x_api_key: Optional[str] = Header(None)):
     return JobStatusResponse(
         job_id=job_id,
         status=job["status"],
-        goal_success=job["goal_success"],
         result=RunResponse(**result) if result else None,
         error=job["error"],
         submitted_at=job["submitted_at"],

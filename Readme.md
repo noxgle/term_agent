@@ -487,6 +487,10 @@ curl -X GET http://localhost:8000/runs/<job_id> \
   -H 'X-API-Key: your_key_if_set'
 ```
 
+Note: `goal_success` is returned inside `result` only after the job completes.
+If available, the API also returns `critic_rating`, `critic_verdict`, and `critic_rationale`.
+These fields are `null` when `goal_success=false` or when the critic is disabled.
+
 Cancel job:
 
 ```bash
