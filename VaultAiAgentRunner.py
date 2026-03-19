@@ -13,6 +13,7 @@ from user.UserInteractionHandler import UserInteractionHandler
 from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
+from ai.PromptFilter import compress_prompt, estimate_token_savings
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
 
@@ -119,7 +120,7 @@ class VaultAIAgentRunner:
                 '{"tool":"create_action_plan","goal":"..."}\n'
                 '{"tool":"update_plan_step","step_number":1,"status":"completed"}\n'
                 '{"tool":"finish","summary":"...","goal_success":true}\n\n'
-                "OUTPUT: JSON only\n")
+                "OUTPUT: JSON only,no markdown\n")
             
             # self.system_prompt_agent = (
             #     f"Current date and time: {current_datetime}\n"
@@ -223,7 +224,7 @@ class VaultAIAgentRunner:
             self.hybrid_mode = bool(hybrid_mode)
             if self.hybrid_mode:
                 self.compact_mode = True
-        self.compact_max_output_chars = 200
+        self.compact_max_output_chars = 500
         self.compact_max_display_chars = 4000
         self.compact_max_output_tokens = 600
         self.compact_max_summary_tokens = 800
@@ -264,7 +265,10 @@ class VaultAIAgentRunner:
 
         # Initialize context with system prompt and user goal
         self.context_manager.add_system_message(self.system_prompt_agent)
-        self.context_manager.add_user_message(f"Your goal: {user_goal}.")
+
+        # Filter user goal and log savings (moved after prompt_filter_stats init)
+        filtered_goal = compress_prompt(user_goal)
+        self.context_manager.add_user_message(f"Your goal: {filtered_goal}.")
 
         self.steps = []
         self.summary = ""
@@ -357,6 +361,20 @@ class VaultAIAgentRunner:
         
         # Initialize token usage tracking
         self.token_usage: Dict[str, Dict[str, int]] = {}
+        
+        # Initialize prompt filter savings tracking
+        self.prompt_filter_stats: Dict[str, int] = {
+            "total_original_chars": 0,
+            "total_compressed_chars": 0,
+            "total_saved_chars": 0,
+            "total_original_tokens_est": 0,
+            "total_compressed_tokens_est": 0,
+            "total_saved_tokens_est": 0,
+            "filter_count": 0
+        }
+        
+        # Log savings from user goal filtering (after stats init)
+        self._log_prompt_filter_savings(user_goal, filtered_goal)
 
     def _start_timing(self, action_name: str) -> str:
         """
@@ -629,6 +647,69 @@ class VaultAIAgentRunner:
         self.terminal.print_console(recommendations)
         self.logger.info("Cost optimization recommendations: %s", recommendations)
 
+    def _log_prompt_filter_savings(self, original_text: str, compressed_text: str) -> None:
+        """
+        Log token savings from prompt filtering and update cumulative stats.
+        
+        Args:
+            original_text: Original text before compression
+            compressed_text: Text after compression
+        """
+        savings = estimate_token_savings(original_text, compressed_text)
+        
+        # Update cumulative stats
+        self.prompt_filter_stats["total_original_chars"] += savings["original_chars"]
+        self.prompt_filter_stats["total_compressed_chars"] += savings["compressed_chars"]
+        self.prompt_filter_stats["total_saved_chars"] += savings["saved_chars"]
+        self.prompt_filter_stats["total_original_tokens_est"] += savings["original_tokens_est"]
+        self.prompt_filter_stats["total_compressed_tokens_est"] += savings["compressed_tokens_est"]
+        self.prompt_filter_stats["total_saved_tokens_est"] += savings["saved_tokens_est"]
+        self.prompt_filter_stats["filter_count"] += 1
+        
+        # Log per-call stats at DEBUG level
+        self.logger.debug(
+            f"Prompt filter: {savings['original_chars']}→{savings['compressed_chars']} chars "
+            f"({savings['saved_chars']} saved, {savings['compression_ratio']:.1%} ratio), "
+            f"~{savings['saved_tokens_est']} tokens saved"
+        )
+
+    def _get_prompt_filter_summary(self) -> str:
+        """
+        Get a summary of prompt filter savings statistics.
+        
+        Returns:
+            Formatted string with filter savings statistics
+        """
+        stats = self.prompt_filter_stats
+        if stats["filter_count"] == 0:
+            return "No prompt filters applied."
+        
+        compression_ratio = (
+            stats["total_compressed_chars"] / stats["total_original_chars"]
+            if stats["total_original_chars"] > 0 else 1.0
+        )
+        savings_pct = (1 - compression_ratio) * 100
+        
+        summary_lines = ["\n=== PROMPT FILTER SUMMARY ==="]
+        summary_lines.append(f"Total filters applied: {stats['filter_count']}")
+        summary_lines.append(f"Original chars: {stats['total_original_chars']:,}")
+        summary_lines.append(f"Compressed chars: {stats['total_compressed_chars']:,}")
+        summary_lines.append(f"Saved chars: {stats['total_saved_chars']:,}")
+        summary_lines.append(f"Original tokens (est): {stats['total_original_tokens_est']:,}")
+        summary_lines.append(f"Compressed tokens (est): {stats['total_compressed_tokens_est']:,}")
+        summary_lines.append(f"Saved tokens (est): {stats['total_saved_tokens_est']:,}")
+        summary_lines.append(f"Compression ratio: {compression_ratio:.1%}")
+        summary_lines.append(f"Savings: {savings_pct:.1f}%")
+        
+        return "\n".join(summary_lines)
+
+    def _display_prompt_filter_summary(self):
+        """
+        Display prompt filter savings summary to the user and log it.
+        """
+        filter_summary = self._get_prompt_filter_summary()
+        self.terminal.print_console(filter_summary)
+        self.logger.info("Prompt filter summary: %s", filter_summary)
 
     def _cleanup_request_history(self, max_entries: int = 1000):
         """
@@ -1965,18 +2046,24 @@ class VaultAIAgentRunner:
 
                         # Build smart feedback based on exit code
                         if code == 0:
-                            user_feedback_content = f"Command '{command}' executed successfully with exit code 0.\n" \
-                                                    f"Output:\n```\n{out}\n```\n" \
-                                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                            original_feedback = (
+                                f"Command '{command}' executed successfully with exit code 0.\n"
+                                f"Output:\n```\n{out}\n```\n"
+                                "The command succeeded. You can mark this step as completed and proceed to the next step."
+                            )
                         else:
-                            user_feedback_content = f"Command '{command}' failed with exit code {code}.\n" \
-                                                    f"Output:\n```\n{out}\n```\n" \
-                                                    f"The command failed. Analyze the error and decide:\n" \
-                                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n" \
-                                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n" \
-                                                    f"- SKIP: If this step is non-critical and you can proceed without it\n" \
-                                                    f"- FAIL: If this is a critical error that blocks progress\n" \
-                                                    f"What is your decision?"
+                            original_feedback = (
+                                f"Command '{command}' failed with exit code {code}.\n"
+                                f"Output:\n```\n{out}\n```\n"
+                                f"The command failed. Analyze the error and decide:\n"
+                                f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                f"- FAIL: If this is a critical error that blocks progress\n"
+                                f"What is your decision?"
+                            )
+                        user_feedback_content = compress_prompt(original_feedback)
+                        self._log_prompt_filter_savings(original_feedback, user_feedback_content)
 
                         if not agent_should_stop_this_turn:
                             if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
@@ -2506,6 +2593,9 @@ class VaultAIAgentRunner:
                 # Display token usage summary
                 if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
                     self._display_token_summary()
+                
+                # Display prompt filter summary
+                self._display_prompt_filter_summary()
                 
                 # Display plan summary if available
                 if self.plan_manager.steps:
