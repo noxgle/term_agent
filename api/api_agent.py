@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any
 
 from term_ag import term_agent
 from VaultAiAgentRunner import VaultAIAgentRunner
+from ai.PromptFilter import compress_prompt, estimate_token_savings
 
 
 class VaultAIApiAgentRunner(VaultAIAgentRunner):
@@ -71,9 +72,11 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
             compact_mode = True
             hybrid_mode = True
 
+    filtered_goal = compress_prompt(params.goal)
+
     runner = VaultAIApiAgentRunner(
         terminal=terminal,
-        user_goal=params.goal,
+        user_goal=filtered_goal,
         system_prompt_agent=params.system_prompt_agent,
         user=params.user,
         host=params.host,
