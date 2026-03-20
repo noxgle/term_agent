@@ -253,6 +253,7 @@ class VaultAIAgentRunner:
         self.context_manager.add_system_message(self.system_prompt_agent)
 
         # Filter user goal and log savings (moved after prompt_filter_stats init)
+        
         filtered_goal = compress_prompt(user_goal)
         self.context_manager.add_user_message(f"Your goal: {filtered_goal}.")
 

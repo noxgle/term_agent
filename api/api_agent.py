@@ -103,6 +103,7 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         "critic_rating": runner.critic_rating if critic_available else None,
         "critic_verdict": runner.critic_verdict if critic_available else None,
         "critic_rationale": runner.critic_rationale if critic_available else None,
+        "prompt_filter_stats": runner.prompt_filter_stats if hasattr(runner, "prompt_filter_stats") else None,
     }
 
 

@@ -41,6 +41,7 @@ class RunResponse(BaseModel):
     critic_rating: Optional[int] = None
     critic_verdict: Optional[str] = None
     critic_rationale: Optional[str] = None
+    prompt_filter_stats: Optional[dict] = None
 
 
 class BatchRunRequest(BaseModel):
