@@ -14,6 +14,8 @@ from security.SecurityValidator import SecurityValidator
 from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
 from ai.PromptFilter import compress_prompt, estimate_token_savings
+from ai.LogCompressor import LogCompressor, DynamicLogCompressor, should_compress,should_compress_adaptive
+import logging
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
 
@@ -61,6 +63,8 @@ class VaultAIAgentRunner:
                 hybrid_mode: Optional[bool] = None
                 ):
         
+        self.dir_app = os.path.dirname(os.path.abspath(__file__))
+
         self.linux_distro = None
         self.linux_version = None
 
@@ -148,17 +152,17 @@ class VaultAIAgentRunner:
                 "- If 3 consecutive steps show no progress, reassess strategy\n"
                 "- Do not call 'finish' until objective reached or unrecoverable failure\n\n"
                 "TOOLS (JSON only, double quotes):\n"
-                '{"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
-                '{"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
-                '{"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
-                '{"tool":"write_file","path":"...","content":"...","explain":"..."}\n'
-                '{"tool":"edit_file","path":"...","action":"replace|insert_after|insert_before|delete_line","search":"...","replace":"...","line":"...","explain":"..."}\n'
-                '{"tool":"list_directory","path":"...","recursive":true|false,"pattern":"glob","explain":"..."}\n'
-                '{"tool":"copy_file","source":"...","destination":"...","overwrite":true|false,"explain":"..."}\n'
-                '{"tool":"delete_file","path":"...","backup":true|false,"explain":"..."}\n'
-                '{"tool":"create_action_plan","goal":"...","explain":"..."}\n'
-                '{"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
-                '{"tool":"finish","summary":"a detailed summary or answer to a question depending on the task", "goal_success":true|false}\n\n'
+                '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
+                '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
+                '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
+                '- {"tool":"write_file","path":"...","content":"...","explain":"..."}\n'
+                '- {"tool":"edit_file","path":"...","action":"replace|insert_after|insert_before|delete_line","search":"...","replace":"...","line":"...","explain":"..."}\n'
+                '- {"tool":"list_directory","path":"...","recursive":true|false,"pattern":"glob","explain":"..."}\n'
+                '- {"tool":"copy_file","source":"...","destination":"...","overwrite":true|false,"explain":"..."}\n'
+                '- {"tool":"delete_file","path":"...","backup":true|false,"explain":"..."}\n'
+                '- {"tool":"create_action_plan","goal":"...","explain":"..."}\n'
+                '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
+                '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task","goal_success":true|false}\n\n'
                 "ERROR HANDLING\n"
                 "After bash execution check exit_code:\n"
                 "- 0 → success\n"
@@ -571,7 +575,7 @@ class VaultAIAgentRunner:
             # Check for high input token usage
             if avg_input > 5000:
                 recommendations.append(
-                    "⚠️  HIGH INPUT TOKEN USAGE: Average input tokens per request is high."
+                    "HIGH INPUT TOKEN USAGE: Average input tokens per request is high."
                     "\n   - Consider shortening system prompts"
                     "\n   - Use more concise user queries"
                     "\n   - Implement context window management"
@@ -581,7 +585,7 @@ class VaultAIAgentRunner:
             # Check for high output token usage
             if avg_output > 2000:
                 recommendations.append(
-                    "⚠️  HIGH OUTPUT TOKEN USAGE: Average output tokens per request is high."
+                    "HIGH OUTPUT TOKEN USAGE: Average output tokens per request is high."
                     "\n   - Request more concise responses"
                     "\n   - Use bullet points instead of paragraphs"
                     "\n   - Set max_tokens limits when possible"
@@ -596,7 +600,7 @@ class VaultAIAgentRunner:
                 
                 if len(ai_requests) > len(set(ai_requests)):
                     recommendations.append(
-                        "⚠️  POTENTIAL REDUNDANCY: Multiple similar AI requests detected."
+                        "POTENTIAL REDUNDANCY: Multiple similar AI requests detected."
                         "\n   - Consider batching similar requests"
                         "\n   - Cache responses for repeated queries"
                         "\n   - Use more specific prompts to reduce iterations"
@@ -604,7 +608,7 @@ class VaultAIAgentRunner:
         
         # General recommendations
         recommendations.extend([
-            "\n💡 GENERAL OPTIMIZATION TIPS:",
+            "\nGENERAL OPTIMIZATION TIPS:",
             "   - Use cheaper models for simple tasks (e.g., GPT-3.5 vs GPT-4)",
             "   - Implement early stopping for long-running tasks",
             "   - Use streaming responses when possible",
@@ -620,7 +624,7 @@ class VaultAIAgentRunner:
         optimized_cost = current_cost * 0.7
         potential_savings = current_cost - optimized_cost
         
-        recommendations.append(f"\n💰 POTENTIAL SAVINGS: ${potential_savings:.4f} per session (30% reduction)")
+        recommendations.append(f"\nPOTENTIAL SAVINGS: ${potential_savings:.4f} per session (30% reduction)")
         recommendations.append(f"   Current cost: ${current_cost:.4f}")
         recommendations.append(f"   Optimized cost: ${optimized_cost:.4f}")
         
@@ -1700,6 +1704,66 @@ class VaultAIAgentRunner:
 
         return data is not None, data, ai_reply_json_string, corrected_successfully, error_message
 
+    def _compress_with_fallback(self, text: str, logger) -> str:
+        """
+        Compress text with configurable compressor selection based on LOG_COMPRESSOR_MODE.
+        
+        Args:
+            text: Text to compress
+            logger: Logger instance for error logging
+            
+        Returns:
+            Compressed text, or original text if both compressors fail
+        """
+        # Get compressor mode from environment variable
+        compressor_mode = os.getenv("LOG_COMPRESSOR_MODE", "auto").lower().strip()
+        
+        if compressor_mode == "simple":
+            # Force use of LogCompressor only
+            try:
+                compressor = LogCompressor()
+                compressed_out = compressor.compress(text)
+                logger.debug(f"LogCompressor (simple mode) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
+                return compressed_out
+            except Exception as e:
+                logger.error(f"LogCompressor failed in simple mode: {e}. Using original text.")
+                return text
+        
+        elif compressor_mode == "dynamic":
+            # Force use of DynamicLogCompressor only (no fallback)
+            try:
+                
+                # Get HF token and cache path from environment
+                hf_token = os.getenv("HF_TOKEN")
+                compressor = DynamicLogCompressor(hf_token=hf_token, dir_app=self.dir_app,logger=self.logger)
+                compressed_out = compressor.compress(text)
+                logger.debug(f"DynamicLogCompressor (dynamic mode) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
+                return compressed_out
+            except Exception as e:
+                logger.error(f"DynamicLogCompressor failed in dynamic mode: {e}. Using original text.")
+                return text
+        
+        else:  # compressor_mode == "auto" or any other value
+            # Auto mode: try DynamicLogCompressor first, then fallback to LogCompressor
+            try:
+                # Get HF token and cache path from environment
+                hf_token = os.getenv("HF_TOKEN")
+                compressor = DynamicLogCompressor(hf_token=hf_token,dir_app=self.dir_app,logger=self.logger)
+                compressed_out = compressor.compress(text)
+                logger.debug(f"DynamicLogCompressor (auto mode) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
+                return compressed_out
+            except Exception as e:
+                logger.warning(f"DynamicLogCompressor failed in auto mode: {e}. Falling back to LogCompressor.")
+                
+                # Fallback to LogCompressor (simpler but more reliable)
+                try:
+                    compressor = LogCompressor()
+                    compressed_out = compressor.compress(text)
+                    logger.debug(f"LogCompressor (auto mode fallback) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
+                    return compressed_out
+                except Exception as e2:
+                    logger.error(f"LogCompressor also failed in auto mode: {e2}. Using original text.")
+                    return text
 
     def run(self):
         terminal = self.terminal
@@ -2101,22 +2165,47 @@ class VaultAIAgentRunner:
 
                         # Build smart feedback based on exit code
                         if code == 0:
-                            original_feedback = (
-                                f"Command '{command}' executed successfully with exit code 0.\n"
-                                f"Output:\n```\n{out}\n```\n"
-                                "The command succeeded. You can mark this step as completed and proceed to the next step."
-                            )
+                            if  should_compress_adaptive(out):
+                                compressed_out = self._compress_with_fallback(out, self.logger)
+                                self.logger.debug(f"Compressed command output from {len(out)} chars to {len(compressed_out)} chars for command: {command}")
+                                out = compressed_out
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0.\n"
+                                    f"Compressed Output:\n\n{out}\n\n"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
+                            else:
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0.\n"
+                                    f"Output:\n\n{out}\n\n"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
                         else:
-                            original_feedback = (
-                                f"Command '{command}' failed with exit code {code}.\n"
-                                f"Output:\n```\n{out}\n```\n"
-                                f"The command failed. Analyze the error and decide:\n"
-                                f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
-                                f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
-                                f"- SKIP: If this step is non-critical and you can proceed without it\n"
-                                f"- FAIL: If this is a critical error that blocks progress\n"
-                                f"What is your decision?"
-                            )
+                            if  should_compress_adaptive(out):
+                                compressed_out = self._compress_with_fallback(out, self.logger)
+                                self.logger.debug(f"Compressed command output from {len(out)} chars to {len(compressed_out)} chars for command: {command}")
+                                out = compressed_out
+                                original_feedback = (
+                                    f"Command '{command}' failed with exit code {code}.\n"
+                                    f"Compressed Output:\n\n{out}\n\n"
+                                    f"The command failed. Analyze the error and decide:\n"
+                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                    f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                    f"- FAIL: If this is a critical error that blocks progress\n"
+                                    f"What is your decision?"
+                                )
+                            else:
+                                original_feedback = (
+                                    f"Command '{command}' failed with exit code {code}.\n"
+                                    f"Output:\n\n{out}\n\n"
+                                    f"The command failed. Analyze the error and decide:\n"
+                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                    f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                    f"- FAIL: If this is a critical error that blocks progress\n"
+                                    f"What is your decision?"
+                                )
                         user_feedback_content = compress_prompt(original_feedback)
                         self._log_prompt_filter_savings(original_feedback, user_feedback_content)
 

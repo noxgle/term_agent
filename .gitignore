@@ -3,6 +3,7 @@ tmp/
 logs/
 .idea/
 .venv/
+hf_cache/
 .env
 app.log
 test_*
