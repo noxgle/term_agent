@@ -661,31 +661,99 @@ class VaultAIAgentRunner:
 
     def _get_prompt_filter_summary(self) -> str:
         """
-        Get a summary of prompt filter savings statistics.
+        Get a comprehensive summary of prompt filter savings statistics.
         
         Returns:
-            Formatted string with filter savings statistics
+            Formatted string with detailed filter savings statistics and insights
         """
         stats = self.prompt_filter_stats
         if stats["filter_count"] == 0:
             return "No prompt filters applied."
         
+        # Calculate basic metrics
         compression_ratio = (
             stats["total_compressed_chars"] / stats["total_original_chars"]
             if stats["total_original_chars"] > 0 else 1.0
         )
         savings_pct = (1 - compression_ratio) * 100
+        avg_savings_per_filter = (
+            stats["total_saved_chars"] / stats["filter_count"]
+            if stats["filter_count"] > 0 else 0
+        )
+        avg_tokens_saved_per_filter = (
+            stats["total_saved_tokens_est"] / stats["filter_count"]
+            if stats["filter_count"] > 0 else 0
+        )
         
-        summary_lines = ["\n=== PROMPT FILTER SUMMARY ==="]
-        summary_lines.append(f"Total filters applied: {stats['filter_count']}")
-        summary_lines.append(f"Original chars: {stats['total_original_chars']:,}")
-        summary_lines.append(f"Compressed chars: {stats['total_compressed_chars']:,}")
-        summary_lines.append(f"Saved chars: {stats['total_saved_chars']:,}")
-        summary_lines.append(f"Original tokens (est): {stats['total_original_tokens_est']:,}")
-        summary_lines.append(f"Compressed tokens (est): {stats['total_compressed_tokens_est']:,}")
-        summary_lines.append(f"Saved tokens (est): {stats['total_saved_tokens_est']:,}")
-        summary_lines.append(f"Compression ratio: {compression_ratio:.1%}")
-        summary_lines.append(f"Savings: {savings_pct:.1f}%")
+        # Calculate cost savings (using rough estimates)
+        # Assuming $0.0005 per 1000 input tokens and $0.0015 per 1000 output tokens (GPT-4o rates)
+        input_cost_savings = (stats["total_saved_tokens_est"] / 1000) * 0.0010  # Conservative estimate
+        output_cost_savings = (stats["total_saved_tokens_est"] / 1000) * 0.0020  # Conservative estimate
+        total_cost_savings = input_cost_savings + output_cost_savings
+        
+        # Calculate efficiency metrics
+        efficiency_score = min(100, savings_pct * 2)  # Scale efficiency score
+        
+        summary_lines = ["\n=== PROMPT FILTER COMPRESSION ANALYSIS ==="]
+        
+        # Basic statistics
+        summary_lines.append("\nCOMPRESSION STATISTICS:")
+        summary_lines.append(f"   Total filters applied: {stats['filter_count']:,}")
+        summary_lines.append(f"   Original characters: {stats['total_original_chars']:,}")
+        summary_lines.append(f"   Compressed characters: {stats['total_compressed_chars']:,}")
+        summary_lines.append(f"   Characters saved: {stats['total_saved_chars']:,}")
+        
+        # Token analysis
+        summary_lines.append("\nTOKEN ANALYSIS:")
+        summary_lines.append(f"   Original tokens (est): {stats['total_original_tokens_est']:,}")
+        summary_lines.append(f"   Compressed tokens (est): {stats['total_compressed_tokens_est']:,}")
+        summary_lines.append(f"   Tokens saved (est): {stats['total_saved_tokens_est']:,}")
+        summary_lines.append(f"   Average tokens saved per filter: {avg_tokens_saved_per_filter:.1f}")
+        
+        # Compression effectiveness
+        summary_lines.append("\nCOMPRESSION EFFECTIVENESS:")
+        summary_lines.append(f"   Compression ratio: {compression_ratio:.1%}")
+        summary_lines.append(f"   Space savings: {savings_pct:.1f}%")
+        summary_lines.append(f"   Average chars saved per filter: {avg_savings_per_filter:.1f}")
+        summary_lines.append(f"   Efficiency score: {efficiency_score:.1f}/100")
+        
+        # Cost analysis
+        summary_lines.append("\nCOST IMPACT:")
+        summary_lines.append(f"   Estimated cost savings: ${total_cost_savings:.4f}")
+        summary_lines.append(f"   Input cost savings: ${input_cost_savings:.4f}")
+        summary_lines.append(f"   Output cost savings: ${output_cost_savings:.4f}")
+        
+        # Performance insights
+        summary_lines.append("\nPERFORMANCE INSIGHTS:")
+        if savings_pct > 50:
+            summary_lines.append("Excellent compression rate - significant savings achieved!")
+        elif savings_pct > 30:
+            summary_lines.append("Good compression rate - effective token reduction.")
+        elif savings_pct > 10:
+            summary_lines.append("Moderate compression - room for improvement.")
+        else:
+            summary_lines.append("Low compression rate - consider reviewing filter settings.")
+        
+        if avg_tokens_saved_per_filter > 100:
+            summary_lines.append("High impact per filter - excellent optimization!")
+        elif avg_tokens_saved_per_filter > 50:
+            summary_lines.append("Good impact per filter - effective filtering.")
+        elif avg_tokens_saved_per_filter > 10:
+            summary_lines.append("Moderate impact per filter - acceptable performance.")
+        else:
+            summary_lines.append("Low impact per filter - may need optimization.")
+        
+        # Additional metrics
+        summary_lines.append(f"\n   Filter efficiency: {stats['filter_count']} filters processed")
+        summary_lines.append(f"   Total data processed: {stats['total_original_chars']:,} characters")
+        summary_lines.append(f"   Data reduction: {stats['total_saved_chars']:,} characters removed")
+        
+        # Show detailed breakdown if enabled
+        if os.getenv("SHOW_PROMPT_FILTER_DETAILS", "false").lower() == "true":
+            summary_lines.append("\nDETAILED BREAKDOWN:")
+            summary_lines.append(f"   Original → Compressed → Saved")
+            summary_lines.append(f"   {stats['total_original_chars']:,} → {stats['total_compressed_chars']:,} → {stats['total_saved_chars']:,}")
+            summary_lines.append(f"   {stats['total_original_tokens_est']:,} → {stats['total_compressed_tokens_est']:,} → {stats['total_saved_tokens_est']:,}")
         
         return "\n".join(summary_lines)
 
@@ -2559,42 +2627,42 @@ class VaultAIAgentRunner:
                 # If the loop broke for any other reason (error, user cancellation), stop.
                 keep_running = False
 
-            # Display comprehensive performance summary at the end of each task
-            if self.show_performance_summary and (
-                self.timings
-                or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage)
-            ):
+        # Display comprehensive performance summary at the end of each task
+        if self.show_performance_summary and (
+            self.timings
+            or (hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage)
+        ):
+            self.terminal.print_console("\n" + "="*60)
+            self.terminal.print_console("PERFORMANCE SUMMARY")
+            self.terminal.print_console("="*60)
+            
+            # Display cost optimization recommendations
+            if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                self._display_cost_optimization_recommendations()
+            
+            # Display timing summary
+            if self.timings:
+                self._display_timing_summary()
+            
+            # Display token usage summary
+            if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
+                self._display_token_summary()
+            
+            # Display prompt filter summary
+            self._display_prompt_filter_summary()
+            
+            # Display plan summary if available
+            if self.plan_manager.steps:
                 self.terminal.print_console("\n" + "="*60)
-                self.terminal.print_console("PERFORMANCE SUMMARY")
+                self.terminal.print_console("TASK COMPLETION SUMMARY")
                 self.terminal.print_console("="*60)
-                
-                # Display cost optimization recommendations
-                if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
-                    self._display_cost_optimization_recommendations()
-                
-                # Display timing summary
-                if self.timings:
-                    self._display_timing_summary()
-                
-                # Display token usage summary
-                if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
-                    self._display_token_summary()
-                
-                # Display prompt filter summary
-                self._display_prompt_filter_summary()
-                
-                # Display plan summary if available
-                if self.plan_manager.steps:
-                    self.terminal.print_console("\n" + "="*60)
-                    self.terminal.print_console("TASK COMPLETION SUMMARY")
-                    self.terminal.print_console("="*60)
-                    progress = self.plan_manager.get_progress()
-                    self.terminal.print_console(f"Plan Progress: {progress['completed']}/{progress['total']} steps completed ({progress['percentage']}%)")
-                    if progress['failed'] > 0:
-                        self.terminal.print_console(f"Failed Steps: {progress['failed']}")
-                    if progress['skipped'] > 0:
-                        self.terminal.print_console(f"Skipped Steps: {progress['skipped']}")
-                    if progress['pending'] > 0:
-                        self.terminal.print_console(f"Pending Steps: {progress['pending']}")
-                
-                self.terminal.print_console("="*60)
+                progress = self.plan_manager.get_progress()
+                self.terminal.print_console(f"Plan Progress: {progress['completed']}/{progress['total']} steps completed ({progress['percentage']}%)")
+                if progress['failed'] > 0:
+                    self.terminal.print_console(f"Failed Steps: {progress['failed']}")
+                if progress['skipped'] > 0:
+                    self.terminal.print_console(f"Skipped Steps: {progress['skipped']}")
+                if progress['pending'] > 0:
+                    self.terminal.print_console(f"Pending Steps: {progress['pending']}")
+            
+            self.terminal.print_console("="*60)

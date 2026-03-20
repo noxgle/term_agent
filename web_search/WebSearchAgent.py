@@ -17,6 +17,7 @@ import asyncio
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 from urllib.parse import urljoin, urlparse
+from ai.PromptFilter import compress_prompt, estimate_token_savings
 
 # Web search and scraping
 try:
@@ -704,7 +705,17 @@ class WebSearchAgent:
         sources_summary = []
         for source in self.aggregated_sources:
             snippet = source.get('content', source.get('snippet', ''))[:500]
-            sources_summary.append(f"- {source['title']}: {snippet}...")
+            filtered_snippet = compress_prompt(snippet)
+            
+            # Log token savings from prompt compression
+            savings = estimate_token_savings(snippet, filtered_snippet)
+            self.logger.debug(
+                f"Prompt filter: {savings['original_chars']}→{savings['compressed_chars']} chars "
+                f"({savings['saved_chars']} saved, {savings['compression_ratio']*100:.1f}% ratio), "
+                f"~{savings['saved_tokens_est']} tokens saved"
+            )
+            
+            sources_summary.append(f"- {source['title']}: {filtered_snippet}...")
         
         prompt = f"""Analyze the search results for the query: "{original_query}"
 
@@ -892,7 +903,17 @@ Respond in JSON format:
         sources_text = []
         for source in sources[:5]:
             content = source.get('content', source.get('snippet', ''))[:1000]
-            sources_text.append(f"Source: {source['title']}\nURL: {source['url']}\nContent: {content}\n")
+            filtered_content = compress_prompt(content)
+            
+            # Log token savings from prompt compression
+            savings = estimate_token_savings(content, filtered_content)
+            self.logger.debug(
+                f"Prompt filter: {savings['original_chars']}→{savings['compressed_chars']} chars "
+                f"({savings['saved_chars']} saved, {savings['compression_ratio']*100:.1f}% ratio), "
+                f"~{savings['saved_tokens_est']} tokens saved"
+            )
+            
+            sources_text.append(f"Source: {source['title']}\nURL: {source['url']}\nContent: {filtered_content}\n")
         
         prompt = f"""Current date and time: {current_datetime}
 
