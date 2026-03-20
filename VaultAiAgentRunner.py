@@ -1735,7 +1735,7 @@ class VaultAIAgentRunner:
                 
                 # Get HF token and cache path from environment
                 hf_token = os.getenv("HF_TOKEN")
-                compressor = DynamicLogCompressor(hf_token=hf_token, dir_app=self.dir_app,logger=self.logger)
+                compressor = DynamicLogCompressor(dir_app=self.dir_app,logger=self.logger)
                 compressed_out = compressor.compress(text)
                 logger.debug(f"DynamicLogCompressor (dynamic mode) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
                 return compressed_out
@@ -1748,7 +1748,7 @@ class VaultAIAgentRunner:
             try:
                 # Get HF token and cache path from environment
                 hf_token = os.getenv("HF_TOKEN")
-                compressor = DynamicLogCompressor(hf_token=hf_token,dir_app=self.dir_app,logger=self.logger)
+                compressor = DynamicLogCompressor(dir_app=self.dir_app,logger=self.logger)
                 compressed_out = compressor.compress(text)
                 logger.debug(f"DynamicLogCompressor (auto mode) successfully compressed output from {len(text)} chars to {len(compressed_out)} chars")
                 return compressed_out
