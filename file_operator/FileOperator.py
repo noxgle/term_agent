@@ -859,6 +859,233 @@ class FileOperator:
         else:
             return self._delete_file_local(file_path, backup, explain)
 
+    def search_in_file(self, file_path: str, query: str, context_lines: int = 3, 
+                       max_results: int = 10, explain: str = "") -> Dict[str, Any]:
+        """
+        Search for a query pattern in a file, handling both local and remote operations.
+
+        Args:
+            file_path: Path to the file to search in
+            query: Search query/pattern (supports regex)
+            context_lines: Number of lines to show before/after matches
+            max_results: Maximum number of results to return
+            explain: Explanation of what this operation does
+
+        Returns:
+            Dictionary with 'success', 'matches', 'total_matches', 'path', and optionally 'error'
+        """
+        try:
+            file_path = self._prepare_path(file_path)
+        except ValueError as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "path": file_path
+            }
+
+        if self.terminal.ssh_connection:
+            return self._search_in_file_remote(file_path, query, context_lines, max_results, explain)
+        else:
+            return self._search_in_file_local(file_path, query, context_lines, max_results, explain)
+
+    def _search_in_file_local(self, file_path: str, query: str, context_lines: int, 
+                              max_results: int, explain: str) -> Dict[str, Any]:
+        """Search for pattern in file locally."""
+        try:
+            if not os.path.exists(file_path):
+                return {
+                    "success": False,
+                    "error": f"File '{file_path}' does not exist",
+                    "path": file_path
+                }
+            
+            # Compile regex pattern
+            try:
+                pattern = re.compile(query, re.IGNORECASE)
+            except re.error as e:
+                return {
+                    "success": False,
+                    "error": f"Invalid regex pattern '{query}': {e}",
+                    "path": file_path
+                }
+            
+            matches = []
+            total_matches = 0
+            
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                lines = f.readlines()
+            
+            for line_num, line in enumerate(lines, 1):
+                # Find all matches in the line
+                line_matches = list(pattern.finditer(line))
+                if line_matches:
+                    total_matches += len(line_matches)
+                    
+                    # Only process up to max_results total matches
+                    if len(matches) >= max_results:
+                        continue
+                    
+                    for match in line_matches:
+                        if len(matches) >= max_results:
+                            break
+                        
+                        # Get context lines
+                        start_idx = max(0, line_num - context_lines - 1)
+                        end_idx = min(len(lines), line_num + context_lines)
+                        
+                        context_before = []
+                        context_after = []
+                        
+                        # Collect context lines before
+                        for i in range(start_idx, line_num - 1):
+                            context_before.append(lines[i].rstrip())
+                        
+                        # Collect context lines after
+                        for i in range(line_num, end_idx):
+                            context_after.append(lines[i].rstrip())
+                        
+                        matches.append({
+                            "line_number": line_num,
+                            "content": line.rstrip(),
+                            "match_start": match.start(),
+                            "match_end": match.end(),
+                            "context_before": context_before,
+                            "context_after": context_after
+                        })
+            
+            self.logger.info(f"Search in '{file_path}' completed. Total matches: {total_matches}, Returned: {len(matches)}")
+            
+            return {
+                "success": True,
+                "matches": matches,
+                "total_matches": total_matches,
+                "path": file_path,
+                "query": query,
+                "context_lines": context_lines,
+                "max_results": max_results
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Failed to search in file '{file_path}': {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "path": file_path
+            }
+
+    def _search_in_file_remote(self, file_path: str, query: str, context_lines: int, 
+                               max_results: int, explain: str) -> Dict[str, Any]:
+        """Search for pattern in file remotely via SSH."""
+        try:
+            remote = f"{self.terminal.user}@{self.terminal.host}" if self.terminal.user and self.terminal.host else self.terminal.host
+            password = getattr(self.terminal, "ssh_password", None)
+            
+            # Escape query for shell
+            escaped_query = self._q(query)
+            
+            # Use grep for efficient remote search
+            # -n: show line numbers
+            # -i: case insensitive
+            # -C: context lines
+            grep_cmd = f"grep -n -i -C {context_lines} {escaped_query} {self._q(file_path)}"
+            
+            out, code = self.terminal.execute_remote_pexpect(grep_cmd, remote, password=password)
+            
+            if code == 0 or out:
+                # Parse grep output
+                matches = []
+                total_matches = 0
+                current_match = None
+                
+                for line in out.strip().split('\n'):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    # Check if this is a separator line (---)
+                    if line == "---":
+                        continue
+                    
+                    # Check if this is a context line (starts with > or <)
+                    if line.startswith(">") or line.startswith("<"):
+                        if current_match:
+                            if line.startswith(">"):
+                                current_match["context_after"].append(line[1:].strip())
+                            else:
+                                current_match["context_before"].append(line[1:].strip())
+                        continue
+                    
+                    # Parse match line: line_number:content
+                    if ":" in line:
+                        parts = line.split(":", 1)
+                        if len(parts) == 2:
+                            try:
+                                line_num = int(parts[0])
+                                content = parts[1]
+                                
+                                # Create new match
+                                current_match = {
+                                    "line_number": line_num,
+                                    "content": content,
+                                    "context_before": [],
+                                    "context_after": []
+                                }
+                                matches.append(current_match)
+                                total_matches += 1
+                                
+                                # Limit results
+                                if len(matches) >= max_results:
+                                    break
+                            except ValueError:
+                                # Not a match line, might be context
+                                if current_match:
+                                    current_match["context_after"].append(line)
+                        else:
+                            # Just content, no line number
+                            if current_match:
+                                current_match["context_after"].append(line)
+                    else:
+                        # Context line without prefix
+                        if current_match:
+                            current_match["context_after"].append(line)
+                
+                self.logger.info(f"Remote search in '{file_path}' completed. Total matches: {total_matches}, Returned: {len(matches)}")
+                
+                return {
+                    "success": True,
+                    "matches": matches,
+                    "total_matches": total_matches,
+                    "path": file_path,
+                    "query": query,
+                    "context_lines": context_lines,
+                    "max_results": max_results
+                }
+            else:
+                # Check if file exists
+                check_cmd = f"test -f {self._q(file_path)} && echo exists || echo not_found"
+                check_out, _ = self.terminal.execute_remote_pexpect(check_cmd, remote, password=password)
+                
+                if "not_found" in check_out:
+                    return {
+                        "success": False,
+                        "error": f"File '{file_path}' does not exist",
+                        "path": file_path
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "error": f"No matches found for '{query}' in '{file_path}'",
+                        "path": file_path
+                    }
+                
+        except Exception as e:
+            self.logger.error(f"Failed to search in file '{file_path}' remotely: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "path": file_path
+            }
+
     def _delete_file_local(self, file_path: str, backup: bool, 
                            explain: str) -> Dict[str, Any]:
         """Delete file locally."""

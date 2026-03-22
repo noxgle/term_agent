@@ -2653,6 +2653,62 @@ class VaultAIAgentRunner:
                             self._update_plan_progress(f"Failed to edit file: {file_path}", success=False)
                         continue
 
+                    elif tool == "search_in_file":
+                        file_path = action_item.get("path")
+                        query = action_item.get("query")
+                        context_lines = action_item.get("context_lines", 3)
+                        max_results = action_item.get("max_results", 10)
+                        explain = action_item.get("explain", "")
+                        
+                        if not file_path or not query:
+                            terminal.print_console(f"Missing 'path' or 'query' in search_in_file action: {action_item}. Skipping.")
+                            self.context_manager.add_user_message(f"You provided a 'search_in_file' tool action but missing 'path' or 'query': {action_item}. I am skipping it.")
+                            continue
+                        
+                        if not terminal.auto_accept:
+                            confirm_prompt_text = f"\nVaultAI> Agent suggests to search in file '{file_path}' for '{query}'. This is intended to: {explain}. Proceed? [y/N]: "
+                            confirm = self._get_user_input(f"{confirm_prompt_text}", multiline=False).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(f"\nVaultAI> Provide justification for refusing and press Ctrl+S to submit.\n{self.input_text}>  ", multiline=True).strip()
+                                terminal.print_console(f"\nVaultAI> Search operation refused by user. Justification: {justification}\n")
+                                self.context_manager.add_user_message(f"User refused to search in file '{file_path}' with justification: {justification}. Based on this, what should be the next step?")
+                                continue
+                        
+                        # Start timing search operation
+                        search_timing_id = self._start_timing(f"FILE_SEARCH_{file_path}")
+                        
+                        result = self.file_operator.search_in_file(file_path, query, context_lines, max_results, explain)
+                        if result.get("success"):
+                            # End timing search operation
+                            self._end_timing(search_timing_id, f"FILE_SEARCH_{file_path}", True)
+                            matches = result.get("matches", [])
+                            total_matches = result.get("total_matches", 0)
+                            
+                            terminal.print_console(f"\n[OK] Search in '{file_path}' completed ({total_matches} matches found).")
+                            
+                            # Format search results for display
+                            feedback = f"Search results in '{file_path}' for '{query}':\n\n"
+                            feedback += f"Total matches: {total_matches}\n\n"
+                            
+                            if matches:
+                                for i, match in enumerate(matches, 1):
+                                    feedback += f"Match {i} (Line {match['line_number']}):\n"
+                                    feedback += f"  Content: {match['content']}\n"
+                                    if match.get('context_before'):
+                                        feedback += f"  Before: {match['context_before']}\n"
+                                    if match.get('context_after'):
+                                        feedback += f"  After: {match['context_after']}\n"
+                                    feedback += "\n"
+                            
+                            self._update_plan_progress(f"Search in file: {file_path} for '{query}'", success=True)
+                            self.context_manager.add_user_message(feedback)
+                        else:
+                            error = result.get("error", "Unknown error")
+                            terminal.print_console(f"\n[ERROR] Failed to search in file '{file_path}': {error}")
+                            self._update_plan_progress(f"Failed to search in file: {file_path}", success=False)
+                            self.context_manager.add_user_message(f"Failed to search in file '{file_path}': {error}")
+                        continue
+
                     elif tool == "update_plan_step":
                         step_number = action_item.get("step_number")
                         status = action_item.get("status")
