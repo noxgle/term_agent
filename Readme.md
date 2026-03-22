@@ -1,3 +1,7 @@
+## ⚠️ Prototype Disclaimer
+
+**This is a prototype agent under active development.** This project serves as a testing ground for new AI agent concepts, automation techniques, and terminal interface innovations. Features may be experimental, unstable, or subject to change without notice. Use with caution in production environments.
+
 ## Video
 
 [![LINUX TERMINAL AGENT](https://img.youtube.com/vi/UeDNO0pWK9c/0.jpg)](https://www.youtube.com/embed/UeDNO0pWK9c)

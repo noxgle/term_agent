@@ -179,6 +179,11 @@ class term_agent:
         self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
+        # AI API timeout and retry configuration
+        self.ai_api_timeout = int(os.getenv("AI_API_TIMEOUT", "120"))
+        self.ai_api_max_retries = int(os.getenv("AI_API_MAX_RETRIES", "3"))
+        self.ai_api_retry_delay = float(os.getenv("AI_API_RETRY_DELAY", "2"))
+        self.ai_api_retry_backoff = float(os.getenv("AI_API_RETRY_BACKOFF", "2"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
         self.block_dangerous_commands = True if os.getenv("BLOCK_DANGEROUS_COMMANDS", "false").lower() == "true" else False
         # interactive_mode is the inverse of auto_accept; kept for clarity
@@ -372,7 +377,7 @@ class term_agent:
     
     # --- Gemini Function ---
 
-    def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json'):
+    def connect_to_gemini(self, prompt, model=None, max_tokens=None, temperature=None, format='json', timeout=None):
         """
         Send a prompt to Google Gemini and return the response as a string.
         """
@@ -382,6 +387,9 @@ class term_agent:
             max_tokens = self.default_max_tokens
         if temperature is None:
             temperature = self.default_temperature
+        if timeout is not None:
+            timeout = self.ai_api_timeout
+
         try:
             client = genai.Client(api_key=self.api_key)
             if format == 'json':
@@ -416,14 +424,30 @@ class term_agent:
 
     # --- ChatGPT Function ---
     def connect_to_chatgpt(self, role_system_content, prompt,
-                           model=None, max_tokens=None, temperature=None, format='json_object'):
+                           model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
+        """
+        Send a prompt to OpenAI ChatGPT and return the response as a string.
+        
+        Args:
+            role_system_content: System prompt content
+            prompt: User prompt content
+            model: Model to use (optional)
+            max_tokens: Maximum tokens for response (optional)
+            temperature: Temperature setting (optional)
+            format: Response format (optional)
+            timeout: Request timeout in seconds (optional)
+        """
         if model is None:
             model = self.default_model
         if max_tokens is None:
             max_tokens = self.default_max_tokens
         if temperature is None:
             temperature = self.default_temperature
-        client = OpenAI(api_key=self.api_key)
+        if timeout is not None:
+            timeout = self.ai_api_timeout
+
+        
+        client = OpenAI(api_key=self.api_key, timeout=timeout)
         try:
             if format == 'json':
                 response = client.chat.completions.create(
@@ -455,7 +479,7 @@ class term_agent:
             return None
 
     # --- Ollama Function ---
-    def connect_to_ollama(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, ollama_url=None, format="json"):
+    def connect_to_ollama(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, ollama_url=None, format="json", timeout=None):
         """
         Send a prompt to Ollama API and return the response as a string.
         Uses simple prompt (not chat format) for best compatibility.
@@ -468,6 +492,8 @@ class term_agent:
             temperature = self.ollama_temperature
         if ollama_url is None:
             ollama_url = self.ollama_url
+        if timeout is not None:
+            timeout = self.ai_api_timeout
 
         # Compose the prompt with system message for context
         full_prompt = f"{system_prompt}\n\n{prompt}"
@@ -486,7 +512,7 @@ class term_agent:
             payload["format"] = "json"
 
         try:
-            resp = requests.post(ollama_url, json=payload, timeout=120)
+            resp = requests.post(ollama_url, json=payload, timeout=timeout)
             resp.raise_for_status()
             response_text = resp.text.strip()
             self.logger.info(f"Ollama prompt: {full_prompt}")
@@ -520,7 +546,7 @@ class term_agent:
             return None
 
     # --- Ollama Cloud Function ---
-    def connect_to_ollama_cloud(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, format="json"):
+    def connect_to_ollama_cloud(self, system_prompt, prompt, model=None, max_tokens=None, temperature=None, format="json", timeout=None):
         """
         Send a prompt to Ollama Cloud API using the official ollama client.
         Based on the example in test_ol_cloud.py.
@@ -531,11 +557,15 @@ class term_agent:
             max_tokens = self.default_max_tokens
         if temperature is None:
             temperature = self.ollama_cloud_temperature
+        if timeout is not None:
+            timeout = self.ai_api_timeout
+
 
         try:
             client = ollama.Client(
                 host="https://ollama.com",
-                headers={'Authorization': f'Bearer {self.api_key}'}
+                headers={'Authorization': f'Bearer {self.api_key}'},
+                timeout=timeout
             )
             # Compose the prompt with system message for context
             full_prompt = f"{system_prompt}\n\n{prompt}"
@@ -577,10 +607,19 @@ class term_agent:
             return None
 
     # --- OpenRouter Function ---
-    def connect_to_openrouter(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object'):
+    def connect_to_openrouter(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
         """
         Send a prompt to OpenRouter API using OpenAI-compatible interface.
         OpenRouter provides access to multiple AI models through a unified API.
+        
+        Args:
+            role_system_content: System prompt content
+            prompt: User prompt content
+            model: Model to use (optional)
+            max_tokens: Maximum tokens for response (optional)
+            temperature: Temperature setting (optional)
+            format: Response format (optional)
+            timeout: Request timeout in seconds (optional)
         """
         if model is None:
             model = self.openrouter_model
@@ -588,11 +627,14 @@ class term_agent:
             max_tokens = self.openrouter_max_tokens
         if temperature is None:
             temperature = self.openrouter_temperature
+        if timeout is not None:
+            timeout = self.ai_api_timeout
             
         # OpenRouter uses the same API format as OpenAI
         client = OpenAI(
             api_key=self.api_key,
-            base_url="https://openrouter.ai/api/v1"
+            base_url="https://openrouter.ai/api/v1",
+            timeout=timeout
         )
         
         full_prompt = f"{role_system_content}\n\n{prompt}"

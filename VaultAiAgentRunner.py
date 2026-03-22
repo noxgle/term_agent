@@ -15,6 +15,10 @@ from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
 from ai.PromptFilter import compress_prompt, estimate_token_savings
 from ai.LogCompressor import LogCompressor, DynamicLogCompressor, should_compress,should_compress_adaptive
+from ai.detect_output_type import detect_output_type, summarize_table, 
+from ai.stacktrace_summarize import summarize_stacktrace
+from ai.kv_summarize import summarize_kv
+from ai.json_summarize import summarize_json
 import logging
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
@@ -2164,48 +2168,176 @@ class VaultAIAgentRunner:
                             )
 
                         # Build smart feedback based on exit code
-                        if code == 0:
-                            if  should_compress_adaptive(out):
-                                compressed_out = self._compress_with_fallback(out, self.logger)
-                                self.logger.debug(f"Compressed command output from {len(out)} chars to {len(compressed_out)} chars for command: {command}")
-                                out = compressed_out
+
+                        output_type = detect_output_type(out)
+                        if output_type == "empty":
+                            original_feedback = (
+                                f"Command '{command}' executed with exit code {code} and no output.\n"
+                                f"The command {'succeeded' if code == 0 else 'failed'} with no output. "
+                                f"You can mark this step as {'completed' if code == 0 else 'failed'} and proceed to the next step."
+                            )
+                        elif output_type == "json":
+                            # pretty / truncate JSON output for feedback
+                            summarized_json_out = summarize_json(out)
+                            if code == 0:
                                 original_feedback = (
-                                    f"Command '{command}' executed successfully with exit code 0.\n"
-                                    f"Compressed Output:\n\n{out}\n\n"
+                                    f"Command '{command}' executed successfully with exit code 0 and produced JSON output.\n"
+                                    f"Output:\n\n{summarized_json_out}\n\n"
                                     "The command succeeded. You can mark this step as completed and proceed to the next step."
                                 )
                             else:
+                                    original_feedback = (
+                                        f"Command '{command}' failed with exit code {code} but produced JSON output.\n"
+                                        f"Output:\n\n{summarized_json_out}\n\n"
+                                        f"The command failed. Analyze the error and decide:\n"
+                                        f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                        f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                        f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                        f"- FAIL: If this is a critical error that blocks progress\n"
+                                        f"What is your decision?"
+                                    )
+                        elif output_type == "stacktrace":
+                            summarized_stacktrace_out = summarize_stacktrace(out)
+                            if code == 0:
                                 original_feedback = (
-                                    f"Command '{command}' executed successfully with exit code 0.\n"
-                                    f"Output:\n\n{out}\n\n"
-                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                    f"Command '{command}' executed successfully with exit code 0 but produced a stacktrace output.\n"
+                                    f"Output:\n\n{summarized_stacktrace_out}\n\n"
+                                    "The command succeeded but produced a stacktrace. Analyze the output to determine if there are any warnings or non-critical errors. You can mark this step as completed and proceed to the next step if the stacktrace does not indicate a critical issue."
                                 )
-                        else:
-                            if  should_compress_adaptive(out):
-                                compressed_out = self._compress_with_fallback(out, self.logger)
-                                self.logger.debug(f"Compressed command output from {len(out)} chars to {len(compressed_out)} chars for command: {command}")
-                                out = compressed_out
+                            else:
                                 original_feedback = (
-                                    f"Command '{command}' failed with exit code {code}.\n"
-                                    f"Compressed Output:\n\n{out}\n\n"
-                                    f"The command failed. Analyze the error and decide:\n"
+                                    f"Command '{command}' failed with exit code {code} and produced a stacktrace output.\n"
+                                    f"Output:\n\n{summarized_stacktrace_out}\n\n"
+                                    f"The command failed and produced a stacktrace. Analyze the stacktrace to identify the error. Based on the analysis, decide:\n"
                                     f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
                                     f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
                                     f"- SKIP: If this step is non-critical and you can proceed without it\n"
                                     f"- FAIL: If this is a critical error that blocks progress\n"
                                     f"What is your decision?"
                                 )
+                        elif output_type == "log":
+                            if  should_compress_adaptive(out):
+                                compressed_out = self._compress_with_fallback(out, self.logger)
+                                self.logger.debug(f"Compressed command output from {len(out)} chars to {len(compressed_out)} chars for command: {command}")
+                                out = compressed_out
+                                text_for_feedback = f"Compressed Output:\n\n{out}\n\n"
+                            else:
+                                text_for_feedback = f"Output:\n\n{out}\n\n"
+                            if code == 0:
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0 and produced log output.\n"
+                                    f"{text_for_feedback}"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
                             else:
                                 original_feedback = (
-                                    f"Command '{command}' failed with exit code {code}.\n"
-                                    f"Output:\n\n{out}\n\n"
-                                    f"The command failed. Analyze the error and decide:\n"
+                                    f"Command '{command}' failed with exit code {code} but produced log output.\n"
+                                    f"{text_for_feedback}"
+                                    f"The command failed. Analyze the log output to identify any error messages or warnings. Based on the analysis, decide:\n"
                                     f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
                                     f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
                                     f"- SKIP: If this step is non-critical and you can proceed without it\n"
                                     f"- FAIL: If this is a critical error that blocks progress\n"
                                     f"What is your decision?"
                                 )
+                        elif output_type == "table":
+                            # Summarize table output using the new summarization functions
+                            try:
+                                summarized_output = summarize_table(out)
+                                if code == 0:
+                                    original_feedback = (
+                                        f"Command '{command}' executed successfully with exit code 0 and produced table output.\n"
+                                        f"Summary:\n{summarized_output}\n"
+                                        "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                    )
+                                else:
+                                    original_feedback = (
+                                        f"Command '{command}' failed with exit code {code} but produced table output.\n"
+                                        f"Summary:\n{summarized_output}\n"
+                                        f"The command failed. Analyze the table output to identify any error messages or warnings. Based on the analysis, decide:\n"
+                                        f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                        f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                        f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                        f"- FAIL: If this is a critical error that blocks progress\n"
+                                        f"What is your decision?"
+                                    )
+                            except Exception as e:
+                                # Fallback to original behavior if summarization fails
+                                self.logger.warning(f"Table summarization failed for command '{command}': {e}")
+                                if code == 0:
+                                    original_feedback = (
+                                        f"Command '{command}' executed successfully with exit code 0 and produced table output.\n"
+                                        f"Output:\n\n{out}\n\n"
+                                        "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                    )
+                                else:
+                                    original_feedback = (
+                                        f"Command '{command}' failed with exit code {code} but produced table output.\n"
+                                        f"Output:\n\n{out}\n\n"
+                                        f"The command failed. Analyze the table output to identify any error messages or warnings. Based on the analysis, decide:\n"
+                                        f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                        f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                        f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                        f"- FAIL: If this is a critical error that blocks progress\n"
+                                        f"What is your decision?"
+                                    )
+                        elif output_type == "kv":
+                            summarize_kv_out = summarize_kv(out)
+                            if code == 0:
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0 and produced key-value output.\n"
+                                    f"Output:\n\n{summarize_kv_out}\n\n"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
+                            else:
+                                original_feedback = (
+                                    f"Command '{command}' failed with exit code {code} but produced key-value output.\n"
+                                    f"Output:\n\n{summarize_kv_out}\n\n"
+                                    f"The command failed. Analyze the key-value output to identify any error messages or warnings. Based on the analysis, decide:\n"
+                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                    f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                    f"- FAIL: If this is a critical error that blocks progress\n"
+                                    f"What is your decision?"
+                                )
+                        elif output_type == "single_line":
+                            if code == 0:
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0 and produced single-line output.\n"
+                                    f"Output: {out}\n\n"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
+                            else:
+                                original_feedback = (
+                                    f"Command '{command}' failed with exit code {code} but produced single-line output.\n"
+                                    f"Output: {out}\n\n"
+                                    f"The command failed. Analyze the output to identify any error messages or warnings. Based on the analysis, decide:\n"
+                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                    f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                    f"- FAIL: If this is a critical error that blocks progress\n"
+                                    f"What is your decision?"
+                                )
+                        elif output_type == "text" or output_type == "unknown":
+                            # truncate if too long
+                            if code == 0:
+                                original_feedback = (
+                                    f"Command '{command}' executed successfully with exit code 0 and produced text output.\n"
+                                    f"Output:\n\n{out}\n\n"
+                                    "The command succeeded. You can mark this step as completed and proceed to the next step."
+                                )
+                            else:
+                                original_feedback = (
+                                    f"Command '{command}' failed with exit code {code} and produced text output.\n"
+                                    f"Output:\n\n{out}\n\n"
+                                    f"The command failed. Analyze the output to identify any error messages or warnings. Based on the analysis, decide:\n"
+                                    f"- RETRY: If it's a transient error (timeout, network, temporary), retry with same or modified command\n"
+                                    f"- FIX: If the command was wrong (bad syntax, missing args), fix and retry with corrected command\n"
+                                    f"- SKIP: If this step is non-critical and you can proceed without it\n"
+                                    f"- FAIL: If this is a critical error that blocks progress\n"
+                                    f"What is your decision?"
+                                )
+                                
                         user_feedback_content = compress_prompt(original_feedback)
                         self._log_prompt_filter_savings(original_feedback, user_feedback_content)
 
