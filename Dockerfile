@@ -36,7 +36,7 @@ WORKDIR /app
 # Copy all term_agent files
 COPY . /app/
 
-RUN mkdir -p /app/hf_cache
+#RUN mkdir -p /app/hf_cache
 
 # Create virtual environment
 RUN python3 -m venv /app/.venv
@@ -44,7 +44,7 @@ RUN python3 -m venv /app/.venv
 # Activate virtual environment and install dependencies
 RUN /app/.venv/bin/pip install --upgrade pip && \
     /app/.venv/bin/pip install --upgrade google-genai && \
-    /app/.venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu \
+    /app/.venv/bin/pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu && \
     if [ -f /app/requirements.txt ]; then \
         /app/.venv/bin/pip install -r /app/requirements.txt; \
     fi

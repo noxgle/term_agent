@@ -80,6 +80,44 @@ In this mode, the agent operates autonomously, executing suggested commands with
 
 **Note:** The `Ctrl+A` shortcut is one-way - it switches from interactive to automatic mode during the current session. To return to collaborative mode, restart the agent with `AUTO_ACCEPT=false`.
 
+## Agent Pipeline Modes
+
+The agent supports three pipeline modes that control how the AI processes tasks and manages context:
+
+### Compact Mode (`--compact`)
+- Uses a simplified pipeline with a maximum of 3 LLM calls
+- Compact prompts and streamlined state machine for faster decisions
+- Minimal context overhead - ideal for simple, straightforward tasks
+- Best for: Quick commands, simple file operations, routine automation
+
+### Normal Mode (`--normal`)
+- Full pipeline with complete conversation history and sliding window context
+- All tools and features available with detailed step-by-step execution
+- Maximum reliability and comprehensive task handling
+- Best for: Complex tasks, multi-step workflows, critical operations
+
+### Hybrid Mode (`--hybrid`, default)
+- Starts with Compact Mode for efficiency
+- Automatically falls back to Normal Mode if Compact fails or gets blocked
+- Best of both worlds: speed when possible, reliability when needed
+- Best for: General use, unknown task complexity, balanced performance
+
+### Comparison Table
+
+| Feature | Compact | Normal | Hybrid |
+|---------|---------|--------|--------|
+| LLM Calls | Max 3 | Unlimited | Starts at 3, fallback if needed |
+| Context Size | Minimal | Full | Adaptive |
+| Speed | Fast | Slower | Balanced |
+| Reliability | Basic | High | High |
+| Best For | Simple tasks | Complex tasks | General use |
+
+### How to Choose
+
+- **Use Compact** when you know the task is simple and want quick results
+- **Use Normal** when reliability is critical or tasks are complex
+- **Use Hybrid** (default) for the best balance in most scenarios
+
 ## AI Model Comparison
 
 Before configuring your AI engine, check out the comprehensive comparison of AI models at [Artificial Analysis](https://artificialanalysis.ai/models). This independent analysis covers intelligence benchmarks, performance metrics, and pricing across 337+ models from major providers including OpenAI, Google, Anthropic, and others. It's an invaluable resource for choosing the right AI model for your specific needs and budget.
@@ -379,7 +417,7 @@ SSH_REMOTE_TIMEOUT=300
 AUTO_ACCEPT=false
 # auto explain generated commands before execution
 AUTO_EXPLAIN_COMMAND=true
-# agent pipeline mode (compact, legacy, hybrid)
+# agent pipeline mode (compact, normal, hybrid)
 AGENT_MODE=hybrid
 # show performance summary after task completion
 SHOW_PERFORMANCE_SUMMARY=false
@@ -423,11 +461,11 @@ python term_ask.py
 python term_ag.py
 ```
 
-Force compact or legacy pipeline:
+Force compact or normal pipeline:
 
 ```bash
 python term_ag.py --compact
-python term_ag.py --legacy
+python term_ag.py --normal
 python term_ag.py --hybrid
 ```
 
@@ -478,7 +516,7 @@ curl -X POST http://localhost:8000/run \
 
 If neither `pipeline_mode` nor `compact_mode` is provided, the API defaults to `pipeline_mode="hybrid"`.
 
-Force legacy mode and plan creation (API payload):
+Force normal mode and plan creation (API payload):
 
 ```bash
 curl -X POST http://localhost:8000/run \

@@ -9,6 +9,7 @@ services:
     volumes:
       - ./.env:/app/.env:ro  # Mount .env file read-only
       - ./logs:/app/logs  # Volume for logs
+      - ./hf_cache:/app/hf_cache  # Volume for Hugging Face cache
     environment:
       - TZ=Europe/Warsaw  # Set timezone
       - API_ENABLE=${API_ENABLE:-true}
@@ -33,3 +34,4 @@ services:
 
 volumes:
   logs:
+  hf_cache:

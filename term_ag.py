@@ -972,8 +972,8 @@ Controls:
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument('--compact', action='store_true',
                             help='Force compact pipeline (overrides AGENT_MODE/COMPACT_MODE)')
-    mode_group.add_argument('--legacy', action='store_true',
-                            help='Force legacy pipeline (disables compact mode)')
+    mode_group.add_argument('--normal', action='store_true',
+                            help='Force normal pipeline (disables compact mode)')
     mode_group.add_argument('--hybrid', action='store_true',
                             help='Force hybrid pipeline (compact then fallback to legacy)')
 
@@ -1011,8 +1011,8 @@ Controls:
         agent.console.print("[yellow]Agent Compact mode enabled.[/]\n")
         compact_mode_override = True
         hybrid_mode_override = False
-    elif args.legacy:
-        agent.console.print("[yellow]Agent Legacy mode enabled.[/]\n")
+    elif args.normal:
+        agent.console.print("[yellow]Agent Normal mode enabled.[/]\n")
         compact_mode_override = False
         hybrid_mode_override = False
     else:

@@ -110,15 +110,15 @@ class VaultAIAgentRunner:
             env_raw = os.getenv("COMPACT_MODE", "hybrid")
         env_value = env_raw.strip().lower()
         env_mode = "hybrid"
-        if env_value in ("0", "false", "no", "off", "legacy"):
-            env_mode = "legacy"
+        if env_value in ("0", "false", "no", "off", "normal"):
+            env_mode = "normal"
         elif env_value in ("1", "true", "yes", "on", "compact"):
             env_mode = "compact"
         elif env_value in ("auto", "hybrid"):
             env_mode = "hybrid"
 
         self.hybrid_mode = env_mode == "hybrid"
-        self.compact_mode = env_mode != "legacy"
+        self.compact_mode = env_mode != "normal"
 
         if compact_mode is not None:
             self.compact_mode = bool(compact_mode)
@@ -1776,7 +1776,7 @@ class VaultAIAgentRunner:
                     self._display_summarize_stats_summary()
                     self.terminal.print_console("="*60)
                 return
-            self.terminal.print_console("[WARN] Compact mode fallback to legacy pipeline.")
+            self.terminal.print_console("\n VaultAI> Compact mode fallback to normal mode.")
             self.summary = ""
             self.goal_success = False
 
