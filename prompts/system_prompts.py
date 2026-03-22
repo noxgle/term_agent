@@ -33,7 +33,9 @@ def get_agent_system_prompt(
         tools_section = (
             '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
             '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
-            '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
+            '- {"tool":"ask_user","question":"...","explain":"..."}\n'
+            '- {"tool":"search_in_file","path":"...","query":"...","context_lines":N,"max_results":M,"explain":"..."}\n'
+            '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"max_chars":K,"explain":"..."}\n'
             '- {"tool":"write_file","path":"...","content":"...","explain":"..."}\n'
             '- {"tool":"edit_file","path":"...","action":"replace|insert_after|insert_before|delete_line","search":"...","replace":"...","line":"...","explain":"..."}\n'
             '- {"tool":"list_directory","path":"...","recursive":true|false,"pattern":"glob","explain":"..."}\n'
@@ -47,7 +49,8 @@ def get_agent_system_prompt(
         tools_section = (
             '- {"tool":"bash","command":"...","timeout":seconds}\n'
             '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true}\n'
-            '- {"tool":"read_file","path":"...","start_line":N,"end_line":M}\n'
+            '- {"tool":"search_in_file","path":"...","query":"...", "context_lines":N,"max_results":M}\n'
+            '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"max_chars":K}\n'
             '- {"tool":"write_file","path":"...","content":"..."}\n'
             '- {"tool":"edit_file","path":"...","action":"replace|insert_after|insert_before|delete_line","search":"...","replace":"...","line":"..."}\n'
             '- {"tool":"list_directory","path":"...","recursive":true|false,"pattern":"glob"}\n'

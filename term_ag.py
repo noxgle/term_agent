@@ -149,34 +149,88 @@ class term_agent:
         queue_listener.start()
 
         self.logger = logging.getLogger("TerminalAIAgent")
-        self.ai_engine = os.getenv("AI_ENGINE", "openai")
-        # API key selection logic
-        if self.ai_engine == "openai":
-            self.api_key = os.getenv("OPENAI_API_KEY", "")
-        elif self.ai_engine == "google":
-            self.api_key = os.getenv("GOOGLE_API_KEY", "")
-        elif self.ai_engine == "ollama-cloud":
-            self.api_key = os.getenv("OLLAMA_CLOUD_TOKEN", "")
-        elif self.ai_engine == "openrouter":
-            self.api_key = os.getenv("OPENROUTER_API_KEY", "")
-        else:
-            self.api_key = None
+        
+        # Parse AI_ENGINE as comma-separated list for multi-engine support
+        ai_engine_env = os.getenv("AI_ENGINE", "openai")
+        self.ai_engines = [e.strip() for e in ai_engine_env.split(",") if e.strip()]
+        self.ai_engine = self.ai_engines[0]  # Primary/first engine for backward compatibility
+        self.ai_engine_route = os.getenv("AI_ENGINE_ROUTE", "round-robin").lower()
+        
+        # Validate routing mode
+        if self.ai_engine_route not in ["round-robin", "fallback"]:
+            self.logger.warning(f"Invalid AI_ENGINE_ROUTE '{self.ai_engine_route}', defaulting to 'round-robin'")
+            self.ai_engine_route = "round-robin"
+        
+        # Per-engine API keys mapping
+        self.engine_api_keys = {
+            "openai": os.getenv("OPENAI_API_KEY", ""),
+            "google": os.getenv("GOOGLE_API_KEY", ""),
+            "ollama-cloud": os.getenv("OLLAMA_CLOUD_TOKEN", ""),
+            "openrouter": os.getenv("OPENROUTER_API_KEY", ""),
+            "ollama": None,  # Ollama doesn't require API key
+        }
+        
+        # Per-engine model configurations
+        self.engine_models = {
+            "openai": {
+                "model": os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+                "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "150")),
+            },
+            "ollama": {
+                "model": os.getenv("OLLAMA_MODEL", "granite3.3:8b"),
+                "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "150")),
+                "url": os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat"),
+            },
+            "ollama-cloud": {
+                "model": os.getenv("OLLAMA_CLOUD_MODEL", "gpt-oss:120b"),
+                "temperature": float(os.getenv("OLLAMA_CLOUD_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "150")),
+            },
+            "google": {
+                "model": os.getenv("GOOGLE_MODEL", "gemini-2.0-flash"),
+                "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "150")),
+            },
+            "openrouter": {
+                "model": os.getenv("OPENROUTER_MODEL", "openrouter/llama-3.1-70b-instruct:free"),
+                "temperature": float(os.getenv("OPENROUTER_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("OPENROUTER_MAX_TOKENS", "1000")),
+            },
+        }
+        
+        # API key selection logic (primary engine for backward compatibility)
+        self.api_key = self.engine_api_keys.get(self.ai_engine)
         if self.ai_engine in ["openai", "google", "ollama-cloud", "openrouter"] and not self.api_key:
             self.logger.critical(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
             raise RuntimeError(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
         
-        self.default_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        self.default_temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.5"))
-        self.default_max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "150"))
-        self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat")
-        self.ollama_model = os.getenv("OLLAMA_MODEL", "granite3.3:8b")
-        self.ollama_temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.5"))
-        self.ollama_cloud_model = os.getenv("OLLAMA_CLOUD_MODEL", "gpt-oss:120b")
-        self.ollama_cloud_temperature = float(os.getenv("OLLAMA_CLOUD_TEMPERATURE", "0.5"))
-        self.gemini_model = os.getenv("GOOGLE_MODEL", "gemini-2.0-flash")
-        self.openrouter_model = os.getenv("OPENROUTER_MODEL", "openrouter/llama-3.1-70b-instruct:free")
-        self.openrouter_temperature = float(os.getenv("OPENROUTER_TEMPERATURE", "0.5"))
-        self.openrouter_max_tokens = int(os.getenv("OPENROUTER_MAX_TOKENS", "1000"))
+        # Validate API keys for all configured engines
+        for engine in self.ai_engines:
+            if engine in ["openai", "google", "ollama-cloud", "openrouter"] and not self.engine_api_keys.get(engine):
+                self.logger.warning(f"No API key configured for engine '{engine}' - it will fail when used")
+        
+        # Log multi-engine configuration
+        if len(self.ai_engines) > 1:
+            self.logger.info(f"Multi-engine mode: {len(self.ai_engines)} engines configured ({', '.join(self.ai_engines)})")
+            self.logger.info(f"Routing mode: {self.ai_engine_route}")
+        else:
+            self.logger.info(f"Single-engine mode: {self.ai_engine}")
+        
+        # Backward compatibility aliases
+        self.default_model = self.engine_models["openai"]["model"]
+        self.default_temperature = self.engine_models["openai"]["temperature"]
+        self.default_max_tokens = self.engine_models["openai"]["max_tokens"]
+        self.ollama_url = self.engine_models["ollama"]["url"]
+        self.ollama_model = self.engine_models["ollama"]["model"]
+        self.ollama_temperature = self.engine_models["ollama"]["temperature"]
+        self.ollama_cloud_model = self.engine_models["ollama-cloud"]["model"]
+        self.ollama_cloud_temperature = self.engine_models["ollama-cloud"]["temperature"]
+        self.gemini_model = self.engine_models["google"]["model"]
+        self.openrouter_model = self.engine_models["openrouter"]["model"]
+        self.openrouter_temperature = self.engine_models["openrouter"]["temperature"]
+        self.openrouter_max_tokens = self.engine_models["openrouter"]["max_tokens"]
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         # AI API timeout and retry configuration

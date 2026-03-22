@@ -31,6 +31,19 @@ class AICommunicationHandler:
             except Exception as e:
                 self.logger.warning(f"AICommunicationHandler: Failed to initialize JSON validator: {e}")
         
+        # Multi-engine routing configuration
+        self.ai_engines = getattr(terminal, 'ai_engines', [terminal.ai_engine])
+        self.ai_engine_route = getattr(terminal, 'ai_engine_route', 'round-robin')
+        self._round_robin_index = 0
+        self._round_robin_lock = threading.Lock()
+        
+        # Log routing configuration
+        if len(self.ai_engines) > 1:
+            self.logger.info(f"AICommunicationHandler: Multi-engine mode with {len(self.ai_engines)} engines")
+            self.logger.info(f"AICommunicationHandler: Routing mode = {self.ai_engine_route}")
+        else:
+            self.logger.info(f"AICommunicationHandler: Single-engine mode ({self.ai_engines[0]})")
+        
         # Load timeout and retry configuration from terminal
         self._load_timeout_config()
     
@@ -64,6 +77,139 @@ class AICommunicationHandler:
             self.ai_api_retry_delay = 2
             self.ai_api_retry_backoff = 2
             self.use_timeout_api = True
+
+    def _get_next_engine(self) -> str:
+        """
+        Get the next engine based on routing mode.
+        
+        For round-robin: Returns engines in rotation order
+        For fallback: Always returns the first engine (fallback logic is handled at higher level)
+        
+        Returns:
+            Engine name string
+        """
+        if len(self.ai_engines) == 1:
+            return self.ai_engines[0]
+        
+        if self.ai_engine_route == "round-robin":
+            with self._round_robin_lock:
+                engine = self.ai_engines[self._round_robin_index]
+                self._round_robin_index = (self._round_robin_index + 1) % len(self.ai_engines)
+                self.logger.debug(f"Round-robin selected engine: {engine} (next index: {self._round_robin_index})")
+                return engine
+        else:  # fallback mode
+            # In fallback mode, we always start with the first engine
+            # The fallback logic is handled by trying each engine in sequence
+            return self.ai_engines[0]
+
+    def _get_engine_config(self, engine: str) -> dict:
+        """
+        Get configuration for a specific engine.
+        
+        Args:
+            engine: Engine name (e.g., "openai", "ollama", "openrouter")
+            
+        Returns:
+            Dict with engine configuration (api_key, model, temperature, max_tokens, etc.)
+        """
+        engine_configs = getattr(self.terminal, 'engine_models', {})
+        api_keys = getattr(self.terminal, 'engine_api_keys', {})
+        
+        config = engine_configs.get(engine, {})
+        config['api_key'] = api_keys.get(engine)
+        
+        return config
+
+    def _call_single_engine(self, engine: str, system_prompt: str, user_prompt: str, 
+                           max_tokens: Optional[int] = None, timeout: Optional[int] = None) -> Optional[str]:
+        """
+        Call a specific AI engine.
+        
+        Args:
+            engine: Engine name to call
+            system_prompt: System prompt content
+            user_prompt: User prompt content
+            max_tokens: Optional max tokens override
+            timeout: Optional timeout override
+            
+        Returns:
+            AI response or None on failure
+        """
+        # Get engine configuration
+        config = self._get_engine_config(engine)
+        
+        # Use provided values or fall back to config
+        call_max_tokens = max_tokens if max_tokens is not None else config.get('max_tokens')
+        call_timeout = timeout if timeout is not None else self.ai_api_timeout
+        
+        # Temporarily swap terminal's api_key and model settings for this call
+        original_api_key = getattr(self.terminal, 'api_key', None)
+        original_model = None
+        original_temperature = None
+        
+        # Save original values based on engine type
+        if engine == "openai":
+            original_model = self.terminal.default_model
+            original_temperature = self.terminal.default_temperature
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.default_model = config.get('model') or self.terminal.default_model
+            self.terminal.default_temperature = config.get('temperature', self.terminal.default_temperature)
+        elif engine == "ollama":
+            original_model = self.terminal.ollama_model
+            original_temperature = self.terminal.ollama_temperature
+            self.terminal.ollama_model = config.get('model') or self.terminal.ollama_model
+            self.terminal.ollama_temperature = config.get('temperature', self.terminal.ollama_temperature)
+        elif engine == "ollama-cloud":
+            original_model = self.terminal.ollama_cloud_model
+            original_temperature = self.terminal.ollama_cloud_temperature
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.ollama_cloud_model = config.get('model') or self.terminal.ollama_cloud_model
+            self.terminal.ollama_cloud_temperature = config.get('temperature', self.terminal.ollama_cloud_temperature)
+        elif engine == "google":
+            original_model = self.terminal.gemini_model
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.gemini_model = config.get('model') or self.terminal.gemini_model
+        elif engine == "openrouter":
+            original_model = self.terminal.openrouter_model
+            original_temperature = self.terminal.openrouter_temperature
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.openrouter_model = config.get('model') or self.terminal.openrouter_model
+            self.terminal.openrouter_temperature = config.get('temperature', self.terminal.openrouter_temperature)
+            self.terminal.openrouter_max_tokens = config.get('max_tokens', self.terminal.openrouter_max_tokens)
+        
+        try:
+            # Make the actual API call
+            if engine == "ollama":
+                return self.terminal.connect_to_ollama(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "ollama-cloud":
+                return self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "google":
+                return self.terminal.connect_to_gemini(f"{system_prompt}\n{user_prompt}", max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "openai":
+                return self.terminal.connect_to_chatgpt(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "openrouter":
+                return self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            else:
+                raise ValueError(f"Unsupported AI engine: {engine}")
+        finally:
+            # Restore original values
+            if original_api_key is not None:
+                self.terminal.api_key = original_api_key
+            if original_model is not None:
+                if engine == "openai":
+                    self.terminal.default_model = original_model
+                    self.terminal.default_temperature = original_temperature
+                elif engine == "ollama":
+                    self.terminal.ollama_model = original_model
+                    self.terminal.ollama_temperature = original_temperature
+                elif engine == "ollama-cloud":
+                    self.terminal.ollama_cloud_model = original_model
+                    self.terminal.ollama_cloud_temperature = original_temperature
+                elif engine == "google":
+                    self.terminal.gemini_model = original_model
+                elif engine == "openrouter":
+                    self.terminal.openrouter_model = original_model
+                    self.terminal.openrouter_temperature = original_temperature
 
     def send_request(
         self,
@@ -148,123 +294,147 @@ class AICommunicationHandler:
         return None
 
     def _call_ai_api_with_timeout(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
-        """Route request to appropriate AI engine with timeout using threading and signal-based fallback"""
-        engine = self.terminal.ai_engine
+        """
+        Route request to appropriate AI engine with timeout using threading and signal-based fallback.
+        Supports multi-engine routing (round-robin and fallback modes).
+        """
+        # Determine engines to try based on routing mode
+        if len(self.ai_engines) == 1:
+            engines_to_try = [self.ai_engines[0]]
+        elif self.ai_engine_route == "round-robin":
+            # Round-robin: try only the selected engine
+            engines_to_try = [self._get_next_engine()]
+        else:  # fallback mode
+            # Fallback: try all engines in order
+            engines_to_try = self.ai_engines.copy()
         
-        # Create a queue for thread-safe result passing
-        result_queue = queue.Queue()
-        exception_queue = queue.Queue()
+        last_exception = None
         
-        def target_function():
-            """Target function to run in separate thread"""
+        for engine in engines_to_try:
+            self.logger.debug(f"Attempting engine: {engine}")
+            
+            # Create a queue for thread-safe result passing
+            result_queue = queue.Queue()
+            exception_queue = queue.Queue()
+            
+            def target_function():
+                """Target function to run in separate thread"""
+                try:
+                    result = self._call_single_engine(engine, system_prompt, user_prompt, max_tokens=max_tokens, timeout=self.ai_api_timeout)
+                    result_queue.put(result)
+                except Exception as e:
+                    exception_queue.put(e)
+            
+            # Create and start the worker thread
+            worker_thread = threading.Thread(target=target_function, daemon=True)
+            worker_thread.start()
+            
+            # Set up signal-based timeout for Unix/Linux systems
+            signal_handler_set = False
+            old_alarm_handler = None
+            old_alarm_time = 0
+            
+            if sys.platform != 'win32':  # Unix/Linux systems
+                try:
+                    def timeout_handler(signum, frame):
+                        pass
+                    
+                    # Set up the alarm
+                    old_alarm_handler = signal.signal(signal.SIGALRM, timeout_handler)
+                    old_alarm_time = signal.alarm(self.ai_api_timeout)
+                    signal_handler_set = True
+                except (ValueError, OSError) as e:
+                    self.logger.debug(f"Signal-based timeout not available: {e}")
+            
             try:
-                if engine == "ollama":
-                    result = self.terminal.connect_to_ollama(system_prompt, user_prompt, max_tokens=max_tokens, timeout=self.ai_api_timeout)
-                elif engine == "ollama-cloud":
-                    result = self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt, max_tokens=max_tokens, timeout=self.ai_api_timeout)
-                elif engine == "google":
-                    result = self.terminal.connect_to_gemini(f"{system_prompt}\n{user_prompt}", max_tokens=max_tokens, timeout=self.ai_api_timeout)
-                elif engine == "openai":
-                    result = self.terminal.connect_to_chatgpt(system_prompt, user_prompt, max_tokens=max_tokens, timeout=self.ai_api_timeout)
-                elif engine == "openrouter":
-                    result = self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=max_tokens, timeout=self.ai_api_timeout)
-                else:
-                    raise ValueError(f"Unsupported AI engine: {engine}")
+                # Wait for result with timeout
+                try:
+                    result = result_queue.get(timeout=self.ai_api_timeout)
+                    if result:
+                        return result
+                    else:
+                        self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
+                        last_exception = ValueError(f"Empty response from {engine}")
+                        continue
+                except queue.Empty:
+                    self.logger.warning(f"Engine {engine} timed out, trying next engine")
+                    last_exception = TimeoutError(f"Timeout from {engine}")
+                    continue
+            
+            except TimeoutError:
+                # Timeout handling
+                if signal_handler_set:
+                    signal.alarm(0)
+                    if old_alarm_handler is not None:
+                        signal.signal(signal.SIGALRM, old_alarm_handler)
+                    if old_alarm_time > 0:
+                        signal.alarm(old_alarm_time)
                 
-                result_queue.put(result)
+                worker_thread.join(timeout=1.0)
+                
+                self.logger.warning(f"AI API call timed out after {self.ai_api_timeout} seconds. "
+                                  f"Engine: {engine}, Thread alive: {worker_thread.is_alive()}")
+                last_exception = TimeoutError(f"Timeout from {engine}")
+                continue
+            
             except Exception as e:
-                exception_queue.put(e)
-        
-        # Create and start the worker thread
-        worker_thread = threading.Thread(target=target_function, daemon=True)
-        worker_thread.start()
-        
-        # Set up signal-based timeout for Unix/Linux systems
-        signal_handler_set = False
-        old_alarm_handler = None
-        old_alarm_time = 0
-        
-        if sys.platform != 'win32':  # Unix/Linux systems
-            try:
-                def timeout_handler(signum, frame):
-                    #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
-                    pass
+                # Other exceptions
+                if signal_handler_set:
+                    signal.alarm(0)
+                    if old_alarm_handler is not None:
+                        signal.signal(signal.SIGALRM, old_alarm_handler)
+                    if old_alarm_time > 0:
+                        signal.alarm(old_alarm_time)
                 
-                # Set up the alarm
-                old_alarm_handler = signal.signal(signal.SIGALRM, timeout_handler)
-                old_alarm_time = signal.alarm(self.ai_api_timeout)
-                signal_handler_set = True
-            except (ValueError, OSError) as e:
-                self.logger.debug(f"Signal-based timeout not available: {e}")
+                self.logger.warning(f"Engine {engine} failed: {e}, trying next engine")
+                last_exception = e
+                continue
+            
+            finally:
+                # Ensure thread cleanup
+                if worker_thread.is_alive():
+                    pass
         
-        try:
-            # Wait for result with timeout
-            try:
-                result = result_queue.get(timeout=self.ai_api_timeout)
-                return result
-            except queue.Empty:
-                # Timeout occurred
-                #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
-                pass
-        
-        except TimeoutError:
-            # Timeout handling
-            if signal_handler_set:
-                # Cancel the alarm
-                signal.alarm(0)
-                # Restore previous signal handler
-                if old_alarm_handler is not None:
-                    signal.signal(signal.SIGALRM, old_alarm_handler)
-                if old_alarm_time > 0:
-                    signal.alarm(old_alarm_time)
-            
-            # Wait a bit for the thread to finish (but don't block indefinitely)
-            worker_thread.join(timeout=1.0)
-            
-            # Log timeout event
-            self.logger.warning(f"AI API call timed out after {self.ai_api_timeout} seconds. "
-                              f"Engine: {engine}, Thread alive: {worker_thread.is_alive()}")
-            
-            #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
-            
-        
-        except Exception as e:
-            # Other exceptions
-            if signal_handler_set:
-                # Cancel the alarm
-                signal.alarm(0)
-                # Restore previous signal handler
-                if old_alarm_handler is not None:
-                    signal.signal(signal.SIGALRM, old_alarm_handler)
-                if old_alarm_time > 0:
-                    signal.alarm(old_alarm_time)
-            
-            # Re-raise the exception
-            raise e
-        
-        finally:
-            # Ensure thread cleanup
-            if worker_thread.is_alive():
-                # Thread is still running, but we can't kill it directly
-                # Just let it run in the background as a daemon thread
-                pass
+        # All engines failed
+        if last_exception:
+            raise last_exception
+        return None
 
     def _call_ai_api(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
-        """Route request to appropriate AI engine (legacy method without timeout)"""
-        engine = self.terminal.ai_engine
+        """
+        Route request to appropriate AI engine (legacy method without timeout).
+        Supports multi-engine routing (round-robin and fallback modes).
+        """
+        # Determine engines to try based on routing mode
+        if len(self.ai_engines) == 1:
+            engines_to_try = [self.ai_engines[0]]
+        elif self.ai_engine_route == "round-robin":
+            # Round-robin: try only the selected engine
+            engines_to_try = [self._get_next_engine()]
+        else:  # fallback mode
+            # Fallback: try all engines in order
+            engines_to_try = self.ai_engines.copy()
         
-        if engine == "ollama":
-            return self.terminal.connect_to_ollama(system_prompt, user_prompt, max_tokens=max_tokens)
-        elif engine == "ollama-cloud":
-            return self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt, max_tokens=max_tokens)
-        elif engine == "google":
-            return self.terminal.connect_to_gemini(f"{system_prompt}\n{user_prompt}", max_tokens=max_tokens)
-        elif engine == "openai":
-            return self.terminal.connect_to_chatgpt(system_prompt, user_prompt, max_tokens=max_tokens)
-        elif engine == "openrouter":
-            return self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=max_tokens)
-        else:
-            raise ValueError(f"Unsupported AI engine: {engine}")
+        last_exception = None
+        
+        for engine in engines_to_try:
+            self.logger.debug(f"Attempting engine: {engine}")
+            try:
+                result = self._call_single_engine(engine, system_prompt, user_prompt, max_tokens=max_tokens)
+                if result:
+                    return result
+                else:
+                    self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
+                    last_exception = ValueError(f"Empty response from {engine}")
+            except Exception as e:
+                self.logger.warning(f"Engine {engine} failed: {e}, trying next engine")
+                last_exception = e
+                continue
+        
+        # All engines failed
+        if last_exception:
+            raise last_exception
+        return None
 
     def _process_json_response(self, response: str) -> Optional[str]:
         """
