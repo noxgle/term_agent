@@ -187,7 +187,8 @@ class AICommunicationHandler:
         if sys.platform != 'win32':  # Unix/Linux systems
             try:
                 def timeout_handler(signum, frame):
-                    raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+                    #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+                    pass
                 
                 # Set up the alarm
                 old_alarm_handler = signal.signal(signal.SIGALRM, timeout_handler)
@@ -203,7 +204,8 @@ class AICommunicationHandler:
                 return result
             except queue.Empty:
                 # Timeout occurred
-                raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+                #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+                pass
         
         except TimeoutError:
             # Timeout handling
@@ -223,7 +225,8 @@ class AICommunicationHandler:
             self.logger.warning(f"AI API call timed out after {self.ai_api_timeout} seconds. "
                               f"Engine: {engine}, Thread alive: {worker_thread.is_alive()}")
             
-            raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+            #raise TimeoutError(f"AI API call timed out after {self.ai_api_timeout} seconds")
+            
         
         except Exception as e:
             # Other exceptions

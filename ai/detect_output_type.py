@@ -1,4 +1,5 @@
 import re
+import json
 from .table_summarizer import (
     summarize_ps, 
     summarize_df, 
@@ -9,30 +10,15 @@ from .table_summarizer import (
     summarize_generic_table
 )
 
-def detect_output_type(text: str, command: str=None) -> str:
+
+def detect_output_type(text: str, command: str = None) -> str:
     """
     Detects the type of output from a given text string.
-    
-    Analyzes the text content and categorizes it into one of several output types:
-    - json: Text starting with { or [
-    - stacktrace: Python or Java stack traces
-    - log: Log entries with timestamps
-    - table: Structured data with headers and similar rows
-    - kv: Key-value pairs (e.g., environment variables)
-    - single_line: Single line output
-    - text: Default fallback for regular text
-    - empty: Empty or whitespace-only text
-    
-    Args:
-        text: The text to analyze
-        command: The command that generated the output (optional)
-        
-    Returns:
-        A string indicating the detected output type
     """
-    if "&&" in command:
-        # docolowyn nowy return "mutli_text" dla outputu z wielu komend, ale na razie zostawiamy heurystykę detekcji typu dla całego outputu
-        return "text"
+
+    # --- multi-command guard ---
+    if command and "&&" in command:
+        return "text"  # docelowo: "multi_text"
 
     lines = [l for l in text.splitlines() if l.strip()]
     if not lines:
@@ -41,22 +27,23 @@ def detect_output_type(text: str, command: str=None) -> str:
     sample = lines[:20]
     joined = "\n".join(sample)
 
-    # --- 1. JSON ---
-    if joined.strip().startswith("{") or joined.strip().startswith("["):
-        return "json"
-
-    # --- 2. Stacktrace (Python, Java, etc.)
+    # --- 1. Stacktrace ---
     if any("Traceback (most recent call last)" in l for l in sample):
         return "stacktrace"
 
-    if any(re.search(r'\bat\s+\S+\(.*\)', l) for l in sample):  # Java
+    if any(re.search(r'\bat\s+\S+\(.*\)', l) for l in sample):
         return "stacktrace"
 
-    # --- 3. Logi (timestamp + powtarzalność struktury)
+    # --- 2. Logi (dmesg + timestampy) ---
+
+    # 🔥 dmesg pattern: [ 123.456 ]
+    if any(re.match(r'^\[\s*\d+\.\d+\]', l) for l in sample):
+        return "log"
+
     timestamp_patterns = [
-        r'\d{4}-\d{2}-\d{2}',                # 2026-03-20
-        r'\d{2}:\d{2}:\d{2}',                # 14:55:01
-        r'\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}'   # Mar 20 14:55:01
+        r'\d{4}-\d{2}-\d{2}',
+        r'\d{2}:\d{2}:\d{2}',
+        r'\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}'
     ]
 
     timestamp_hits = sum(
@@ -67,13 +54,19 @@ def detect_output_type(text: str, command: str=None) -> str:
     if timestamp_hits > len(sample) * 0.3:
         return "log"
 
-    # --- 4. Tabele (np. ps aux, df -h)
-    # Heurystyka: pierwsza linia = nagłówki, dużo kolumn
+    # --- 3. JSON (dopiero po logach!) ---
+    try:
+        parsed = json.loads(joined)
+        if isinstance(parsed, (dict, list)):
+            return "json"
+    except Exception:
+        pass
+
+    # --- 4. Tabele ---
     header = lines[0]
     header_cols = header.split()
 
     if len(header_cols) >= 4:
-        # sprawdzamy czy kolejne linie mają podobną strukturę
         similar = 0
         for l in lines[1:10]:
             cols = l.split()
@@ -83,16 +76,16 @@ def detect_output_type(text: str, command: str=None) -> str:
         if similar >= 3:
             return "table"
 
-    # --- 5. Key-value (np. env, config)
+    # --- 5. Key-value ---
     kv_hits = sum(1 for l in sample if "=" in l and not l.startswith(" "))
     if kv_hits > len(sample) * 0.4:
         return "kv"
 
-    # --- 6. Jednolinijkowy output (np. echo, error)
+    # --- 6. Single line ---
     if len(lines) == 1:
         return "single_line"
 
-    # --- 7. Domyślnie: zwykły tekst
+    # --- 7. Default ---
     return "text"
 
 

@@ -22,6 +22,7 @@ from ai.json_summarize import summarize_json
 import logging
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
+from prompts import get_agent_system_prompt, SYSTEM_PROMPT_COMPACT_SINGLE, SYSTEM_PROMPT_COMPACT_REPAIR, SYSTEM_PROMPT_COMPACT_FINAL
 
 # Import Web Search Agent
 try:
@@ -90,106 +91,16 @@ class VaultAIAgentRunner:
         current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         if system_prompt_agent is None:
-            # self.system_prompt_agent = (
-            #     f"dt={current_datetime}\nwd={terminal.workspace}\nenv={self.linux_distro} {self.linux_version}\n"
-            #     "You are an autonomous terminal agent. Solve the task via shell/file ops.\n\n"
-            #     "RULES:\n"
-            #     "- think→act→observe→adapt loop\n"
-            #     "- decisions based on real outputs only\n"
-            #     "- max 15 steps\n"
-            #     "- if 3 steps no progress → change strategy\n"
-            #     "- finish only when done or impossible\n\n"
-            #     "PLANNING:\n"
-            #     "- create plan only if >2 steps or deep analysis\n"
-            #     "- max 1 plan\n"
-            #     "- if plan exists → follow & update\n\n"
-            #     "EXECUTION:\n"
-            #     "- sequential unless needed\n"
-            #     "- 1 tool call / response\n"
-            #     "- no interactive commands\n"
-            #     "- isolated shell (no persistent state)\n\n"
-            #     "ERRORS:\n"
-            #     "- exit_code=0 ok\n"
-            #     "- else retry max 2 (modified)\n"
-            #     "- never repeat same failing cmd\n"
-            #     "- multi-fail → stop\n\n"
-            #     "SAFETY:\n"
-            #     "- check before write/install\n"
-            #     "- avoid duplicates\n"
-            #     "- no infinite/daemon\n"
-            #     "- limit output, scans only if needed\n\n"
-            #     "TOOLS (JSON only):\n"
-            #     '{"tool":"bash","command":"...","timeout":30}\n'
-            #     '{"tool":"read_file","path":"..."}\n'
-            #     '{"tool":"write_file","path":"...","content":"..."}\n'
-            #     '{"tool":"edit_file","path":"...","action":"..."}\n'
-            #     '{"tool":"list_directory","path":"..."}\n'
-            #     '{"tool":"web_search_agent","query":"..."}\n'
-            #     '{"tool":"create_action_plan","goal":"..."}\n'
-            #     '{"tool":"update_plan_step","step_number":1,"status":"completed"}\n'
-            #     '{"tool":"finish","summary":"...","goal_success":true}\n\n'
-            #     "OUTPUT: JSON only,no markdown\n")
-            
-            self.system_prompt_agent = (
-                f"dt={current_datetime}\nwd={terminal.workspace}\nenv={self.linux_distro} {self.linux_version}\n"
-                "You are an autonomous terminal agent. Solve the task via shell/file ops.\n\n"
-                "REASONING & ADAPTATION\n"
-                "- Before each action, reason about what is needed\n"
-                "- Base decisions strictly on observed outputs and current system state\n"
-                "- After each result, reassess assumptions\n"
-                "- If assumptions fail, adapt strategy within the current plan\n"
-                "- Prefer observed evidence over initial expectations\n"
-                "- Applies especially to debugging, log analysis, system exploration, and unknown environments\n\n"
-                "PLANNING RULES\n"
-                "Create a plan ONLY if no active plan exists and task requires >2 steps or deep analysis.\n"
-                "Deep analysis includes: log correlation, root cause investigation, audits, state comparison, hypothesis testing.\n"
-                "Do NOT plan for single commands, simple reads, or stateless queries.\n"
-                "Never create a new plan if one is already active.\n"
-                "Maximum 1 plan creation per task.\n"
-                "If a plan exists:\n"
-                "- Continue execution within the existing plan\n"
-                "- Use update_plan_step after each step if plan was created\n"
-                "- Adapt inside the plan instead of creating a new one\n\n"
-                "EXECUTION FLOW\n"
-                "- Complete steps sequentially unless adaptation is required\n"
-                "- Maximum 15 execution steps per task\n"
-                "- If 3 consecutive steps show no progress, reassess strategy\n"
-                "- Do not call 'finish' until objective reached or unrecoverable failure\n\n"
-                "TOOLS (JSON only, double quotes):\n"
-                '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
-                '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
-                '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"explain":"..."}\n'
-                '- {"tool":"write_file","path":"...","content":"...","explain":"..."}\n'
-                '- {"tool":"edit_file","path":"...","action":"replace|insert_after|insert_before|delete_line","search":"...","replace":"...","line":"...","explain":"..."}\n'
-                '- {"tool":"list_directory","path":"...","recursive":true|false,"pattern":"glob","explain":"..."}\n'
-                '- {"tool":"copy_file","source":"...","destination":"...","overwrite":true|false,"explain":"..."}\n'
-                '- {"tool":"delete_file","path":"...","backup":true|false,"explain":"..."}\n'
-                '- {"tool":"create_action_plan","goal":"...","explain":"..."}\n'
-                '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
-                '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task","goal_success":true|false}\n\n'
-                "ERROR HANDLING\n"
-                "After bash execution check exit_code:\n"
-                "- 0 → success\n"
-                "- ≠0 → retry (max 2, modified command), fix, skip, or fail\n"
-                "- Never retry identical failing commands\n"
-                "- If multiple strategies fail, stop\n\n"
-                "IDEMPOTENCY\n"
-                "- Check before modifying files or installing packages\n"
-                "- Avoid duplicate operations\n"
-                "- Ensure retries do not create inconsistent state\n\n"
-                "RESOURCE CONTROL\n"
-                "- Default timeout 30s if not specified\n"
-                "- Avoid recursive filesystem scans unless required\n"
-                "- Avoid unbounded output\n"
-                "- No background daemons or infinite loops\n\n"
-                "CONSTRAINTS\n"
-                "- Each command runs in isolated shell (no persistent cd)\n"
-                "- No interactive tools (nano, vim, top, etc.)\n"
-                "- Autonomous mode: do not use ask_user\n"
-                "- Exactly ONE tool call per response\n"
-                "- Output ONLY valid JSON, no markdown"
+            # Use the prompts module to generate the system prompt
+            is_root = (user == "root")
+            self.system_prompt_agent = get_agent_system_prompt(
+                current_datetime=current_datetime,
+                workspace=terminal.workspace,
+                linux_distro=self.linux_distro,
+                linux_version=self.linux_version,
+                is_root=is_root,
+                auto_explain_command=terminal.auto_explain_command,
             )
-
         else:
             self.system_prompt_agent = system_prompt_agent
 
@@ -223,21 +134,10 @@ class VaultAIAgentRunner:
         self.compact_max_output_tokens = 1500
         self.compact_max_summary_tokens = 1200
 
-        self.system_prompt_compact_single = (
-            "You are Vault 3000 Compact. Follow these rules:\n"
-            "- Output JSON only. No prose, no markdown.\n"
-            "- Use ONLY the provided TASK and STATE.\n"
-            "- Do not assume any hidden context or history.\n"
-            "- Keep all strings concise (<200 chars when possible).\n"
-            "- Max 5 actions.\n"
-        )
-        self.system_prompt_compact_repair = (
-            "You are Vault 3000 Compact. Output JSON only. No prose. "
-            "Use ONLY the provided TASK and STATE. Max 5 actions."
-        )
-        self.system_prompt_compact_final = (
-            "You are Vault 3000 Compact summarizer. Output JSON only. No prose outside JSON."
-        )
+        # Use imported compact mode prompts from prompts module
+        self.system_prompt_compact_single = SYSTEM_PROMPT_COMPACT_SINGLE
+        self.system_prompt_compact_repair = SYSTEM_PROMPT_COMPACT_REPAIR
+        self.system_prompt_compact_final = SYSTEM_PROMPT_COMPACT_FINAL
 
         self.terminal = terminal
         # Use the provided terminal logger for consistent logging across the app
@@ -250,9 +150,6 @@ class VaultAIAgentRunner:
         self.user = user
         self.host = host
         self.window_size = window_size
-
-        if self.user == "root":
-            self.system_prompt_agent = f"{self.system_prompt_agent} You dont need sudo, you are root."
 
         # Initialize ContextManager for conversation context and sliding window functionality
         self.context_manager = ContextManager(window_size=window_size, logger=self.logger, runner=self)
@@ -366,6 +263,18 @@ class VaultAIAgentRunner:
             "total_compressed_tokens_est": 0,
             "total_saved_tokens_est": 0,
             "filter_count": 0
+        }
+        
+        # Initialize summarize_* statistics tracking (json, stacktrace, table, kv)
+        self.summarize_stats: Dict[str, Any] = {
+            "json": {"original": 0, "summarized": 0, "count": 0},
+            "stacktrace": {"original": 0, "summarized": 0, "count": 0},
+            "table": {"original": 0, "summarized": 0, "count": 0},
+            "kv": {"original": 0, "summarized": 0, "count": 0},
+            "total_original": 0,
+            "total_summarized": 0,
+            "total_saved": 0,
+            "total_count": 0
         }
         
         # Log savings from user goal filtering (after stats init)
@@ -773,6 +682,72 @@ class VaultAIAgentRunner:
         filter_summary = self._get_prompt_filter_summary()
         self.terminal.print_console(filter_summary)
         self.logger.info("Prompt filter summary: %s", filter_summary)
+
+    def _get_summarize_stats_summary(self) -> str:
+        """
+        Get a summary of summarize_* statistics (json, stacktrace, table, kv).
+        
+        Returns:
+            Formatted string with summarize statistics
+        """
+        stats = self.summarize_stats
+        if stats["total_count"] == 0:
+            return "No summarize operations performed."
+        
+        # Calculate compression ratio
+        compression_ratio = (
+            stats["total_summarized"] / stats["total_original"]
+            if stats["total_original"] > 0 else 1.0
+        )
+        savings_pct = (1 - compression_ratio) * 100
+        
+        summary_lines = ["\n=== SUMMARIZE OPERATIONS SUMMARY ==="]
+        
+        # Overall statistics
+        summary_lines.append("\nOVERALL STATISTICS:")
+        summary_lines.append(f"   Total operations: {stats['total_count']:,}")
+        summary_lines.append(f"   Original characters: {stats['total_original']:,}")
+        summary_lines.append(f"   Summarized characters: {stats['total_summarized']:,}")
+        summary_lines.append(f"   Characters saved: {stats['total_saved']:,}")
+        summary_lines.append(f"   Compression ratio: {compression_ratio:.1%}")
+        summary_lines.append(f"   Space savings: {savings_pct:.1f}%")
+        
+        # Per-type breakdown
+        summary_lines.append("\nBREAKDOWN BY TYPE:")
+        
+        for type_name in ["json", "stacktrace", "table", "kv"]:
+            type_stats = stats[type_name]
+            if type_stats["count"] > 0:
+                type_ratio = type_stats["summarized"] / type_stats["original"] if type_stats["original"] > 0 else 1.0
+                type_savings = (1 - type_ratio) * 100
+                type_saved = type_stats["original"] - type_stats["summarized"]
+                
+                summary_lines.append(f"\n   {type_name.upper()}:")
+                summary_lines.append(f"      Count: {type_stats['count']:,}")
+                summary_lines.append(f"      Original: {type_stats['original']:,} chars")
+                summary_lines.append(f"      Summarized: {type_stats['summarized']:,} chars")
+                summary_lines.append(f"      Saved: {type_saved:,} chars ({type_savings:.1f}%)")
+        
+        # Performance insights
+        summary_lines.append("\nPERFORMANCE INSIGHTS:")
+        if savings_pct > 50:
+            summary_lines.append("Excellent summarization rate - significant reduction achieved!")
+        elif savings_pct > 30:
+            summary_lines.append("Good summarization rate - effective output reduction.")
+        elif savings_pct > 10:
+            summary_lines.append("Moderate summarization - room for improvement.")
+        else:
+            summary_lines.append("Low summarization rate - output may be already concise.")
+        
+        return "\n".join(summary_lines)
+
+    def _display_summarize_stats_summary(self):
+        """
+        Display summarize stats summary to the user and log it.
+        """
+        summarize_summary = self._get_summarize_stats_summary()
+        self.terminal.print_console(summarize_summary)
+        self.logger.info("Summarize stats summary: %s", summarize_summary)
 
     def _cleanup_request_history(self, max_entries: int = 1000):
         """
@@ -1797,6 +1772,8 @@ class VaultAIAgentRunner:
                         self._display_timing_summary()
                     if hasattr(self.ai_handler, 'token_usage') and self.ai_handler.token_usage:
                         self._display_token_summary()
+                    # Display summarize operations summary
+                    self._display_summarize_stats_summary()
                     self.terminal.print_console("="*60)
                 return
             self.terminal.print_console("[WARN] Compact mode fallback to legacy pipeline.")
@@ -2178,8 +2155,18 @@ class VaultAIAgentRunner:
                             )
                         elif output_type == "json":
                             # pretty / truncate JSON output for feedback
+                            original_len = len(out)
                             summarized_json_out = summarize_json(out)
-                            self.logger.debug(f"JSON Command output from {len(out)} chars to {len(summarized_json_out)} chars for feedback")
+                            summarized_len = len(summarized_json_out)
+                            # Track summarize stats
+                            self.summarize_stats["json"]["original"] += original_len
+                            self.summarize_stats["json"]["summarized"] += summarized_len
+                            self.summarize_stats["json"]["count"] += 1
+                            self.summarize_stats["total_original"] += original_len
+                            self.summarize_stats["total_summarized"] += summarized_len
+                            self.summarize_stats["total_saved"] += (original_len - summarized_len)
+                            self.summarize_stats["total_count"] += 1
+                            self.logger.debug(f"JSON Command output from {original_len} chars to {summarized_len} chars for feedback (saved {original_len - summarized_len})")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 and produced JSON output.\n"
@@ -2198,8 +2185,18 @@ class VaultAIAgentRunner:
                                         f"What is your decision?"
                                     )
                         elif output_type == "stacktrace":
+                            original_len = len(out)
                             summarized_stacktrace_out = summarize_stacktrace(out)
-                            self.logger.debug(f"Stacktrace Command output from {len(out)} chars to {len(summarized_stacktrace_out)} chars for feedback")
+                            summarized_len = len(summarized_stacktrace_out)
+                            # Track summarize stats
+                            self.summarize_stats["stacktrace"]["original"] += original_len
+                            self.summarize_stats["stacktrace"]["summarized"] += summarized_len
+                            self.summarize_stats["stacktrace"]["count"] += 1
+                            self.summarize_stats["total_original"] += original_len
+                            self.summarize_stats["total_summarized"] += summarized_len
+                            self.summarize_stats["total_saved"] += (original_len - summarized_len)
+                            self.summarize_stats["total_count"] += 1
+                            self.logger.debug(f"Stacktrace Command output from {original_len} chars to {summarized_len} chars for feedback (saved {original_len - summarized_len})")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 but produced a stacktrace output.\n"
@@ -2245,8 +2242,18 @@ class VaultAIAgentRunner:
                         elif output_type == "table":
                             # Summarize table output using the new summarization functions
                             try:
+                                original_len = len(out)
                                 summarized_output = summarize_table(out)
-                                self.logger.debug(f"Table Command output from {len(out)} chars to {len(summarized_output)} chars for feedback")
+                                summarized_len = len(summarized_output)
+                                # Track summarize stats
+                                self.summarize_stats["table"]["original"] += original_len
+                                self.summarize_stats["table"]["summarized"] += summarized_len
+                                self.summarize_stats["table"]["count"] += 1
+                                self.summarize_stats["total_original"] += original_len
+                                self.summarize_stats["total_summarized"] += summarized_len
+                                self.summarize_stats["total_saved"] += (original_len - summarized_len)
+                                self.summarize_stats["total_count"] += 1
+                                self.logger.debug(f"Table Command output from {original_len} chars to {summarized_len} chars for feedback (saved {original_len - summarized_len})")
                                 if code == 0:
                                     original_feedback = (
                                         f"Command '{command}' executed successfully with exit code 0 and produced table output.\n"
@@ -2285,8 +2292,18 @@ class VaultAIAgentRunner:
                                         f"What is your decision?"
                                     )
                         elif output_type == "kv":
+                            original_len = len(out)
                             summarize_kv_out = summarize_kv(out)
-                            self.logger.debug(f"KV Command output from {len(out)} chars to {len(summarize_kv_out)} chars for feedback")
+                            summarized_len = len(summarize_kv_out)
+                            # Track summarize stats
+                            self.summarize_stats["kv"]["original"] += original_len
+                            self.summarize_stats["kv"]["summarized"] += summarized_len
+                            self.summarize_stats["kv"]["count"] += 1
+                            self.summarize_stats["total_original"] += original_len
+                            self.summarize_stats["total_summarized"] += summarized_len
+                            self.summarize_stats["total_saved"] += (original_len - summarized_len)
+                            self.summarize_stats["total_count"] += 1
+                            self.logger.debug(f"KV Command output from {original_len} chars to {summarized_len} chars for feedback (saved {original_len - summarized_len})")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 and produced key-value output.\n"
@@ -2876,6 +2893,9 @@ class VaultAIAgentRunner:
             
             # Display prompt filter summary
             self._display_prompt_filter_summary()
+            
+            # Display summarize operations summary
+            self._display_summarize_stats_summary()
             
             # Display plan summary if available
             if self.plan_manager.steps:
