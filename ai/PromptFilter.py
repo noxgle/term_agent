@@ -32,8 +32,7 @@ def clean_url(url: str) -> str:
 
 def compress_prompt(text: str) -> str:
     """
-    Lekki compressor promptu + próba naprawy JSON.
-    Jeśli naprawa JSON się nie uda, zwraca dokładnie oryginalny tekst.
+    Lekki compressor promptu
     
     UŻYCIE: Wyłącznie dla danych wejściowych od użytkownika lub API.
     NIE używać dla: wewnętrznych promptów systemowych, odpowiedzi AI,
