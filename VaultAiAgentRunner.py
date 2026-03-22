@@ -15,7 +15,7 @@ from context.ContextManager import ContextManager
 from ai.AICommunicationHandler import AICommunicationHandler
 from ai.PromptFilter import compress_prompt, estimate_token_savings
 from ai.LogCompressor import LogCompressor, DynamicLogCompressor, should_compress,should_compress_adaptive
-from ai.detect_output_type import detect_output_type, summarize_table, 
+from ai.detect_output_type import detect_output_type, summarize_table 
 from ai.stacktrace_summarize import summarize_stacktrace
 from ai.kv_summarize import summarize_kv
 from ai.json_summarize import summarize_json
@@ -2169,7 +2169,7 @@ class VaultAIAgentRunner:
 
                         # Build smart feedback based on exit code
 
-                        output_type = detect_output_type(out)
+                        output_type = detect_output_type(out, command)
                         if output_type == "empty":
                             original_feedback = (
                                 f"Command '{command}' executed with exit code {code} and no output.\n"
@@ -2179,6 +2179,7 @@ class VaultAIAgentRunner:
                         elif output_type == "json":
                             # pretty / truncate JSON output for feedback
                             summarized_json_out = summarize_json(out)
+                            self.logger.debug(f"JSON Command output from {len(out)} chars to {len(summarized_json_out)} chars for feedback")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 and produced JSON output.\n"
@@ -2198,6 +2199,7 @@ class VaultAIAgentRunner:
                                     )
                         elif output_type == "stacktrace":
                             summarized_stacktrace_out = summarize_stacktrace(out)
+                            self.logger.debug(f"Stacktrace Command output from {len(out)} chars to {len(summarized_stacktrace_out)} chars for feedback")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 but produced a stacktrace output.\n"
@@ -2244,6 +2246,7 @@ class VaultAIAgentRunner:
                             # Summarize table output using the new summarization functions
                             try:
                                 summarized_output = summarize_table(out)
+                                self.logger.debug(f"Table Command output from {len(out)} chars to {len(summarized_output)} chars for feedback")
                                 if code == 0:
                                     original_feedback = (
                                         f"Command '{command}' executed successfully with exit code 0 and produced table output.\n"
@@ -2283,6 +2286,7 @@ class VaultAIAgentRunner:
                                     )
                         elif output_type == "kv":
                             summarize_kv_out = summarize_kv(out)
+                            self.logger.debug(f"KV Command output from {len(out)} chars to {len(summarize_kv_out)} chars for feedback")
                             if code == 0:
                                 original_feedback = (
                                     f"Command '{command}' executed successfully with exit code 0 and produced key-value output.\n"

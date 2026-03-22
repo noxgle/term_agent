@@ -9,7 +9,7 @@ from .table_summarizer import (
     summarize_generic_table
 )
 
-def detect_output_type(text: str) -> str:
+def detect_output_type(text: str, command: str=None) -> str:
     """
     Detects the type of output from a given text string.
     
@@ -25,10 +25,15 @@ def detect_output_type(text: str) -> str:
     
     Args:
         text: The text to analyze
+        command: The command that generated the output (optional)
         
     Returns:
         A string indicating the detected output type
     """
+    if "&&" in command:
+        # docolowyn nowy return "mutli_text" dla outputu z wielu komend, ale na razie zostawiamy heurystykę detekcji typu dla całego outputu
+        return "text"
+
     lines = [l for l in text.splitlines() if l.strip()]
     if not lines:
         return "empty"
@@ -129,3 +134,99 @@ def summarize_table(text: str) -> str:
 
     # --- fallback ---
     return summarize_generic_table(text)
+
+
+def summarize_multi_command_preview(command: str, output: str, max_chars: int = 800, tail_bias: bool = True, tail_ratio: float = 0.7) -> str:
+    """
+    Summarize output for a command with && in a single string output.
+    Splits output by heuristics (separators) and applies summarizers + top-bottom preview.
+
+    Args:
+        command: full shell command (may contain &&)
+        output: single string with combined output of all sub-commands
+        max_chars: max characters per preview
+        tail_bias: whether to favor bottom
+        tail_ratio: fraction of chars for bottom preview
+
+    Returns:
+        Combined summary string
+    """
+    # --- heurystyczny split po separatorach lub nagłówkach ---
+    # próbujemy znaleźć linie typu ---SEKCJA--- lub nagłówki ps/df
+    split_pattern = r'^(---.*---|USER\s+PID|Filesystem\s+|CONTAINER ID\s+|Proto\s+)'  # regex dla typowych header/echo separator
+    lines = output.splitlines()
+    sections = []
+    current_section = []
+
+    for l in lines:
+        if re.match(split_pattern, l):
+            if current_section:
+                sections.append("\n".join(current_section))
+                current_section = []
+        current_section.append(l)
+    if current_section:
+        sections.append("\n".join(current_section))
+
+    summaries = []
+
+    for i, sec in enumerate(sections):
+        sec = sec.strip()
+        if not sec:
+            continue
+        header = f"SECTION {i+1}" if len(sections) > 1 else ""
+
+        out_type = detect_output_type(sec, command=command)
+        sec_lines = [l.rstrip() for l in sec.splitlines() if l.strip()]
+
+        # --- helper: top+bottom preview ---
+        def build_preview(lines, max_chars, tail_bias, tail_ratio):
+            if not lines:
+                return ""
+            total_len = sum(len(l)+1 for l in lines)
+            if total_len <= max_chars:
+                return "\n".join(lines)
+            if tail_bias:
+                bottom_budget = int(max_chars * tail_ratio)
+                top_budget = max_chars - bottom_budget
+            else:
+                top_budget = bottom_budget = max_chars // 2
+
+            top_part, bottom_part = [], []
+            used = 0
+            for l in lines:
+                if used + len(l) + 1 > top_budget:
+                    break
+                top_part.append(l)
+                used += len(l) + 1
+            used = 0
+            for l in reversed(lines):
+                if used + len(l) + 1 > bottom_budget:
+                    break
+                bottom_part.append(l)
+                used += len(l) + 1
+            bottom_part.reverse()
+
+            if top_part and bottom_part:
+                return "\n".join(top_part) + "\n...\n" + "\n".join(bottom_part)
+            elif top_part:
+                return "\n".join(top_part)
+            else:
+                return "\n".join(bottom_part)
+
+        # --- wybór summarizera ---
+        if out_type == "table":
+            summary = summarize_table(sec, max_chars=max_chars, tail_bias=tail_bias, tail_ratio=tail_ratio)
+        elif out_type == "kv":
+            summary = summarize_kv(sec, max_chars=max_chars, tail_bias=tail_bias, tail_ratio=tail_ratio)
+        elif out_type == "stacktrace":
+            summary = summarize_stacktrace(sec, max_chars=max_chars, tail_bias=tail_bias, tail_ratio=tail_ratio)
+        elif out_type == "json":
+            summary = summarize_json(sec, max_chars=max_chars)
+        else:
+            summary = build_preview(sec_lines, max_chars, tail_bias, tail_ratio)
+
+        if header:
+            summary = f"{header}:\n{summary}"
+        summaries.append(summary)
+
+    return "\n\n".join(summaries)
