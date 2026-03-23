@@ -1036,6 +1036,8 @@ Controls:
     agent = term_agent()
     agent.console.print(PIPBOY_ASCII)
     agent.console.print(f"{agent.print_vault_tip()}\n")
+    
+    agent.console.print(f"Current workspace directory: {agent.workspace}")
 
     agent.console.print("""
 Controls:
