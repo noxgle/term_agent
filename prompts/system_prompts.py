@@ -60,9 +60,13 @@ def get_agent_system_prompt(
             '- {"tool":"update_plan_step","step_number":N,"status":"completed|failed|skipped","result":"..."}\n'
             '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task","goal_success":true|false}\n\n'
         )
+    if is_root:
+        header = f"dt={current_datetime}\nwd={workspace}\nenv={linux_distro} {linux_version} with root privileges"
+    else:
+        header = f"dt={current_datetime}\nwd={workspace}\nenv={linux_distro} {linux_version}"
 
     base_prompt = (
-        f"dt={current_datetime}\nwd={workspace}\nenv={linux_distro} {linux_version}\n"
+        f"{header}\n"
         "You are an autonomous terminal agent. Solve the task via shell/file ops.\n\n"
         "REASONING & ADAPTATION\n"
         "- Before each action, reason about what is needed\n"
@@ -108,7 +112,7 @@ def get_agent_system_prompt(
         "- No interactive tools (nano, vim, top, etc.)\n"
         "- Autonomous mode: do not use ask_user\n"
         "- Exactly ONE tool call per response\n"
-        "- Output ONLY valid JSON, no markdown"
+        "IMPORTANT: Always respond with a single JSON object containing ONLY the tool call. No explanations, no markdown, no lists, no prose. Just JSON.\n"
     )
 
     if is_root:
