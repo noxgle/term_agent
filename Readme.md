@@ -1,6 +1,49 @@
 ## ⚠️ Prototype Disclaimer
 
-**This is a prototype agent under active development.** This project serves as a testing ground for new AI agent concepts, automation techniques, and terminal interface innovations. Features may be experimental, unstable, or subject to change without notice. Use with caution in production environments.
+**This is a prototype agent under active development.** This project serves as a testing ground for new AI agent concepts, automation techniques, and terminal interface innovations. Features may be experimental, unstable, or subject to change without notice. Dont use in production environments.
+
+## Getting Started
+
+Welcome to Vault 3000, your Fallout-inspired Linux Terminal AI Agent! This powerful tool combines advanced AI capabilities with terminal automation to help you manage your system, develop software, and solve complex tasks.
+
+### Quick Start
+
+1. **Prerequisites**: Python 3.9+ and an API key for your chosen AI engine
+2. **Installation**: 
+   ```bash
+   curl -O https://raw.githubusercontent.com/noxgle/term_agent/main/install_term_agent.sh
+   chmod +x install_term_agent.sh
+   ./install_term_agent.sh
+   ```
+3. **Configuration**: Copy `.env.copy` to `.env` and add your API keys
+4. **Launch**: 
+   ```bash
+   python term_ag.py  # For automation tasks
+   python term_ask.py # For chat mode
+   ```
+
+### What You Can Do
+
+- **Automate Tasks**: Let the agent handle complex multi-step operations
+- **Ask Questions**: Get instant answers about Linux, programming, and more
+- **Manage Files**: Read, write, edit, and search files with AI assistance
+- **Remote Operations**: Execute commands on remote servers via SSH
+- **Web Research**: The agent can search the internet to gather information
+- **Code Analysis**: Analyze and understand complex codebases
+
+### Choose Your Mode
+
+- **Collaborative Mode** (default): Interactive confirmation for each action
+- **Automatic Mode**: Hands-off automation for trusted operations
+
+### Next Steps
+
+- Explore the [Features](#features) section to learn about all capabilities
+- Check the [Configuration](#env-configuration) section for setup options
+- Try the [Examples](#example-chat) to see the agent in action
+- Visit our [GitHub Issues](https://github.com/noxgle/term_agent/issues) for support
+
+---
 
 ## Video
 
@@ -9,6 +52,7 @@
 
 ## Table of Contents
 
+- [Getting Started](#getting-started)
 - [Features](#features)
 - [Operating Modes](#operating-modes)
 - [AI Model Comparison](#ai-model-comparison)
@@ -26,6 +70,10 @@
 - [Files](#files)
 - [Aliases](#aliases)
 - [Examples](#example-chat)
+- [Troubleshooting](#troubleshooting)
+- [Best Practices](#best-practices)
+- [Performance & Optimization](#performance--optimization)
+- [Contributing](#contributing)
 - [TODO](#todo)
 - [License](#license)
 
@@ -33,6 +81,9 @@
 - **Task automation**: The agent can perform tasks and commands based on user goals.
 - **API**: The agent can be accessed via the API.
 - **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud), OpenRouter (unified API for multiple models).
+- **Multi-Engine AI Routing**: Connect to multiple AI operators with two intelligent routing modes:
+  - **Round-Robin**: Distributes requests evenly across configured engines for load balancing
+  - **Fallback**: Automatically tries engines in sequence for high availability when providers fail
 - **Local and remote execution (SSH)**: Run commands on your machine or remote hosts.
 - **Configurable via `.env`**: Easily switch engines and settings.
 - **Logging and colored console (Rich)**: Fallout/Pip-Boy theme for a unique retro look.
@@ -47,6 +98,158 @@
 - **Thread Continuation**: After finishing a task, you can continue the session with a new goal while preserving the full conversation history.
 - **Enhanced JSON Validator**: Robust JSON parsing with up to 3 automatic correction attempts when the AI returns malformed responses.
 - **Configurable Step Limit**: Built-in safeguard (`MAX_STEPS=100` by default) prevents infinite loops during task execution.
+
+## Multi-Engine AI Routing Configuration
+
+The agent supports connecting to multiple AI operators simultaneously with intelligent routing strategies for improved reliability and performance.
+
+### Routing Modes
+
+#### Round-Robin Mode
+- **Purpose**: Distributes AI requests evenly across all configured engines
+- **Behavior**: Each request gets a different engine in sequential rotation
+- **Use Case**: Load balancing across multiple AI providers to optimize costs and performance
+- **Example**: With engines [OpenAI, Ollama, Google], requests cycle: OpenAI → Ollama → Google → OpenAI...
+
+#### Fallback Mode
+- **Purpose**: Provides high availability by automatically switching to backup engines
+- **Behavior**: Tries engines in order until one succeeds; if the first fails, automatically tries the next
+- **Use Case**: Ensuring requests complete even when some AI providers are unavailable or rate-limited
+- **Example**: With engines [OpenAI, Ollama, Google], if OpenAI fails, automatically tries Ollama, then Google
+
+### Configuration
+
+Configure multiple engines and routing mode in your `.env` file:
+
+```ini
+# Multiple engines can be specified as comma-separated list
+AI_ENGINE=openai,ollama,google,openrouter
+
+# Routing mode: round-robin or fallback
+AI_ENGINE_ROUTE=fallback
+
+# Per-engine API keys
+OPENAI_API_KEY=your_openai_key_here
+OLLAMA_URL=http://localhost:11434/api/generate
+OLLAMA_MODEL=llama3.2:latest
+GOOGLE_API_KEY=your_google_key_here
+GOOGLE_MODEL=gemini-2.5-flash-preview-05-20
+OPENROUTER_API_KEY=your_openrouter_key_here
+OPENROUTER_MODEL=openrouter/llama-3.1-70b-instruct:free
+```
+
+### Supported AI Engines
+
+| Engine | Description | Local/Cloud | Typical Use |
+|--------|-------------|-------------|-------------|
+| **OpenAI** | ChatGPT models (GPT-4, GPT-3.5) | Cloud | High-quality responses, advanced reasoning |
+| **Ollama** | Local LLM models | Local | Privacy-focused, offline capability |
+| **Ollama Cloud** | Hosted Ollama models | Cloud | Managed service with local model benefits |
+| **Google Gemini** | Google's AI models | Cloud | Strong reasoning, Google ecosystem integration |
+| **OpenRouter** | Unified API for 100+ models | Cloud | Access to diverse model selection |
+
+### Configuration Examples
+
+#### High Availability Setup (Fallback Mode)
+```ini
+AI_ENGINE=openai,google,openrouter
+AI_ENGINE_ROUTE=fallback
+```
+*If OpenAI is rate-limited, automatically falls back to Google, then OpenRouter.*
+
+#### Cost Optimization Setup (Round-Robin Mode)
+```ini
+AI_ENGINE=ollama,openrouter,ollama-cloud
+AI_ENGINE_ROUTE=round-robin
+```
+*Distributes requests across cheaper local and cloud models to optimize costs.*
+
+#### Performance-First Setup (Fallback Mode)
+```ini
+AI_ENGINE=openai,gemini-2.5-pro,openrouter
+AI_ENGINE_ROUTE=fallback
+```
+*Tries premium models first, falls back to alternatives if unavailable.*
+
+### Advanced Configuration
+
+#### Per-Engine Settings
+Each engine can have its own model, temperature, and other settings:
+
+```ini
+# OpenAI settings
+OPENAI_MODEL=gpt-4o
+OPENAI_TEMPERATURE=0.5
+OPENAI_MAX_TOKENS=4000
+
+# Ollama settings
+OLLAMA_MODEL=llama3.2:latest
+OLLAMA_TEMPERATURE=0.7
+
+# Google settings
+GOOGLE_MODEL=gemini-2.5-pro
+GOOGLE_TEMPERATURE=0.3
+
+# OpenRouter settings
+OPENROUTER_MODEL=anthropic/claude-sonnet
+OPENROUTER_TEMPERATURE=0.5
+```
+
+#### Timeout and Retry Configuration
+```ini
+# AI API timeout in seconds
+AI_API_TIMEOUT=120
+
+# Maximum retry attempts (0 = no limit)
+AI_API_MAX_RETRIES=3
+
+# Base delay between retries in seconds
+AI_API_RETRY_DELAY=2
+
+# Backoff multiplier (2 = exponential backoff)
+AI_API_RETRY_BACKOFF=2
+
+# Use timeout-enabled API calls
+USE_TIMEOUT_API=true
+```
+
+### Monitoring and Logging
+
+The system provides detailed logging for multi-engine operations:
+
+```
+[INFO] Multi-engine mode: 3 engines configured (openai, ollama, google)
+[INFO] Routing mode: fallback
+[DEBUG] Round-robin selected engine: openai (next index: 1)
+[WARNING] Engine openai failed: Rate limit exceeded, trying next engine
+[DEBUG] Fallback to engine: ollama
+[INFO] Engine ollama succeeded
+```
+
+### Best Practices
+
+1. **Engine Order Matters**: In fallback mode, list your preferred engines first
+2. **Monitor Usage**: Check logs to see which engines are being used most frequently
+3. **Test Reliability**: Verify all configured engines work before relying on fallback
+4. **Balance Costs**: Use cheaper engines first in fallback mode to optimize costs
+5. **Consider Latency**: Local engines (Ollama) are faster than cloud APIs
+
+### Troubleshooting
+
+#### Engine Not Responding
+- Check API keys are valid
+- Verify network connectivity for cloud engines
+- Ensure local Ollama server is running
+
+#### Fallback Not Working
+- Verify all engines are properly configured
+- Check that API keys are valid for all engines
+- Review logs for specific error messages
+
+#### Round-Robin Not Rotating
+- Ensure `AI_ENGINE_ROUTE=round-robin` is set
+- Check that multiple engines are configured in `AI_ENGINE`
+- Verify engines are responding successfully
 
 ## Operating Modes
 
@@ -147,6 +350,7 @@ The agent communicates via JSON tool calls. Each tool is available to the AI dur
 | Tool | Description |
 |------|-------------|
 | `read_file` | Read file content, optionally specifying start/end line numbers. |
+| `search_in_file` | Search for patterns in file content using regex, with configurable context lines and result limits. |
 | `write_file` | Create or overwrite a file with specified content. |
 | `edit_file` | Edit a file: `replace`, `insert_after`, `insert_before`, or `delete_line`. |
 | `list_directory` | List directory contents, optionally recursive with glob pattern. |
@@ -659,10 +863,219 @@ source ~/.bashrc
 > **Note:**
 > The larger and more advanced the AI model you use (e.g., GPT-4, Gemini 1.5, or large Ollama models), the better and more reliable the agent's results will be. Smaller or older models may not handle complex tasks or multi-step automation as effectively.
 
+## Troubleshooting
+
+### Common Issues and Solutions
+
+#### Agent Won't Start
+**Problem**: Python errors or import failures when starting the agent.
+**Solution**: 
+- Ensure Python 3.9+ is installed: `python3 --version`
+- Activate virtual environment: `source .venv/bin/activate`
+- Install dependencies: `pip install -r requirements.txt`
+
+#### AI Engine Connection Failures
+**Problem**: "Engine failed" or timeout errors.
+**Solution**:
+- Verify API keys in `.env` file are correct
+- Check network connectivity for cloud engines
+- For Ollama: ensure server is running: `ollama serve`
+- Test individual engines with simple requests
+
+#### SSH Connection Issues
+**Problem**: Cannot connect to remote hosts.
+**Solution**:
+- Verify SSH keys or password authentication
+- Test SSH connection manually: `ssh user@host`
+- Check SSH port and firewall settings
+- Ensure remote host has Python and required packages
+
+#### Web Search Not Working
+**Problem**: Web search agent fails or returns no results.
+**Solution**:
+- Install required dependencies: `pip install ddgs beautifulsoup4 lxml`
+- For SearxNG: verify instance is running and URL is correct
+- Check network connectivity and firewall settings
+- Try DuckDuckGo engine as fallback
+
+#### File Operations Fail
+**Problem**: Read/write operations fail with permission errors.
+**Solution**:
+- Check file permissions: `ls -la filename`
+- Ensure you have read/write access to target directories
+- Run agent with appropriate user privileges
+- Verify file paths are correct
+
+#### Performance Issues
+**Problem**: Agent is slow or unresponsive.
+**Solution**:
+- Check system resources: `top` or `htop`
+- Reduce `AI_API_TIMEOUT` in `.env` if responses are slow
+- Use local engines (Ollama) for faster response times
+- Clear conversation history if context is too large
+
+#### JSON Parsing Errors
+**Problem**: "Malformed JSON" or parsing failures.
+**Solution**:
+- The agent has built-in JSON correction, but ensure AI responses are well-formed
+- Reduce prompt complexity if JSON errors persist
+- Check `LOG_LEVEL=DEBUG` for detailed error information
+
+### Getting Help
+
+1. **Check Logs**: Enable debug logging in `.env`: `LOG_LEVEL=DEBUG`
+2. **Test Components**: Test individual features (AI engine, SSH, web search) separately
+3. **GitHub Issues**: Search existing issues or create new one at [GitHub Issues](https://github.com/noxgle/term_agent/issues)
+4. **Community**: Join discussions for support and tips
+
+### Diagnostic Commands
+
+```bash
+# Check Python version
+python3 --version
+
+# Test virtual environment
+source .venv/bin/activate && python -c "import sys; print(sys.version)"
+
+# Test AI engine connection
+python -c "from ai.AICommunicationHandler import AICommunicationHandler; handler = AICommunicationHandler(); print('Engine test successful')"
+
+# Check SSH connectivity
+ssh -o ConnectTimeout=5 user@host 'echo "SSH test successful"'
+
+# Test web search
+python -c "from web_search.WebSearchAgent import WebSearchAgent; agent = WebSearchAgent(); print('Web search test successful')"
+```
+
+## Best Practices
+
+### Security
+
+- **API Keys**: Never commit `.env` files to version control
+- **SSH Keys**: Use SSH key authentication instead of passwords when possible
+- **File Permissions**: Ensure proper file permissions for sensitive operations
+- **Remote Execution**: Always review commands before executing on remote systems
+
+### Performance Optimization
+
+- **Engine Selection**: Use local engines (Ollama) for faster response times
+- **Context Management**: Keep conversation history manageable for better performance
+- **Timeout Settings**: Adjust timeouts based on your network and AI engine response times
+- **Resource Monitoring**: Monitor system resources during long-running tasks
+
+### Workflow Efficiency
+
+- **Clear Goals**: Provide specific, well-defined goals to the agent
+- **Mode Selection**: Use Collaborative Mode for learning, Automatic Mode for routine tasks
+- **Plan Review**: Always review action plans before execution
+- **Error Handling**: Pay attention to error messages and adjust accordingly
+
+### Multi-Engine Configuration
+
+- **Fallback Strategy**: Configure reliable fallback engines for high availability
+- **Load Balancing**: Use round-robin for cost optimization across multiple engines
+- **Engine Testing**: Regularly test all configured engines to ensure they're working
+- **Monitoring**: Enable logging to track engine usage and performance
+
+## Performance & Optimization
+
+### Engine Performance Comparison
+
+| Engine | Response Time | Cost | Privacy | Reliability |
+|--------|---------------|------|---------|-------------|
+| **Ollama (Local)** | Fast | Free | High | High |
+| **OpenAI** | Medium | High | Low | High |
+| **Google Gemini** | Medium | Medium | Low | High |
+| **OpenRouter** | Variable | Variable | Variable | Variable |
+
+### Configuration Optimization
+
+#### For Speed
+```ini
+# Use local engines when possible
+AI_ENGINE=ollama
+AI_API_TIMEOUT=60
+
+# Reduce context overhead
+AGENT_MODE=compact
+```
+
+#### For Reliability
+```ini
+# Use fallback mode with multiple engines
+AI_ENGINE=openai,google,ollama
+AI_ENGINE_ROUTE=fallback
+AI_API_MAX_RETRIES=5
+```
+
+#### For Cost Efficiency
+```ini
+# Use round-robin to distribute load
+AI_ENGINE=ollama,openrouter
+AI_ENGINE_ROUTE=round-robin
+
+# Set appropriate timeouts
+AI_API_TIMEOUT=120
+```
+
+### System Requirements
+
+- **Minimum**: 4GB RAM, 2 CPU cores, Python 3.9+
+- **Recommended**: 8GB RAM, 4 CPU cores, SSD storage
+- **For Ollama**: Additional 8GB+ RAM for large models
+
+### Monitoring and Maintenance
+
+- **Regular Updates**: Keep dependencies and AI engines updated
+- **Log Analysis**: Review logs periodically for performance insights
+- **Resource Monitoring**: Monitor CPU, memory, and disk usage
+- **Backup Configuration**: Keep backups of working `.env` configurations
+
+## Contributing
+
+Pull requests are welcome! For major changes, please open an issue first to discuss what you would like to change.
+
+### Development Setup
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make your changes
+4. Add tests for new functionality
+5. Run linting and formatting: `black . && flake8 .`
+6. Submit pull request
+
+### Code Style
+
+- Follow PEP 8 style guide
+- Use type hints for all public functions
+- Write docstrings for all public classes and methods
+- Maximum line length: 100 characters
+
+### Testing
+
+- Add unit tests for new features in `tests/` directory
+- Test with multiple AI engines when possible
+- Verify both local and remote execution scenarios
+- Test error handling paths
+
+### Reporting Issues
+
+When reporting bugs, please include:
+- Python version: `python3 --version`
+- Agent version: `git rev-parse HEAD`
+- Operating system and version
+- Steps to reproduce the issue
+- Expected vs. actual behavior
+- Any error messages or logs
+
 ## TODO
 
 - Add SearxNG Docker Compose example for easy self-hosted web search setup
 - Add support for additional web search engines
+- Implement more advanced file operation tools
+- Add performance benchmarks and optimization guides
+- Create video tutorials for common use cases
+- Add integration with popular development tools and IDEs
 
 ## License
 
