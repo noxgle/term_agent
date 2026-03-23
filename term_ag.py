@@ -1178,9 +1178,24 @@ Controls:
     
     # Check status of all configured AI engines
     all_engine_status = agent.check_all_ai_engines_online()
+
+    compact_mode_override = None
+    hybrid_mode_override = None
+    if args.compact:
+        agent_mode = "compact"
+        compact_mode_override = True
+        hybrid_mode_override = False
+    elif args.normal:
+        agent_mode = "normal"
+        compact_mode_override = False
+        hybrid_mode_override = False
+    else:
+        agent_mode = "hybrid"
+        compact_mode_override = True
+        hybrid_mode_override = True
     
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
-    agent.console.print("Mode: Linux Terminal AI Agent.")
+    agent.console.print(f"Mode: Linux Terminal AI Agent ({agent_mode} mode)")
     agent.console.print(f"Local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
     if agent.auto_accept:
         agent.console.print("Working mode: [green]automatic[/]")
@@ -1206,20 +1221,6 @@ Controls:
     else:
         agent.console.print("[green]All configured AI engines are online and ready.[/]")
     
-    compact_mode_override = None
-    hybrid_mode_override = None
-    if args.compact:
-        agent.console.print("[yellow]Agent Compact mode enabled.[/]\n")
-        compact_mode_override = True
-        hybrid_mode_override = False
-    elif args.normal:
-        agent.console.print("[yellow]Agent Normal mode enabled.[/]\n")
-        compact_mode_override = False
-        hybrid_mode_override = False
-    else:
-        agent.console.print("[yellow]Agent Hybrid mode enabled.[/]\n")
-        compact_mode_override = True
-        hybrid_mode_override = True
 
 
     # Handle --prompt flag: Run Prompt Creator Sub-Agent
