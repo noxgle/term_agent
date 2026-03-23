@@ -65,7 +65,7 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         if mode == "compact":
             compact_mode = True
             hybrid_mode = False
-        elif mode == "legacy":
+        elif mode == "normal":
             compact_mode = False
             hybrid_mode = False
         elif mode == "hybrid":
