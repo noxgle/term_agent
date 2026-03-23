@@ -1986,7 +1986,7 @@ class VaultAIAgentRunner:
 
                     elif tool == "finish":
                         summary_text = action_item.get("summary", "Agent reported task finished.")
-                        goal_success = action_item.get("goal_success", None)
+                        goal_success = action_item.get("goal_success", False)
                         if isinstance(goal_success, bool):
                             self.goal_success = goal_success
                         else:

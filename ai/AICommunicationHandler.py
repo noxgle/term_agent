@@ -56,6 +56,9 @@ class AICommunicationHandler:
             self.ai_api_retry_delay = float(os.getenv("AI_API_RETRY_DELAY", "2"))
             self.ai_api_retry_backoff = float(os.getenv("AI_API_RETRY_BACKOFF", "2"))
             
+            # Load timeout buffer for main thread (should be 5-10 seconds more than worker thread timeout)
+            self.ai_main_thread_timeout_buffer = int(os.getenv("AI_MAIN_THREAD_TIMEOUT_BUFFER", "5"))
+            
             # Load timeout API selection setting with proper validation
             use_timeout_value = os.getenv("USE_TIMEOUT_API", "true").lower()
             if use_timeout_value in ["true", "1", "yes", "on"]:
@@ -68,7 +71,8 @@ class AICommunicationHandler:
             
             self.logger.debug(f"AI API timeout config loaded: timeout={self.ai_api_timeout}s, "
                              f"max_retries={self.ai_api_max_retries}, retry_delay={self.ai_api_retry_delay}s, "
-                             f"backoff={self.ai_api_retry_backoff}, use_timeout_api={self.use_timeout_api}")
+                             f"backoff={self.ai_api_retry_backoff}, use_timeout_api={self.use_timeout_api}, "
+                             f"main_thread_timeout_buffer={self.ai_main_thread_timeout_buffer}s")
         except Exception as e:
             self.logger.warning(f"Failed to load timeout config, using defaults: {e}")
             # Set default values
@@ -76,6 +80,7 @@ class AICommunicationHandler:
             self.ai_api_max_retries = 3
             self.ai_api_retry_delay = 2
             self.ai_api_retry_backoff = 2
+            self.ai_main_thread_timeout_buffer = 5
             self.use_timeout_api = True
 
     def _get_next_engine(self) -> str:
@@ -347,9 +352,12 @@ class AICommunicationHandler:
                     self.logger.debug(f"Signal-based timeout not available: {e}")
             
             try:
-                # Wait for result with timeout
+                # Wait for result with timeout - main thread timeout should be longer than worker thread timeout
+                # to account for thread coordination overhead and prevent race conditions
+                main_thread_timeout = self.ai_api_timeout + self.ai_main_thread_timeout_buffer
+                
                 try:
-                    result = result_queue.get(timeout=self.ai_api_timeout)
+                    result = result_queue.get(timeout=main_thread_timeout)
                     if result:
                         return result
                     else:
@@ -357,7 +365,7 @@ class AICommunicationHandler:
                         last_exception = ValueError(f"Empty response from {engine}")
                         continue
                 except queue.Empty:
-                    self.logger.warning(f"Engine {engine} timed out, trying next engine")
+                    self.logger.warning(f"Engine {engine} timed out after {main_thread_timeout}s (worker timeout: {self.ai_api_timeout}s), trying next engine")
                     last_exception = TimeoutError(f"Timeout from {engine}")
                     continue
             
@@ -598,9 +606,11 @@ class AICommunicationHandler:
         result = re.sub(r"'([^']+)'", r'"\1"', result)
         return result
 
-    def _handle_retry_error(self, attempt: int, max_attempts: int, error: Exception):
+    def _handle_retry_error(self, attempt: int, max_attempts: float, error: Exception):
         """Log and handle retry errors"""
-        error_msg = f"Attempt {attempt}/{max_attempts} failed: {str(error)}"
+        # Handle infinite retry case
+        max_attempts_str = "∞" if max_attempts == float('inf') else str(int(max_attempts))
+        error_msg = f"Attempt {attempt}/{max_attempts_str} failed: {str(error)}"
         if self.logger:
             self.logger.warning(error_msg)
         else:
