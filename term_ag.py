@@ -97,7 +97,7 @@ class term_agent:
         self.basedir = os.path.dirname(os.path.abspath(__file__))
         # check if .env file exists in the basedir
         if not os.path.isfile(os.path.join(self.basedir, '.env')):
-            print(f"[Vault 3000] ERROR: .env file not found in {self.basedir}. Please create one based on .env.copy.")
+            print(f"ValutAI> ERROR: .env file not found in {self.basedir}. Please create one based on .env.copy.")
             sys.exit(1)
         load_dotenv()
         # --- Logging config from .env ---
@@ -126,7 +126,7 @@ class term_agent:
                 file_handler.setFormatter(logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s'))
                 handlers.append(file_handler)
             except Exception as e:
-                print(f"[Vault 3000] WARNING: Could not create log file handler: {e}")
+                print(f"ValutAI> WARNING: Could not create log file handler: {e}")
 
         # Console handler
         if log_to_console or not handlers:
@@ -944,6 +944,136 @@ class term_agent:
         else:
             return False, f"Unknown AI engine: {self.ai_engine}", None
 
+    def check_all_ai_engines_online(self):
+        """
+        Check the online status of all configured AI engines.
+        Returns a comprehensive status report for all engines.
+        """
+        engine_status = {}
+        
+        for engine in self.ai_engines:
+            try:
+                if engine == "openai":
+                    try:
+                        client = OpenAI(api_key=self.engine_api_keys.get(engine, ""))
+                        client.models.list()
+                        engine_status[engine] = {
+                            "status": "online",
+                            "message": "OpenAI API is online.",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"OpenAI API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                        
+                elif engine == "ollama":
+                    try:
+                        resp = requests.get(self.engine_models[engine]["url"].replace("/api/generate", ""), timeout=5)
+                        if resp.status_code == 200:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "Ollama API is online.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": f"Ollama API unavailable: HTTP {resp.status_code}",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"Ollama API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                        
+                elif engine == "ollama-cloud":
+                    try:
+                        client = ollama.Client(
+                            host="https://ollama.com",
+                            headers={'Authorization': f'Bearer {self.engine_api_keys.get(engine, "")}'}
+                        )
+                        models = client.list()
+                        if models:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "Ollama Cloud API is online.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": "Ollama Cloud API returned no models.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"Ollama Cloud API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                        
+                elif engine == "google":
+                    try:
+                        client = genai.Client(api_key=self.engine_api_keys.get(engine, ""))
+                        models = client.models.list()
+                        if models:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "Google Gemini API is online.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": "Google Gemini API returned no models.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"Google Gemini API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                        
+                elif engine == "openrouter":
+                    try:
+                        client = OpenAI(
+                            api_key=self.engine_api_keys.get(engine, ""),
+                            base_url="https://openrouter.ai/api/v1"
+                        )
+                        client.models.list()
+                        engine_status[engine] = {
+                            "status": "online",
+                            "message": "OpenRouter API is online.",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"OpenRouter API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                else:
+                    engine_status[engine] = {
+                        "status": "offline",
+                        "message": f"Unknown AI engine: {engine}",
+                        "model": None
+                    }
+                    
+            except Exception as e:
+                engine_status[engine] = {
+                    "status": "offline",
+                    "message": f"Unexpected error checking {engine}: {e}",
+                    "model": None
+                }
+        
+        return engine_status
+
     def create_keybindings(self):
         kb = KeyBindings()
         
@@ -965,11 +1095,11 @@ class term_agent:
                         self.interactive_mode = not self.auto_accept
                     except Exception:
                         pass
-                    #self.console.print("[Vault 3000] Mode set to: automatic")
+                    #self.console.print("ValutAI> Mode set to: automatic")
                 else:
                     pass
                     # Already automatic; inform user but do not change state
-                    # self.console.print("[Vault 3000] Mode is already automatic")
+                    # self.console.print("ValutAI> Mode is already automatic")
             except Exception:
                 # Swallow any unexpected errors in key handler to avoid breaking prompt
                 pass
@@ -984,7 +1114,7 @@ class term_agent:
             with open(clean_path, 'r') as file:
                 return file.read().strip()
         except Exception as e:
-            self.print_console(f"[Vault 3000] ERROR Could not load goal from file '{escape(filepath)}': {escape(str(e))}")
+            self.print_console(f"ValutAI> ERROR Could not load goal from file '{escape(filepath)}': {escape(str(e))}")
             sys.exit(1)
 
     def process_input(self, text):
@@ -1046,7 +1176,9 @@ Controls:
   Ctrl+C    Exit program
         """)
     
-    ai_status, mode_owner, ai_model = agent.check_ai_online()
+    # Check status of all configured AI engines
+    all_engine_status = agent.check_all_ai_engines_online()
+    
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print("Mode: Linux Terminal AI Agent.")
     agent.console.print(f"Local Linux distribution is: {agent.local_linux_distro[0]} {agent.local_linux_distro[1]}")
@@ -1054,12 +1186,25 @@ Controls:
         agent.console.print("Working mode: [green]automatic[/]")
     else:
         agent.console.print("Working mode: [yellow]cooperative.[/]")
-    if ai_status:
-        agent.console.print(f"""Model: {ai_model} is online.""")
+    
+    # Display AI engine status
+    agent.console.print("\n[bold]AI Engine Status:[/bold]")
+    all_online = True
+    for engine, status_info in all_engine_status.items():
+        status_icon = "ONLINE" if status_info["status"] == "online" else "OFFLINE"
+        model_info = f" ({status_info['model']})" if status_info.get("model") else ""
+        agent.console.print(f"  {status_icon} {engine}: {status_info['message']}{model_info}")
+        if status_info["status"] == "offline":
+            all_online = False
+    
+    # Display routing mode
+    agent.console.print(f"\n[bold]Routing Mode:[/bold] {agent.ai_engine_route}")
+    
+    if not all_online:
+        agent.console.print("[red]Warning: Some AI engines are offline. The agent may not function properly.[/]")
+        # Still allow the agent to start, but warn the user
     else:
-        agent.console.print("[red]Model: is offline.[/]\n")
-        agent.console.print("[red]Please check your API key and network connection.[/]\n")
-        sys.exit(1)
+        agent.console.print("[green]All configured AI engines are online and ready.[/]")
     
     compact_mode_override = None
     hybrid_mode_override = None
@@ -1110,10 +1255,10 @@ Controls:
                 agent.console.print("\n[yellow]No prompt was created.[/]")
                 
         except KeyboardInterrupt:
-            agent.console.print("\n[red][Vault 3000] Prompt Creator interrupted by user.[/]")
+            agent.console.print("\n[red]ValutAI> Prompt Creator interrupted by user.[/]")
             sys.exit(1)
         except Exception as e:
-            agent.console.print(f"[Vault 3000] ERROR: {e}", style="red", markup=False)
+            agent.console.print(f"ValutAI> ERROR: {e}", style="red", markup=False)
             sys.exit(1)
         
         return
@@ -1147,7 +1292,7 @@ Controls:
             if agent.ssh_password is not None:
                 ask_input= input("Do you want to use passwordless SSH login in the future? (y/n): ")
                 if ask_input.lower() == 'y':
-                    agent.console.print(f"[yellow][Vault 3000] Setting up passwordless SSH login to {remote}...[/]")
+                    agent.console.print(f"[yellow]ValutAI> Setting up passwordless SSH login to {remote}...[/]")
                     try:
                         cmd = ["ssh-copy-id"]
                         if agent.port:
@@ -1157,23 +1302,23 @@ Controls:
                             clean_remote, _ = clean_remote.rsplit(':', 1)
                         cmd.append(clean_remote)
                         subprocess.run(cmd, check=True)
-                        agent.console.print(f"[green][Vault 3000] Passwordless SSH login set up successfully.[/]")
+                        agent.console.print(f"[green]ValutAI> Passwordless SSH login set up successfully.[/]")
                     except subprocess.CalledProcessError as e:
-                        agent.console.print(f"[Vault 3000] ERROR: ssh-copy-id failed: {e}", style="red", markup=False)
+                        agent.console.print(f"ValutAI> ERROR: ssh-copy-id failed: {e}", style="red", markup=False)
                     except Exception as e:
-                        agent.console.print(f"[Vault 3000] ERROR: Unexpected error during ssh-copy-id: {e}", style="red", markup=False)
+                        agent.console.print(f"ValutAI> ERROR: Unexpected error during ssh-copy-id: {e}", style="red", markup=False)
             if returncode != 0:
-                agent.console.print(f"[red][Vault 3000] ERROR: Could not connect to remote host {remote}.[/]")
+                agent.console.print(f"[red]ValutAI> ERROR: Could not connect to remote host {remote}.[/]")
                 if output:
-                    agent.console.print(f"[red][Vault 3000] Details: {output}[/]")
+                    agent.console.print(f"[red]ValutAI> Details: {output}[/]")
                 sys.exit(1)
 
             agent.remote_linux_distro = agent.detect_remote_linux_distribution(host, user=user)
         except KeyboardInterrupt:
-            agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
+            agent.console.print("[red]ValutAI> Agent interrupted by user.[/]")
             sys.exit(1)
         except Exception as e:
-            agent.console.print(f"[Vault 3000] ERROR: SSH connection to {remote} failed: {e}", style="red", markup=False)
+            agent.console.print(f"ValutAI> ERROR: SSH connection to {remote} failed: {e}", style="red", markup=False)
             sys.exit(1)
 
         agent.console.print(f"Remote Linux distribution is: {agent.remote_linux_distro[0]} {agent.remote_linux_distro[1]}")
@@ -1188,7 +1333,7 @@ Controls:
         agent.user = None
         agent.host = None
         input_text = "local"
-        agent.console.print("\n\n\n\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
+        agent.console.print("\n\n\nValutAI> What can I do for you today? Enter your goal and press [cyan]Ctrl+S[/] to start!")
     
     try:
         user_input = prompt(
@@ -1201,10 +1346,10 @@ Controls:
         user_input_text = agent.process_input(user_input)
 
     except EOFError:
-        agent.console.print("\n[red][Vault 3000] EOFError: Unexpected end of file.[/]")
+        agent.console.print("\n[red]ValutAI> EOFError: Unexpected end of file.[/]")
         sys.exit(1)
     except KeyboardInterrupt:
-        agent.console.print("\n[red][Vault 3000] Stopped by user.[/]")
+        agent.console.print("\n[red]ValutAI> Stopped by user.[/]")
         sys.exit(1)
 
     runner = VaultAIAgentRunner(
@@ -1237,10 +1382,10 @@ Controls:
         runner.run()
         agent.console.print(f"\n{agent.maybe_print_finding()}")
     except KeyboardInterrupt:
-        agent.console.print("[red][Vault 3000] Agent interrupted by user.[/]")
+        agent.console.print("[red]ValutAI> Agent interrupted by user.[/]")
         sys.exit(1)
     except Exception as e:
-        agent.console.print(f"[Vault 3000] ERROR: Unexpected error: {e}", style="red", markup=False)
+        agent.console.print(f"ValutAI> ERROR: Unexpected error: {e}", style="red", markup=False)
         sys.exit(1)
 
 if __name__ == "__main__":
