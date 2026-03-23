@@ -98,6 +98,7 @@ Welcome to Vault 3000, your Fallout-inspired Linux Terminal AI Agent! This power
 - **Thread Continuation**: After finishing a task, you can continue the session with a new goal while preserving the full conversation history.
 - **Enhanced JSON Validator**: Robust JSON parsing with up to 3 automatic correction attempts when the AI returns malformed responses.
 - **Configurable Step Limit**: Built-in safeguard (`MAX_STEPS=100` by default) prevents infinite loops during task execution.
+- **Intelligent Log Compression**: Automatic log compression using AI-powered semantic clustering to reduce verbosity while preserving important information.
 
 ## Multi-Engine AI Routing Configuration
 
@@ -479,6 +480,151 @@ WEB_SEARCH_EXTRACT_CONTENT=true
 # Max characters extracted per page (default: 10000)
 WEB_SEARCH_MAX_CONTENT_LENGTH=10000
 ```
+
+## Log Compression
+
+The agent includes intelligent log compression features to reduce verbosity while preserving important information. This is particularly useful when dealing with large volumes of system logs, application logs, or agent output.
+
+### Compression Modes
+
+#### Simple Log Compression
+- **Method**: Regex-based template matching and grouping
+- **Speed**: Fast, lightweight processing
+- **Use Case**: Small to medium log files, quick compression needs
+- **Trigger**: Automatically when log length > 5000 characters or unique ratio < 70%
+
+#### Dynamic Log Compression
+- **Method**: AI-powered semantic clustering using sentence transformers
+- **Technology**: Uses Hugging Face's `sentence-transformers/all-MiniLM-L6-v2` model
+- **Speed**: Slower but more intelligent grouping
+- **Use Case**: Large log files, semantic understanding required
+- **Trigger**: Automatically when log lines > 20 or for better semantic grouping
+
+#### Automatic Mode (Recommended)
+- **Method**: Tries Dynamic compression first, falls back to Simple if needed
+- **Configuration**: Set `LOG_COMPRESSOR_MODE=auto` in `.env`
+- **Benefits**: Best of both worlds - intelligent compression with reliable fallback
+
+### Setup Instructions
+
+#### 1. Obtain Hugging Face API Token
+1. Visit [Hugging Face](https://huggingface.co/settings/tokens)
+2. Create an account if you don't have one
+3. Generate a new API token with read access
+4. Add it to your `.env` file:
+
+```ini
+# Hugging Face API token for DynamicLogCompressor
+HF_TOKEN=your_hf_token_here
+```
+
+#### 2. Download the AI Model
+Run the model downloader script to fetch the required model:
+
+```bash
+python download_hf_model.py
+```
+
+This will:
+- Download the `sentence-transformers/all-MiniLM-L6-v2` model
+- Store it in the `hf_cache` directory
+- Configure the model for CPU-only operation
+
+#### 3. Configure Compression Mode
+Add the following to your `.env` file:
+
+```ini
+# Log compressor mode: auto (try DynamicLogCompressor first, fallback to LogCompressor), 
+# dynamic (use only DynamicLogCompressor), simple (use only LogCompressor)
+LOG_COMPRESSOR_MODE=auto
+```
+
+### Configuration Options
+
+| Setting | Values | Description |
+|---------|--------|-------------|
+| `LOG_COMPRESSOR_MODE` | `auto`, `dynamic`, `simple` | Compression method to use |
+| `HF_TOKEN` | Your Hugging Face token | Required for Dynamic compression |
+| `TRANSFORMERS_CACHE` | Directory path | Where to store downloaded models |
+
+### Usage Examples
+
+#### Before Compression
+```
+2024-03-15 10:30:15 INFO: User login successful for user_id=12345
+2024-03-15 10:30:16 INFO: User login successful for user_id=12346
+2024-03-15 10:30:17 INFO: User login successful for user_id=12347
+2024-03-15 10:30:18 ERROR: Database connection failed for user_id=12345
+2024-03-15 10:30:19 INFO: User login successful for user_id=12348
+```
+
+#### After Simple Compression
+```
+<TIME> INFO: User login successful for user_id=<NUM> x4
+<TIME> ERROR: Database connection failed for user_id=<NUM>
+```
+
+#### After Dynamic Compression
+```
+<TIME> INFO: User login successful for user_id=<NUM> x4
+<TIME> ERROR: Database connection failed for user_id=<NUM>
+```
+
+### Performance Comparison
+
+| Metric | Simple Compression | Dynamic Compression |
+|--------|-------------------|-------------------|
+| **Speed** | Fast (milliseconds) | Slower (seconds) |
+| **Accuracy** | Template-based | Semantic clustering |
+| **Memory Usage** | Low | Higher (model loading) |
+| **Best For** | Real-time processing | Batch processing, analysis |
+
+### Integration with Agent
+
+The log compression feature integrates seamlessly with the agent's logging system:
+
+- **Automatic Triggering**: Compression activates automatically based on log size and content
+- **Context Preservation**: Important information is preserved while reducing verbosity
+- **Performance Monitoring**: Compression reduces log output size without losing critical details
+- **Memory Efficiency**: Helps manage memory usage during long-running agent sessions
+
+### Troubleshooting
+
+#### Model Download Issues
+**Problem**: "Failed to load model from local cache"
+**Solution**:
+1. Verify `HF_TOKEN` is correctly set in `.env`
+2. Run `python download_hf_model.py` again
+3. Check internet connectivity
+4. Ensure `hf_cache` directory has write permissions
+
+#### Token Authentication Problems
+**Problem**: "HF_TOKEN not found in .env file"
+**Solution**:
+1. Verify the token is correctly copied from Hugging Face
+2. Ensure no extra spaces or characters in the `.env` file
+3. Restart the agent after updating `.env`
+
+#### Performance Issues
+**Problem**: Agent is slow when processing large logs
+**Solution**:
+1. Use `LOG_COMPRESSOR_MODE=simple` for faster processing
+2. Increase system memory if possible
+3. Monitor CPU usage during compression
+
+### Advanced Configuration
+
+#### Custom Clustering Parameters
+For advanced users, the DynamicLogCompressor uses DBSCAN clustering with these default parameters:
+- `eps=0.2` (clustering sensitivity)
+- `min_samples=2` (minimum cluster size)
+- `metric="cosine"` (similarity metric)
+
+#### Cache Management
+The model is cached in the `hf_cache` directory. To manage cache:
+- **Clear cache**: Delete the `hf_cache` directory
+- **Move cache**: Update `TRANSFORMERS_CACHE` in `.env`
+- **Monitor size**: The model is approximately 80MB
 
 ## Prompt Creator
 
