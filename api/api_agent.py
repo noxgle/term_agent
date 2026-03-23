@@ -71,6 +71,12 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         elif mode == "hybrid":
             compact_mode = True
             hybrid_mode = True
+    elif compact_mode is not None:
+        # pipeline_mode not provided, but compact_mode is set - derive hybrid_mode from it
+        if compact_mode:
+            hybrid_mode = True  # compact → hybrid (default)
+        else:
+            hybrid_mode = False  # compact=False → normal
 
     filtered_goal = compress_prompt(params.goal)
 
