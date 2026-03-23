@@ -2854,11 +2854,13 @@ class VaultAIAgentRunner:
                                 self.context_manager.add_user_message(f"Web search for '{query}' failed: {error_msg}. Try an alternative approach.")
                                 
                         except Exception as e:
+                            import traceback
+                            error_msg = f"Web search exception: {e}\nStack trace: {traceback.format_exc()}"
                             # End timing web search operation (exception)
                             self._end_timing(search_timing_id, f"WEB_SEARCH_{query[:50]}", False)
                             
                             terminal.print_console(f"\n[ERROR] Web search exception: {e}")
-                            self.logger.error(f"Web search exception: {e}")
+                            self.logger.error(error_msg)
                             self._update_plan_progress(f"Web search error: {query}", success=False)
                             self.context_manager.add_user_message(f"Web search for '{query}' encountered an error: {str(e)}. Try an alternative approach.")
                         continue

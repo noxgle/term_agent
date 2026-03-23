@@ -119,9 +119,11 @@ def _run_job(job_id: str, params: ApiRunParams) -> None:
             _jobs[job_id]["goal_success"] = False
             _jobs[job_id]["finished_at"] = time.time()
     except Exception as exc:
+        import traceback
+        error_details = f"Agent error: {exc}\nStack trace: {traceback.format_exc()}"
         with _jobs_lock:
             _jobs[job_id]["status"] = "failed"
-            _jobs[job_id]["error"] = f"Agent error: {exc}"
+            _jobs[job_id]["error"] = error_details
             _jobs[job_id]["goal_success"] = False
             _jobs[job_id]["finished_at"] = time.time()
 
