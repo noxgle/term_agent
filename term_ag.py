@@ -16,6 +16,7 @@ import pexpect
 import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
+from groq import Groq
 
 PIPBOY_ASCII = r"""
 
@@ -168,6 +169,7 @@ class term_agent:
             "ollama-cloud": os.getenv("OLLAMA_CLOUD_TOKEN", ""),
             "openrouter": os.getenv("OPENROUTER_API_KEY", ""),
             "ollama": None,  # Ollama doesn't require API key
+            "groq": os.getenv("GROQ_API_KEY", ""),
         }
         
         # Per-engine model configurations
@@ -197,6 +199,11 @@ class term_agent:
                 "model": os.getenv("OPENROUTER_MODEL", "openrouter/llama-3.1-70b-instruct:free"),
                 "temperature": float(os.getenv("OPENROUTER_TEMPERATURE", "0.5")),
                 "max_tokens": int(os.getenv("OPENROUTER_MAX_TOKENS", "1000")),
+            },
+            "groq": {
+                "model": os.getenv("GROQ_MODEL", "llama3-8b-8192"),
+                "temperature": float(os.getenv("GROQ_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("GROQ_MAX_TOKENS", "1000")),
             },
         }
         
@@ -231,7 +238,10 @@ class term_agent:
         self.openrouter_model = self.engine_models["openrouter"]["model"]
         self.openrouter_temperature = self.engine_models["openrouter"]["temperature"]
         self.openrouter_max_tokens = self.engine_models["openrouter"]["max_tokens"]
-        self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"))
+        self.groq_model = self.engine_models["groq"]["model"]
+        self.groq_temperature = self.engine_models["groq"]["temperature"]
+        self.groq_max_tokens = self.engine_models["groq"]["max_tokens"]
+        self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"));
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         # AI API timeout and retry configuration
         self.ai_api_timeout = int(os.getenv("AI_API_TIMEOUT", "120"))
@@ -690,15 +700,14 @@ class term_agent:
             base_url="https://openrouter.ai/api/v1",
             timeout=timeout
         )
-        
-        full_prompt = f"{role_system_content}\n\n{prompt}"
 
         try:
             if format == 'json':
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "user",   "content": full_prompt}
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -708,7 +717,8 @@ class term_agent:
                 response = client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "user",   "content": full_prompt}
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature
@@ -724,6 +734,69 @@ class term_agent:
             return str(content)
         except Exception as e:
             self.logger.error(f"OpenRouter connection error: {e}")
+            return None
+
+    # --- Groq Function ---
+    def connect_to_groq(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
+        """
+        Send a prompt to Groq API and return the response as a string.
+        Groq provides access to high-performance LLMs through a unified API.
+        
+        Args:
+            role_system_content: System prompt content
+            prompt: User prompt content
+            model: Model to use (optional)
+            max_tokens: Maximum tokens for response (optional)
+            temperature: Temperature setting (optional)
+            format: Response format (optional)
+            timeout: Request timeout in seconds (optional)
+        """
+        if model is None:
+            model = self.groq_model
+        if max_tokens is None:
+            max_tokens = self.groq_max_tokens
+        if temperature is None:
+            temperature = self.groq_temperature
+        if timeout is not None:
+            timeout = self.ai_api_timeout
+            
+        try:
+            client = Groq(api_key=self.api_key, timeout=timeout)
+            
+            full_prompt = f"{role_system_content}\n\n{prompt}"
+
+            if format == 'json':
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    response_format={"type": "json_object"}
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[
+                        {"role": "system", "content": role_system_content},
+                        {"role": "user",   "content": prompt}
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=temperature
+                )
+            self.logger.info(f"Groq prompt: {prompt}")
+            self.logger.debug(f"Groq raw response: {response}")
+            content = response.choices[0].message.content
+            if content is None:
+                self.logger.error("Groq response content is None")
+                return None
+            if isinstance(content, str):
+                return content.strip()
+            return str(content)
+        except Exception as e:
+            self.logger.error(f"Groq connection error: {e}")
             return None
 
     def run(self, command, remote=None):
@@ -1056,6 +1129,30 @@ class term_agent:
                         engine_status[engine] = {
                             "status": "offline",
                             "message": f"OpenRouter API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                elif engine == "groq":
+                    try:
+                        from groq import Groq
+                        client = Groq(api_key=self.engine_api_keys.get(engine, ""))
+                        # Try to list models to check connectivity
+                        models = client.models.list()
+                        if models:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "Groq API is online.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": "Groq API returned no models.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"Groq API unavailable: {e}",
                             "model": self.engine_models[engine]["model"]
                         }
                 else:

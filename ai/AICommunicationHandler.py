@@ -181,6 +181,13 @@ class AICommunicationHandler:
             self.terminal.openrouter_model = config.get('model') or self.terminal.openrouter_model
             self.terminal.openrouter_temperature = config.get('temperature', self.terminal.openrouter_temperature)
             self.terminal.openrouter_max_tokens = config.get('max_tokens', self.terminal.openrouter_max_tokens)
+        elif engine == "groq":
+            original_model = self.terminal.groq_model
+            original_temperature = self.terminal.groq_temperature
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.groq_model = config.get('model') or self.terminal.groq_model
+            self.terminal.groq_temperature = config.get('temperature', self.terminal.groq_temperature)
+            self.terminal.groq_max_tokens = config.get('max_tokens', self.terminal.groq_max_tokens)
         
         try:
             # Make the actual API call
@@ -194,6 +201,8 @@ class AICommunicationHandler:
                 return self.terminal.connect_to_chatgpt(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
             elif engine == "openrouter":
                 return self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "groq":
+                return self.terminal.connect_to_groq(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
             else:
                 raise ValueError(f"Unsupported AI engine: {engine}")
         finally:
@@ -215,6 +224,9 @@ class AICommunicationHandler:
                 elif engine == "openrouter":
                     self.terminal.openrouter_model = original_model
                     self.terminal.openrouter_temperature = original_temperature
+                elif engine == "groq":
+                    self.terminal.groq_model = original_model
+                    self.terminal.groq_temperature = original_temperature
 
     def send_request(
         self,
