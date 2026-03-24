@@ -92,8 +92,13 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         hybrid_mode=hybrid_mode,
     )
 
-    if params.force_plan:
-        runner.force_plan = True
+    # Set force_plan from parameter or environment variable
+    if params.force_plan is not None:
+        runner.force_plan = params.force_plan
+    else:
+        # Check environment variable if parameter not provided
+        env_force_plan = os.getenv("FORCE_PLAN", "false").lower()
+        runner.force_plan = env_force_plan in ("true", "1", "yes", "on")
 
     runner.run()
 

@@ -24,8 +24,8 @@ class RunRequest(BaseModel):
     user: Optional[str] = None
     host: Optional[str] = None
     port: Optional[int] = None
-    window_size: int = Field(20, ge=5, le=200)
-    max_steps: Optional[int] = Field(None, ge=1, le=500)
+    window_size: int = Field(default=20, ge=5, le=200)
+    max_steps: Optional[int] = Field(default=None, ge=1, le=500)
     ssh_password: Optional[str] = None
     compact_mode: Optional[bool] = None
     force_plan: Optional[bool] = None
