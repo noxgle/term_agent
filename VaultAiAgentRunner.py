@@ -168,6 +168,7 @@ class VaultAIAgentRunner:
         self.critic_rating = 0
         self.critic_verdict = ""
         self.critic_rationale = ""
+        self.summary_model_creator = "unknown"  # Track which model created the summary
         self.compact_state = self._init_compact_state()
 
         # Performance summary visibility (controlled via .env)
@@ -692,7 +693,7 @@ class VaultAIAgentRunner:
         """
         stats = self.summarize_stats
         if stats["total_count"] == 0:
-            return "No summarize operations performed."
+            return "\n=== BASH SUMMARIZE OPERATIONS SUMMARY ===\n   No summarize operations performed."
         
         # Calculate compression ratio
         compression_ratio = (
@@ -701,7 +702,7 @@ class VaultAIAgentRunner:
         )
         savings_pct = (1 - compression_ratio) * 100
         
-        summary_lines = ["\n=== SUMMARIZE OPERATIONS SUMMARY ==="]
+        summary_lines = ["\n=== BASH SUMMARIZE OPERATIONS SUMMARY ==="]
         
         # Overall statistics
         summary_lines.append("\nOVERALL STATISTICS:")
@@ -2009,15 +2010,22 @@ class VaultAIAgentRunner:
                                 continue
                         # If no plan exists, allow finish without checking plan status
                         
+                        # Track which model created the summary
+                        model_used = getattr(self.ai_handler, 'ai_engines', [getattr(self.ai_handler, 'ai_engine', 'unknown')])[0]
+                        self.summary_model_creator = model_used
+                        
                         terminal.print_console(f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}")
                         self.summary = summary_text
                         task_finished_successfully = True
                         agent_should_stop_this_turn = True
                         try:
                             # Log finish along with the request id for traceability
-                            self.logger.info("Agent signaled finish with summary: %s; request_id=%s", summary_text, request_id)
+                            self.logger.info("Agent signaled finish with summary: %s; request_id=%s; model=%s", summary_text, request_id, model_used)
                         except Exception:
                             pass
+                        
+                        # Display model information in summary
+                        terminal.print_console(f"Summary created by: {model_used}")
 
                         # --- CriticSubAgent: Correctness Score (only on success) ---
                         if (

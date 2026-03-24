@@ -254,10 +254,10 @@ class AICommunicationHandler:
                 # Use the selected API method based on configuration
                 if self.use_timeout_api:
                     self.logger.debug(f"Using timeout-enabled API call (attempt {attempt}/{max_attempts})")
-                    response = self._call_ai_api_with_timeout(system_prompt, user_prompt, max_tokens=max_tokens)
+                    response, used_engine = self._call_ai_api_with_timeout(system_prompt, user_prompt, max_tokens=max_tokens)
                 else:
                     self.logger.debug(f"Using legacy API call without timeout (attempt {attempt}/{max_attempts})")
-                    response = self._call_ai_api(system_prompt, user_prompt, max_tokens=max_tokens)
+                    response, used_engine = self._call_ai_api(system_prompt, user_prompt, max_tokens=max_tokens)
                 
                 if not response:
                     raise ValueError("Empty response from AI")
@@ -265,12 +265,13 @@ class AICommunicationHandler:
                 # Calculate output tokens
                 output_tokens = self._estimate_tokens(response)
                 
-                # Track token usage
+                # Track token usage with model information
                 self._track_token_usage(
                     operation=operation,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
-                    attempt=attempt
+                    attempt=attempt,
+                    model=used_engine
                 )
                 
                 if request_format == "json":
@@ -298,10 +299,98 @@ class AICommunicationHandler:
         
         return None
 
-    def _call_ai_api_with_timeout(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
+    def send_request_with_model(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        request_format: str = "json",
+        operation: str = "ai_request",
+        max_tokens: Optional[int] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Handles AI communication with retries and standardized error handling.
+        Returns both the response and the model/engine used.
+        
+        Args:
+            system_prompt: Base system instructions for the AI
+            user_prompt: User-provided prompt content
+            request_format: Expected response format ('json' or 'text')
+            operation: Operation name for token accounting
+            max_tokens: Optional max tokens for the model response
+            
+        Returns:
+            Tuple of (AI response content or None, model/engine name or None)
+        """
+        # Use configured retry settings, but respect compact mode limits
+        max_attempts = 1 if operation.startswith("compact_") else self.ai_api_max_retries
+        if max_attempts == 0:
+            max_attempts = float('inf')  # No retry limit
+        
+        # Calculate input tokens for tracking
+        input_text = f"{system_prompt}\n{user_prompt}"
+        input_tokens = self._estimate_tokens(input_text)
+        
+        # Convert max_attempts to int for range function, but keep infinity logic
+        range_limit = 100 if max_attempts == float('inf') else int(max_attempts)
+        
+        for attempt in range(1, range_limit + 1):
+            try:
+                # Use the selected API method based on configuration
+                if self.use_timeout_api:
+                    self.logger.debug(f"Using timeout-enabled API call (attempt {attempt}/{max_attempts})")
+                    response, used_engine = self._call_ai_api_with_timeout(system_prompt, user_prompt, max_tokens=max_tokens)
+                else:
+                    self.logger.debug(f"Using legacy API call without timeout (attempt {attempt}/{max_attempts})")
+                    response, used_engine = self._call_ai_api(system_prompt, user_prompt, max_tokens=max_tokens)
+                
+                if not response:
+                    raise ValueError("Empty response from AI")
+                
+                # Calculate output tokens
+                output_tokens = self._estimate_tokens(response)
+                
+                # Track token usage with model information
+                self._track_token_usage(
+                    operation=operation,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    attempt=attempt,
+                    model=used_engine
+                )
+                
+                if request_format == "json":
+                    processed_response = self._process_json_response(response)
+                    return processed_response, used_engine
+                
+                return response, used_engine
+            
+            except Exception as e:
+                self._handle_retry_error(attempt, max_attempts, e)
+                
+                # Check if we should retry
+                should_retry = max_attempts == float('inf') or attempt < max_attempts
+                
+                if should_retry:
+                    # Calculate delay with exponential backoff
+                    delay = self.ai_api_retry_delay * (self.ai_api_retry_backoff ** (attempt - 1))
+                    # Add jitter to prevent thundering herd
+                    jitter = random.uniform(0, delay * 0.1)
+                    delay_with_jitter = delay + jitter
+                    
+                    self.logger.debug(f"Retrying in {delay_with_jitter:.2f} seconds...")
+                    time.sleep(delay_with_jitter)
+                else:
+                    break  # No more retries allowed
+        
+        return None, None
+
+    def _call_ai_api_with_timeout(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Tuple[Optional[str], Optional[str]]:
         """
         Route request to appropriate AI engine with timeout using threading and signal-based fallback.
         Supports multi-engine routing (round-robin and fallback modes).
+        
+        Returns:
+            Tuple of (response, engine_name) or (None, None) on failure
         """
         # Determine engines to try based on routing mode
         if len(self.ai_engines) == 1:
@@ -359,7 +448,7 @@ class AICommunicationHandler:
                 try:
                     result = result_queue.get(timeout=main_thread_timeout)
                     if result:
-                        return result
+                        return result, engine
                     else:
                         self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
                         last_exception = ValueError(f"Empty response from {engine}")
@@ -406,12 +495,15 @@ class AICommunicationHandler:
         # All engines failed
         if last_exception:
             raise last_exception
-        return None
+        return None, None
 
-    def _call_ai_api(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Optional[str]:
+    def _call_ai_api(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Tuple[Optional[str], Optional[str]]:
         """
         Route request to appropriate AI engine (legacy method without timeout).
         Supports multi-engine routing (round-robin and fallback modes).
+        
+        Returns:
+            Tuple of (response, engine_name) or (None, None) on failure
         """
         # Determine engines to try based on routing mode
         if len(self.ai_engines) == 1:
@@ -430,7 +522,7 @@ class AICommunicationHandler:
             try:
                 result = self._call_single_engine(engine, system_prompt, user_prompt, max_tokens=max_tokens)
                 if result:
-                    return result
+                    return result, engine
                 else:
                     self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
                     last_exception = ValueError(f"Empty response from {engine}")
@@ -442,7 +534,7 @@ class AICommunicationHandler:
         # All engines failed
         if last_exception:
             raise last_exception
-        return None
+        return None, None
 
     def _process_json_response(self, response: str) -> Optional[str]:
         """
@@ -644,7 +736,7 @@ class AICommunicationHandler:
         # More accurate would be to use the actual tokenizer, but this is a good estimate
         return max(1, len(text) // 4)
 
-    def _track_token_usage(self, operation: str, input_tokens: int, output_tokens: int, attempt: int = 1):
+    def _track_token_usage(self, operation: str, input_tokens: int, output_tokens: int, attempt: int = 1, model: Optional[str] = None):
         """
         Track token usage for this AI communication.
         
@@ -653,6 +745,7 @@ class AICommunicationHandler:
             input_tokens: Number of input tokens used
             output_tokens: Number of output tokens generated
             attempt: Retry attempt number
+            model: Model/engine used for this operation (optional)
         """
         # Initialize token tracking if not already done
         if not hasattr(self, 'token_usage'):
@@ -681,8 +774,14 @@ class AICommunicationHandler:
             'attempt': attempt,
             'timestamp': time.time()
         }
+        
+        # Add model information if provided
+        if model:
+            operation_record['model'] = model
+        
         self.token_usage['operations'].append(operation_record)
         
         # Log token usage
+        model_info = f", model={model}" if model else ""
         self.logger.debug(f"Token usage - {operation} (attempt {attempt}): "
-                         f"input={input_tokens}, output={output_tokens}, total={total_tokens}")
+                         f"input={input_tokens}, output={output_tokens}, total={total_tokens}{model_info}")
