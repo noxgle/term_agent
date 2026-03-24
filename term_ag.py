@@ -16,7 +16,10 @@ import pexpect
 import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
-from groq import Groq
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
 
 PIPBOY_ASCII = r"""
 
@@ -647,16 +650,42 @@ class term_agent:
 
             self.logger.info(f"Ollama Cloud prompt: {full_prompt}")
             self.logger.debug(f"Ollama Cloud raw response: {response}")
+            response_map = None
+            if isinstance(response, dict):
+                response_map = response
+            elif hasattr(response, "model_dump"):
+                try:
+                    response_map = response.model_dump()
+                except Exception:
+                    response_map = None
+            elif hasattr(response, "dict"):
+                try:
+                    response_map = response.dict()
+                except Exception:
+                    response_map = None
+
+            if isinstance(response_map, dict):
+                response_text = response_map.get("response")
+                thinking_text = response_map.get("thinking")
+                response_len = len(response_text) if isinstance(response_text, str) else 0
+                thinking_len = len(thinking_text) if isinstance(thinking_text, str) else 0
+                done_reason = response_map.get("done_reason")
+                self.logger.debug(
+                    "Ollama Cloud stats: done_reason=%s response_len=%s thinking_len=%s",
+                    done_reason,
+                    response_len,
+                    thinking_len,
+                )
 
             # Extract the response content
-            if 'response' in response:
-                response_content = response['response']
+            if isinstance(response_map, dict) and "response" in response_map:
+                response_content = response_map["response"]
                 if isinstance(response_content, str):
                     return response_content.strip()
                 else:
                     return str(response_content)
-            elif 'content' in response:
-                content = response['content']
+            elif isinstance(response_map, dict) and "content" in response_map:
+                content = response_map["content"]
                 if isinstance(content, str):
                     return content.strip()
                 else:
@@ -760,6 +789,10 @@ class term_agent:
         if timeout is not None:
             timeout = self.ai_api_timeout
             
+        if Groq is None:
+            self.logger.error("Groq Python package is not installed. Install it with: pip install groq")
+            return None
+
         try:
             client = Groq(api_key=self.api_key, timeout=timeout)
             

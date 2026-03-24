@@ -780,6 +780,277 @@ class VaultAIAgentRunner:
     def _get_user_input(self, prompt_text: str, multiline: bool = False) -> str:
         return self.user_interaction_handler._get_user_input(prompt_text, multiline)
 
+    def _validate_analysis_data_arguments(
+        self, action_item: Dict[str, Any]
+    ) -> Tuple[bool, Optional[Dict[str, Any]], str]:
+        """
+        Validate and normalize arguments for the analysis_data tool.
+
+        Args:
+            action_item: Raw tool action dictionary received from the model.
+
+        Returns:
+            Tuple[bool, Optional[Dict[str, Any]], str]:
+                - validation success
+                - normalized args on success, otherwise None
+                - error description on failure
+        """
+        allowed_types = {
+            "calculate",
+            "extract",
+            "summarize",
+            "compare",
+            "trend",
+            "classify",
+            "validate",
+            "transform",
+        }
+        allowed_output_formats = {"json", "text", "number"}
+        allowed_precision = {"low", "medium", "high"}
+
+        arguments = action_item.get("arguments")
+        if not isinstance(arguments, dict):
+            return False, None, "Missing or invalid 'arguments' object"
+
+        analysis_type = arguments.get("type")
+        if not isinstance(analysis_type, str):
+            return False, None, "Missing or invalid 'arguments.type' (must be string)"
+        analysis_type = analysis_type.strip().lower()
+        if analysis_type not in allowed_types:
+            return (
+                False,
+                None,
+                "Invalid 'arguments.type'. Allowed: calculate|extract|summarize|compare|"
+                "trend|classify|validate|transform",
+            )
+
+        analysis_input = arguments.get("input")
+        if analysis_input is None:
+            return False, None, "Missing required 'arguments.input'"
+        if isinstance(analysis_input, (dict, list)):
+            input_text = json.dumps(analysis_input, ensure_ascii=False)
+        else:
+            input_text = str(analysis_input)
+        if not input_text.strip():
+            return False, None, "Empty 'arguments.input'"
+
+        instructions = arguments.get("instructions", "")
+        if isinstance(instructions, (dict, list)):
+            instructions_text = json.dumps(instructions, ensure_ascii=False)
+        else:
+            instructions_text = str(instructions) if instructions is not None else ""
+
+        context = arguments.get("context", "")
+        if isinstance(context, (dict, list)):
+            context_text = json.dumps(context, ensure_ascii=False)
+        else:
+            context_text = str(context) if context is not None else ""
+
+        output_format = arguments.get("output_format", "text")
+        if not isinstance(output_format, str):
+            return False, None, "Invalid 'arguments.output_format' (must be string)"
+        output_format = output_format.strip().lower()
+        if output_format not in allowed_output_formats:
+            return False, None, "Invalid 'arguments.output_format'. Allowed: json|text|number"
+
+        constraints = arguments.get("constraints", {})
+        if constraints is None:
+            constraints = {}
+        if not isinstance(constraints, dict):
+            return False, None, "Invalid 'arguments.constraints' (must be object)"
+
+        raw_max_tokens = constraints.get("max_tokens", 300)
+        try:
+            max_tokens = int(raw_max_tokens)
+        except Exception:
+            return False, None, "Invalid 'arguments.constraints.max_tokens' (must be integer)"
+        if max_tokens <= 0:
+            return False, None, "Invalid 'arguments.constraints.max_tokens' (must be > 0)"
+
+        precision = constraints.get("precision", "medium")
+        if not isinstance(precision, str):
+            return False, None, "Invalid 'arguments.constraints.precision' (must be string)"
+        precision = precision.strip().lower()
+        if precision not in allowed_precision:
+            return False, None, "Invalid 'arguments.constraints.precision'. Allowed: low|medium|high"
+
+        normalized_args = {
+            "type": analysis_type,
+            "input": input_text,
+            "instructions": instructions_text,
+            "context": context_text,
+            "output_format": output_format,
+            "constraints": {
+                "max_tokens": max_tokens,
+                "precision": precision,
+            },
+        }
+        return True, normalized_args, ""
+
+    def _build_analysis_data_prompts(self, arguments: Dict[str, Any]) -> Tuple[str, str]:
+        """
+        Build system and user prompts for analysis_data tool execution.
+
+        Args:
+            arguments: Normalized arguments from _validate_analysis_data_arguments.
+
+        Returns:
+            Tuple of (system_prompt, user_prompt).
+        """
+        analysis_type = arguments["type"]
+        analysis_input = arguments["input"]
+        instructions = arguments.get("instructions", "")
+        context = arguments.get("context", "")
+        output_format = arguments.get("output_format", "text")
+        constraints = arguments.get("constraints", {})
+        precision = constraints.get("precision", "medium")
+        max_tokens = constraints.get("max_tokens", 300)
+
+        output_guidance = {
+            "json": "Return ONLY valid JSON (object or array), no extra text.",
+            "number": "Return ONLY a single numeric value, no units or explanation.",
+            "text": "Return concise plain text summary with actionable insights.",
+        }.get(output_format, "Return concise plain text.")
+
+        # Keep system prompt empty for tool sub-calls to avoid coupling
+        # with the main agent system prompt semantics.
+        system_prompt = ""
+        user_prompt = (
+            "ROLE: precise data analysis assistant.\n"
+            "Follow requested analysis type and constraints.\n"
+            "Avoid unrelated content.\n\n"
+            f"ANALYSIS_TYPE: {analysis_type}\n"
+            f"OUTPUT_FORMAT: {output_format}\n"
+            f"PRECISION: {precision}\n"
+            f"MAX_TOKENS_BUDGET: {max_tokens}\n"
+            f"INSTRUCTIONS: {instructions or 'None'}\n"
+            f"CONTEXT: {context or 'None'}\n"
+            f"INPUT:\n{analysis_input}\n\n"
+            f"OUTPUT RULE: {output_guidance}"
+        )
+        return system_prompt, user_prompt
+
+    def _extract_first_number(self, text: str) -> Optional[str]:
+        """
+        Extract the first numeric token from text output.
+
+        Args:
+            text: Raw model output
+
+        Returns:
+            Numeric string if found, otherwise None.
+        """
+        if text is None:
+            return None
+        raw = str(text).strip()
+        if not raw:
+            return None
+
+        # Fast path: output is already a pure number.
+        try:
+            float(raw)
+            return raw
+        except Exception:
+            pass
+
+        match = re.search(r"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?", raw)
+        if not match:
+            return None
+        return match.group(0)
+
+    def _local_calculate_analysis_data(self, arguments: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Best-effort local calculator for analysis_data(type=calculate) when model output is empty.
+        """
+        raw_input = str(arguments.get("input", "") or "")
+        if not raw_input.strip():
+            return None
+
+        def _to_float(value: str) -> Optional[float]:
+            try:
+                return float(value.replace(",", "").strip())
+            except Exception:
+                return None
+
+        def _parse_number(pattern: str) -> Optional[float]:
+            m = re.search(pattern, raw_input, re.IGNORECASE)
+            if not m:
+                return None
+            return _to_float(m.group(1))
+
+        def _parse_abbrev_number(pattern: str) -> Optional[float]:
+            m = re.search(pattern, raw_input, re.IGNORECASE)
+            if not m:
+                return None
+            num = _to_float(m.group(1))
+            if num is None:
+                return None
+            suffix = (m.group(2) or "").upper()
+            if suffix == "K":
+                return num * 1_000
+            if suffix == "M":
+                return num * 1_000_000
+            if suffix == "B":
+                return num * 1_000_000_000
+            return num
+
+        price = _parse_number(r"\bPrice:\s*([-+]?\d[\d,]*\.?\d*)")
+        high_52w = _parse_number(r"\b52W\s*High:\s*([-+]?\d[\d,]*\.?\d*)")
+        low_from_range = None
+        range_match = re.search(
+            r"\b52W\s*Range:\s*([-+]?\d[\d,]*\.?\d*)\s*-\s*([-+]?\d[\d,]*\.?\d*)",
+            raw_input,
+            re.IGNORECASE,
+        )
+        if range_match:
+            low_from_range = _to_float(range_match.group(1))
+            if high_52w is None:
+                high_52w = _to_float(range_match.group(2))
+        low_52w_explicit = _parse_number(r"\b52W\s*Low:\s*([-+]?\d[\d,]*\.?\d*)")
+        low_52w = low_from_range if low_from_range is not None else low_52w_explicit
+
+        sma20_pct = _parse_number(r"\bSMA20:\s*([-+]?\d+(?:\.\d+)?)%")
+        sma50_pct = _parse_number(r"\bSMA50:\s*([-+]?\d+(?:\.\d+)?)%")
+        sma200_pct = _parse_number(r"\bSMA200:\s*([-+]?\d+(?:\.\d+)?)%")
+        atr = _parse_number(r"\bATR\s*\(14\):\s*([-+]?\d[\d,]*\.?\d*)")
+        volume = _parse_abbrev_number(r"\bVolume:\s*([-+]?\d[\d,]*\.?\d*)\s*([KMB]?)")
+        avg_volume = _parse_abbrev_number(r"\bAvg\s*Volume:\s*([-+]?\d[\d,]*\.?\d*)\s*([KMB]?)")
+        rel_volume = _parse_number(r"\bRel\s*Volume:\s*([-+]?\d+(?:\.\d+)?)")
+
+        if price is None:
+            return None
+
+        result: Dict[str, Any] = {
+            "source": "local_calculate_fallback",
+            "price": round(price, 4),
+            "metrics": {},
+        }
+        metrics = result["metrics"]
+
+        if sma20_pct is not None:
+            metrics["distance_from_sma20_pct"] = round(sma20_pct, 4)
+        if sma50_pct is not None:
+            metrics["distance_from_sma50_pct"] = round(sma50_pct, 4)
+        if sma200_pct is not None:
+            metrics["distance_from_sma200_pct"] = round(sma200_pct, 4)
+
+        if high_52w is not None:
+            metrics["distance_from_52w_high_abs"] = round(price - high_52w, 4)
+        if low_52w is not None:
+            metrics["distance_from_52w_low_abs"] = round(price - low_52w, 4)
+        if atr is not None and price != 0:
+            metrics["atr_as_pct_of_price"] = round((atr / price) * 100.0, 4)
+        if volume is not None and avg_volume and avg_volume > 0:
+            metrics["volume_vs_avg_volume_ratio"] = round(volume / avg_volume, 4)
+        elif rel_volume is not None:
+            metrics["volume_vs_avg_volume_ratio"] = round(rel_volume, 4)
+
+        if low_52w is not None and high_52w is not None and high_52w != low_52w:
+            pos = ((price - low_52w) / (high_52w - low_52w)) * 100.0
+            metrics["position_in_52w_range_pct"] = round(max(0.0, min(100.0, pos)), 4)
+
+        return result if metrics else None
+
     def _initialize_plan(self):
         """
         Initialize action plan based on user goal.
@@ -1912,13 +2183,25 @@ class VaultAIAgentRunner:
                         continue
 
                     tool = action_item.get("tool")
+                    # Backward compatibility alias
+                    if tool == "analyze_data":
+                        tool = "analysis_data"
+                        action_item["tool"] = "analysis_data"
+                    elif tool == "final":
+                        tool = "finish"
+                        action_item["tool"] = "finish"
+                        if "summary" not in action_item and "answer" in action_item:
+                            action_item["summary"] = action_item.get("answer")
+                        if "goal_success" not in action_item:
+                            action_item["goal_success"] = True
                     
                     if tool is None:
                         terminal.print_console(f"[WARN] AI response missing 'tool' field: {action_item}")
                         self.context_manager.add_user_message(
                             "Your response is missing the required 'tool' field. "
                             "Valid tools are: 'create_action_plan', 'bash', 'read_file', 'write_file', 'edit_file', "
-                            "'list_directory', 'copy_file', 'delete_file', 'update_plan_step', 'ask_user', 'web_search_agent', 'finish'. "
+                            "'list_directory', 'search_in_file', 'copy_file', 'delete_file', 'analysis_data', "
+                            "'update_plan_step', 'ask_user', 'web_search_agent', 'finish'. "
                             "Please provide a valid JSON response with the correct structure."
                         )
                         continue
@@ -2383,6 +2666,422 @@ class VaultAIAgentRunner:
                         user_feedback_content += f"\n\n{plan_status}"
                         
                         self.context_manager.add_user_message(user_feedback_content)
+
+                    elif tool == "analysis_data":
+                        explain = action_item.get("explain", "")
+                        is_valid, analysis_args, validation_error = self._validate_analysis_data_arguments(action_item)
+                        if not is_valid:
+                            self.logger.warning(
+                                "analysis_data validation failed: %s; action=%s; request_id=%s",
+                                validation_error,
+                                action_item,
+                                request_id,
+                            )
+                            terminal.print_console(
+                                f"[WARN] Invalid analysis_data action: {validation_error}. Skipping."
+                            )
+                            self.context_manager.add_user_message(
+                                f"You provided an invalid 'analysis_data' action: {validation_error}. "
+                                f"Action: {action_item}. I am skipping it."
+                            )
+                            self._update_plan_progress("analysis_data validation failed", success=False)
+                            continue
+
+                        analysis_type = analysis_args["type"]
+                        output_format = analysis_args["output_format"]
+                        self.logger.info(
+                            "analysis_data requested: type=%s format=%s request_id=%s",
+                            analysis_type,
+                            output_format,
+                            request_id,
+                        )
+                        requested_max_tokens = analysis_args["constraints"]["max_tokens"]
+                        max_tokens = requested_max_tokens
+                        # Some reasoning models may spend small budgets on hidden reasoning only.
+                        # Keep practical lower bounds so structured outputs are actually returned.
+                        if output_format == "json":
+                            json_min_tokens = 3000 if analysis_type == "calculate" else 1200
+                            if max_tokens < json_min_tokens:
+                                max_tokens = json_min_tokens
+                        elif output_format == "number" and max_tokens < 512:
+                            max_tokens = 512
+
+                        if not terminal.auto_accept:
+                            if self.terminal.auto_explain_command and explain:
+                                confirm_prompt_text = (
+                                    f"\nVaultAI> Agent suggests to run analysis_data "
+                                    f"(type='{analysis_type}', format='{output_format}') "
+                                    f"which is intended to: {explain}. Execute? [y/N]: "
+                                )
+                            else:
+                                confirm_prompt_text = (
+                                    f"\nVaultAI> Agent suggests to run analysis_data "
+                                    f"(type='{analysis_type}', format='{output_format}'). "
+                                    f"Execute? [y/N]: "
+                                )
+                            confirm = self._get_user_input(
+                                f"{confirm_prompt_text}", multiline=False
+                            ).lower().strip()
+                            if confirm != 'y':
+                                justification = self._get_user_input(
+                                    f"\nVaultAI> Provide justification for refusing analysis_data and press Ctrl+S to submit.\n{self.input_text}>  ",
+                                    multiline=True,
+                                ).strip()
+                                self.logger.info(
+                                    "analysis_data refused by user: type=%s format=%s justification=%s request_id=%s",
+                                    analysis_type,
+                                    output_format,
+                                    justification,
+                                    request_id,
+                                )
+                                terminal.print_console(
+                                    f"\nVaultAI> analysis_data refused by user. Justification: {justification}\n"
+                                )
+                                self.context_manager.add_user_message(
+                                    "User refused to execute analysis_data "
+                                    f"(type='{analysis_type}', format='{output_format}') "
+                                    f"with justification: {justification}. "
+                                    "Based on this, what should be the next step?"
+                                )
+                                continue
+
+                        terminal.print_console(
+                            f"\nVaultAI> Executing analysis_data: type={analysis_type}, "
+                            f"format={output_format}"
+                        )
+                        analysis_timing_id = self._start_timing(
+                            f"ANALYSIS_DATA_{analysis_type.upper()}"
+                        )
+
+                        request_format = "json" if output_format == "json" else "text"
+                        prompt_args = dict(analysis_args)
+                        prompt_constraints = dict(analysis_args.get("constraints", {}))
+                        prompt_constraints["max_tokens"] = max_tokens
+                        prompt_args["constraints"] = prompt_constraints
+                        analysis_system_prompt, analysis_user_prompt = self._build_analysis_data_prompts(
+                            prompt_args
+                        )
+                        analysis_result = self.ai_handler.send_request(
+                            system_prompt=analysis_system_prompt,
+                            user_prompt=analysis_user_prompt,
+                            request_format=request_format,
+                            operation=f"analysis_data_tool_{analysis_type}",
+                            max_tokens=max_tokens,
+                        )
+                        self.logger.debug(
+                            "analysis_data primary call done: type=%s format=%s has_result=%s request_id=%s",
+                            analysis_type,
+                            output_format,
+                            analysis_result is not None,
+                            request_id,
+                        )
+                        used_lightweight_fallback = False
+                        used_local_calculate_fallback = False
+
+                        self._end_timing(
+                            analysis_timing_id,
+                            f"ANALYSIS_DATA_{analysis_type.upper()}",
+                            analysis_result is not None,
+                        )
+
+                        if analysis_result is None:
+                            # Some models can consume the whole budget on hidden reasoning for large
+                            # calculate tasks and return empty output. Retry with a lighter text-only
+                            # variant to keep the workflow moving.
+                            if analysis_type == "calculate":
+                                self.logger.warning(
+                                    "analysis_data empty response on calculate, starting fallback flow; request_id=%s",
+                                    request_id,
+                                )
+                                terminal.print_console(
+                                    "[WARN] analysis_data returned no response for calculate; "
+                                    "trying lightweight text fallback."
+                                )
+                                lightweight_system = ""
+                                lightweight_user = (
+                                    "ROLE: precise data analysis assistant.\n"
+                                    "Return final answer directly without preamble.\n\n"
+                                    f"ANALYSIS_TYPE: {analysis_type}\n"
+                                    "OUTPUT_FORMAT: text\n"
+                                    f"PRECISION: {analysis_args['constraints'].get('precision', 'medium')}\n"
+                                    "MAX_TOKENS_BUDGET: 900\n"
+                                    f"INSTRUCTIONS: {analysis_args.get('instructions') or 'None'}\n"
+                                    f"CONTEXT: {analysis_args.get('context') or 'None'}\n"
+                                    f"INPUT:\n{analysis_args.get('input', '')}\n\n"
+                                    "OUTPUT RULE: Return concise final answer only. "
+                                    "No reasoning trace."
+                                )
+                                fallback_result = self.ai_handler.send_request(
+                                    system_prompt=lightweight_system,
+                                    user_prompt=lightweight_user,
+                                    request_format="text",
+                                    operation=f"analysis_data_tool_{analysis_type}_fallback_text",
+                                    max_tokens=900,
+                                )
+                                if fallback_result is not None:
+                                    analysis_result = fallback_result
+                                    used_lightweight_fallback = True
+                                    self.logger.info(
+                                        "analysis_data lightweight fallback succeeded: type=%s request_id=%s",
+                                        analysis_type,
+                                        request_id,
+                                    )
+                                else:
+                                    local_fallback = self._local_calculate_analysis_data(analysis_args)
+                                    if local_fallback is not None:
+                                        analysis_result = json.dumps(local_fallback, ensure_ascii=False)
+                                        used_local_calculate_fallback = True
+                                        self.logger.info(
+                                            "analysis_data local calculate fallback succeeded: type=%s request_id=%s",
+                                            analysis_type,
+                                            request_id,
+                                        )
+                            else:
+                                self.logger.warning(
+                                    "analysis_data empty response, starting lightweight fallback: type=%s request_id=%s",
+                                    analysis_type,
+                                    request_id,
+                                )
+                                terminal.print_console(
+                                    "[WARN] analysis_data returned no response; "
+                                    "trying lightweight text fallback."
+                                )
+                                lightweight_system = ""
+                                lightweight_user = (
+                                    "ROLE: precise data analysis assistant.\n"
+                                    "Return concise final answer only.\n\n"
+                                    f"ANALYSIS_TYPE: {analysis_type}\n"
+                                    "OUTPUT_FORMAT: text\n"
+                                    f"PRECISION: {analysis_args['constraints'].get('precision', 'medium')}\n"
+                                    "MAX_TOKENS_BUDGET: 700\n"
+                                    f"INSTRUCTIONS: {analysis_args.get('instructions') or 'None'}\n"
+                                    f"CONTEXT: {analysis_args.get('context') or 'None'}\n"
+                                    f"INPUT:\n{analysis_args.get('input', '')}\n\n"
+                                    "OUTPUT RULE: Return concise final answer only. "
+                                    "No reasoning trace."
+                                )
+                                fallback_result = self.ai_handler.send_request(
+                                    system_prompt=lightweight_system,
+                                    user_prompt=lightweight_user,
+                                    request_format="text",
+                                    operation=f"analysis_data_tool_{analysis_type}_fallback_text",
+                                    max_tokens=700,
+                                )
+                                if fallback_result is not None:
+                                    analysis_result = fallback_result
+                                    used_lightweight_fallback = True
+                                    self.logger.info(
+                                        "analysis_data lightweight fallback succeeded: type=%s request_id=%s",
+                                        analysis_type,
+                                        request_id,
+                                    )
+
+                        if analysis_result is None:
+                            self.logger.error(
+                                "analysis_data failed: no AI response after fallbacks; type=%s format=%s request_id=%s",
+                                analysis_type,
+                                output_format,
+                                request_id,
+                            )
+                            terminal.print_console(
+                                "[ERROR] analysis_data failed: no response from AI."
+                            )
+                            self._update_plan_progress(
+                                f"analysis_data failed: {analysis_type}", success=False
+                            )
+                            self.context_manager.add_user_message(
+                                f"analysis_data failed for type '{analysis_type}': no AI response."
+                            )
+                            continue
+
+                        raw_result = analysis_result if isinstance(analysis_result, str) else str(analysis_result)
+                        self.logger.debug(
+                            "analysis_data raw response stats: type=%s format=%s len=%d",
+                            analysis_type,
+                            output_format,
+                            len(raw_result),
+                        )
+                        result_for_context = raw_result
+                        result_for_display = raw_result
+                        number_fallback_note = ""
+                        strict_json_retry_used = False
+                        strict_json_fallback_used = False
+                        lightweight_json_wrap_used = False
+
+                        if output_format == "json":
+                            if used_lightweight_fallback:
+                                fallback_obj = {
+                                    "fallback": "analysis_data_calculate_lightweight_text",
+                                    "analysis_type": analysis_type,
+                                    "result_text": raw_result[:4000],
+                                }
+                                result_for_display = json.dumps(
+                                    fallback_obj, ensure_ascii=False, indent=2
+                                )
+                                result_for_context = json.dumps(
+                                    fallback_obj, ensure_ascii=False
+                                )
+                                lightweight_json_wrap_used = True
+                            try:
+                                if not used_lightweight_fallback:
+                                    parsed_json = json.loads(raw_result)
+                                    result_for_display = json.dumps(
+                                        parsed_json, ensure_ascii=False, indent=2
+                                    )
+                                    result_for_context = json.dumps(
+                                        parsed_json, ensure_ascii=False
+                                    )
+                            except Exception:
+                                self.logger.warning(
+                                    "analysis_data returned non-JSON output, retrying with strict JSON constraints. "
+                                    "type=%s len=%d request_id=%s",
+                                    analysis_type,
+                                    len(raw_result),
+                                    request_id,
+                                )
+                                strict_retry_prompt = (
+                                    f"{analysis_user_prompt}\n\n"
+                                    "CRITICAL OUTPUT CONSTRAINT:\n"
+                                    "Return ONLY valid JSON (object or array). Do NOT include any text, markdown, "
+                                    "code fences, explanations, or reasoning."
+                                )
+                                strict_retry_max_tokens = max(max_tokens, 1200)
+                                strict_retry_result = self.ai_handler.send_request(
+                                    system_prompt=analysis_system_prompt,
+                                    user_prompt=strict_retry_prompt,
+                                    request_format="text",
+                                    operation=f"analysis_data_tool_{analysis_type}_strict_json_retry",
+                                    max_tokens=strict_retry_max_tokens,
+                                )
+                                strict_json_retry_used = True
+
+                                if strict_retry_result is not None:
+                                    strict_raw = (
+                                        strict_retry_result
+                                        if isinstance(strict_retry_result, str)
+                                        else str(strict_retry_result)
+                                    )
+                                    try:
+                                        parsed_json = json.loads(strict_raw)
+                                        result_for_display = json.dumps(
+                                            parsed_json, ensure_ascii=False, indent=2
+                                        )
+                                        result_for_context = json.dumps(
+                                            parsed_json, ensure_ascii=False
+                                        )
+                                    except Exception:
+                                        strict_json_fallback_used = True
+                                        fallback_obj = {
+                                            "error": "analysis_data_invalid_json_response",
+                                            "analysis_type": analysis_type,
+                                            "output_format": output_format,
+                                            "raw_response": strict_raw[:1200],
+                                        }
+                                        result_for_display = json.dumps(
+                                            fallback_obj, ensure_ascii=False, indent=2
+                                        )
+                                        result_for_context = json.dumps(
+                                            fallback_obj, ensure_ascii=False
+                                        )
+                                else:
+                                    strict_json_fallback_used = True
+                                    fallback_obj = {
+                                        "error": "analysis_data_invalid_json_response",
+                                        "analysis_type": analysis_type,
+                                        "output_format": output_format,
+                                        "raw_response": raw_result[:1200],
+                                    }
+                                    result_for_display = json.dumps(
+                                        fallback_obj, ensure_ascii=False, indent=2
+                                    )
+                                    result_for_context = json.dumps(
+                                        fallback_obj, ensure_ascii=False
+                                    )
+                        elif output_format == "number":
+                            extracted_number = self._extract_first_number(raw_result)
+                            if extracted_number is None:
+                                number_fallback_note = (
+                                    "Expected numeric output but received non-numeric text. "
+                                    "Using raw response as fallback."
+                                )
+                            else:
+                                result_for_display = extracted_number
+                                result_for_context = extracted_number
+
+                        terminal.print_console(
+                            f"\n[OK] analysis_data completed (type={analysis_type}, format={output_format})."
+                        )
+                        terminal.print_console(f"\n{result_for_display}")
+                        if number_fallback_note:
+                            terminal.print_console(f"[WARN] {number_fallback_note}")
+                        if strict_json_fallback_used:
+                            terminal.print_console(
+                                "[WARN] analysis_data did not return valid JSON after strict retry. "
+                                "Stored fallback JSON object."
+                            )
+                        if lightweight_json_wrap_used:
+                            terminal.print_console(
+                                "[WARN] Wrapped lightweight text fallback into JSON object."
+                            )
+                        if used_lightweight_fallback:
+                            terminal.print_console(
+                                "[WARN] Used lightweight calculate fallback due to empty primary response."
+                            )
+                        if used_local_calculate_fallback:
+                            terminal.print_console(
+                                "[WARN] Used local calculate fallback due to repeated empty AI responses."
+                            )
+
+                        feedback_lines = [
+                            f"analysis_data completed successfully.",
+                            f"Type: {analysis_type}",
+                            f"Output format: {output_format}",
+                        ]
+                        if max_tokens != requested_max_tokens:
+                            feedback_lines.append(
+                                f"Adjusted max_tokens from {requested_max_tokens} to {max_tokens} to ensure usable output."
+                            )
+                        if number_fallback_note:
+                            feedback_lines.append(number_fallback_note)
+                        if strict_json_retry_used:
+                            feedback_lines.append(
+                                "A strict JSON retry was performed because the initial response was not valid JSON."
+                            )
+                        if strict_json_fallback_used:
+                            feedback_lines.append(
+                                "Strict JSON retry still produced invalid output; fallback JSON object was generated."
+                            )
+                        if lightweight_json_wrap_used:
+                            feedback_lines.append(
+                                "Lightweight text fallback output was wrapped into JSON for compatibility."
+                            )
+                        if used_lightweight_fallback:
+                            feedback_lines.append(
+                                "Primary calculate call returned empty output; lightweight text fallback was used."
+                            )
+                        if used_local_calculate_fallback:
+                            feedback_lines.append(
+                                "Both AI calculate attempts returned empty output; local calculate fallback was used."
+                            )
+                        feedback_lines.append(f"Result:\n{result_for_context}")
+                        analysis_feedback = "\n".join(feedback_lines)
+
+                        analysis_feedback_compact = compress_prompt(analysis_feedback)
+                        self._log_prompt_filter_savings(
+                            analysis_feedback, analysis_feedback_compact
+                        )
+                        self.context_manager.add_user_message(analysis_feedback_compact)
+                        self._update_plan_progress(
+                            f"analysis_data: {analysis_type} ({output_format})",
+                            success=True,
+                        )
+                        self.logger.info(
+                            "analysis_data completed: type=%s format=%s request_id=%s",
+                            analysis_type,
+                            output_format,
+                            request_id,
+                        )
+                        continue
 
                     elif tool == "ask_user":
                         # Block ask_user in autonomous mode
@@ -2877,7 +3576,9 @@ class VaultAIAgentRunner:
                         terminal.print_console(f"AI response contained an invalid 'tool': '{tool}' in action: {action_item}.")
                         user_feedback_invalid_tool = (
                             f"Your response included an action with an invalid tool: '{tool}' in {action_item}. "
-                            f"Valid tools are: 'bash', 'read_file', 'write_file', 'edit_file', 'list_directory','search_in_file', 'copy_file', 'delete_file', 'update_plan_step', 'ask_user', 'web_search_agent', and 'finish'. "
+                            f"Valid tools are: 'create_action_plan', 'bash', 'read_file', 'write_file', "
+                            f"'edit_file', 'list_directory', 'search_in_file', 'copy_file', 'delete_file', "
+                            f"'analysis_data', 'update_plan_step', 'ask_user', 'web_search_agent', and 'finish'. "
                         )
                         if len(actions_to_process) > 1 and action_item_idx < len(actions_to_process) - 1:
                             user_feedback_invalid_tool += "I am skipping this invalid action and proceeding with the next ones if available."

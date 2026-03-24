@@ -251,6 +251,9 @@ class AICommunicationHandler:
         """
         # Use configured retry settings, but respect compact mode limits
         max_attempts = 1 if operation.startswith("compact_") else self.ai_api_max_retries
+        if operation.startswith("analysis_data_tool") and max_attempts == 0:
+            # Prevent effectively unbounded retries for analysis helper calls.
+            max_attempts = 1
         if max_attempts == 0:
             max_attempts = float('inf')  # No retry limit
         
@@ -273,6 +276,14 @@ class AICommunicationHandler:
                 
                 if not response:
                     raise ValueError("Empty response from AI")
+
+                self.logger.debug(
+                    "AI response stats: operation=%s attempt=%s len=%d format=%s",
+                    operation,
+                    attempt,
+                    len(response),
+                    request_format,
+                )
                 
                 # Calculate output tokens
                 output_tokens = self._estimate_tokens(response)
@@ -335,6 +346,9 @@ class AICommunicationHandler:
         """
         # Use configured retry settings, but respect compact mode limits
         max_attempts = 1 if operation.startswith("compact_") else self.ai_api_max_retries
+        if operation.startswith("analysis_data_tool") and max_attempts == 0:
+            # Prevent effectively unbounded retries for analysis helper calls.
+            max_attempts = 1
         if max_attempts == 0:
             max_attempts = float('inf')  # No retry limit
         
@@ -357,6 +371,14 @@ class AICommunicationHandler:
                 
                 if not response:
                     raise ValueError("Empty response from AI")
+
+                self.logger.debug(
+                    "AI response stats: operation=%s attempt=%s len=%d format=%s",
+                    operation,
+                    attempt,
+                    len(response),
+                    request_format,
+                )
                 
                 # Calculate output tokens
                 output_tokens = self._estimate_tokens(response)

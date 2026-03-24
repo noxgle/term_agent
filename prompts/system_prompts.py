@@ -33,7 +33,7 @@ def get_agent_system_prompt(
         tools_section = (
             '- {"tool":"bash","command":"...","timeout":seconds,"explain":"..."}\n'
             '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true,"explain":"..."}\n'
-            '- {"tool":"analysis_data","arguments": {"type": "summarize|extract|compare|classify","input_ref": "<file|previous_output>","instructions": "...","compression": "aggressive|moderate|none"},explain":"..."}\n'   
+            '- {"tool":"analysis_data","arguments":{"type":"calculate | extract | summarize | compare | trend | classify | validate | transform","input":"...","instructions":"...","context":"...","output_format":"json | text | number","constraints":{"max_tokens":1000,"precision":"low | medium | high"} },"explain":"..."}\n'
             '- {"tool":"ask_user","question":"...","explain":"..."}\n'
             '- {"tool":"search_in_file","path":"...","query":"...","context_lines":N,"max_results":M,"explain":"..."}\n'
             '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"max_chars":K,"explain":"..."}\n'
@@ -51,7 +51,7 @@ def get_agent_system_prompt(
         tools_section = (
             '- {"tool":"bash","command":"...","timeout":seconds}\n'
             '- {"tool":"web_search_agent","query":"...","max_sources":5,"deep_search":true}\n'
-            '- {"tool":"analysis_data","arguments": {"type": "summarize|extract|compare|classify","input_ref":"<file|previous_output>","instructions": "...","compression":"aggressive|moderate|none"} }\n'   
+            '- {"tool":"analysis_data","arguments":{"type":"calculate | extract | summarize | compare | trend | classify | validate | transform","input":"...","instructions":"...","context":"...","output_format":"json | text | number","constraints":{"max_tokens":300,"precision":"low | medium | high"} } }\n'
             '- {"tool":"search_in_file","path":"...","query":"...", "context_lines":N,"max_results":M}\n'
             '- {"tool":"read_file","path":"...","start_line":N,"end_line":M,"max_chars":K}\n'
             '- {"tool":"write_file","path":"...","content":"..."}\n'
@@ -142,7 +142,7 @@ def get_agent_system_prompt(
         '2) {[{"tool":"...","argument:...}, ...]}\n'
         '3) {"tool":"ask_user","question":"..."}\n'
         "Action schema:\n"
-        '{"tool":"bash|read_file|write_file|edit_file|list_directory|search_in_file|copy_file|delete_file|analyze_data|create_action_plan|update_plan_step","command_or_path":"...","timeout":30,"explain":"..."}'
+        '{"tool":"bash|read_file|write_file|edit_file|list_directory|search_in_file|copy_file|delete_file|analysis_data|create_action_plan|update_plan_step","command_or_path":"...","timeout":30,"explain":"..."}'
         "\n"
         "RULES:\n"
         "- Always return 'actions' array\n"

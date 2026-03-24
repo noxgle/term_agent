@@ -1,6 +1,7 @@
 python-dotenv
 openai
 google-generativeai>=0.8.0
+groq
 netmiko
 prompt_toolkit
 pexpect
