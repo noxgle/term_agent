@@ -137,7 +137,7 @@ def get_agent_system_prompt(
         "RESPONSE FORMAT (STRICT JSON ONLY)\n"
         "Return ONLY JSON. No prose. No explanations.\n"
         "\n"
-        "Return one of:\n"
+        "Return one of dict:\n"
         '1) {"tool":"final","summary":"...","goal_success":true|false}\n'
         '2) {[{"tool":"...","argument:...}, ...]}\n'
         '3) {"tool":"ask_user","question":"..."}\n'
@@ -145,7 +145,7 @@ def get_agent_system_prompt(
         '{"tool":"bash|read_file|write_file|edit_file|list_directory|search_in_file|copy_file|delete_file|analysis_data|create_action_plan|update_plan_step","command_or_path":"...","timeout":30,"explain":"..."}'
         "\n"
         "RULES:\n"
-        "- Always return 'actions' array\n"
+        "- Always return 'dict' array\n"
         "- Each action must be a valid tool call\n"
         "- No extra fields\n"
         "- No text outside JSON\n"
