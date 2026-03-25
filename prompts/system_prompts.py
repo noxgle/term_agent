@@ -141,7 +141,7 @@ def get_agent_system_prompt(
         '1) {"tool":"final","summary":"...","goal_success":true|false}\n'
         '2) {[{"tool":"...","argument:...}, ...]}\n'
         '3) {"tool":"ask_user","question":"..."}\n'
-        "Action schema:\n"
+        "Schema:\n"
         '{"tool":"bash|read_file|write_file|edit_file|list_directory|search_in_file|copy_file|delete_file|analysis_data|create_action_plan|update_plan_step","command_or_path":"...","timeout":30,"explain":"..."}'
         "\n"
         "RULES:\n"

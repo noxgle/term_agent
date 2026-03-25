@@ -135,11 +135,19 @@ def summarize_ps(text: str) -> str:
 
     top_cpu = max(cpu_values) if cpu_values else 0
 
-    return f"""PROCESS SNAPSHOT:
+    # Pobierz pierwsze 10 linii wyniku
+    first_10_lines = lines[:10]
+    
+    result = f"""PROCESS SNAPSHOT:
 - total processes: {total}
 - root processes: {root_count}
 - max CPU usage: {top_cpu:.2f}%
+
+FIRST 10 LINES:
+{chr(10).join(first_10_lines)}
 """
+    
+    return result
 
 
 def summarize_df(text: str) -> str:
