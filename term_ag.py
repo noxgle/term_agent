@@ -16,6 +16,11 @@ import pexpect
 import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
+try:
+    from groq import Groq
+    GROQ_AVAILABLE = True
+except ImportError:
+    GROQ_AVAILABLE = False
 
 
 PIPBOY_ASCII = r"""
@@ -488,7 +493,7 @@ class term_agent:
 
     # --- ChatGPT Function ---
     def connect_to_chatgpt(self, role_system_content, prompt,
-                           model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
+                           model=None, max_tokens=None, temperature=None, format='json', timeout=None):
         """
         Send a prompt to OpenAI ChatGPT and return the response as a string.
         
@@ -642,6 +647,7 @@ class term_agent:
                     "temperature": temperature,
                     "num_predict": max_tokens
                 },
+                stream=False,
                 format=format if format != 'json_object' else 'json'  # Map to ollama format
             )
 
@@ -697,7 +703,7 @@ class term_agent:
             return None
 
     # --- OpenRouter Function ---
-    def connect_to_openrouter(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
+    def connect_to_openrouter(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json', timeout=None):
         """
         Send a prompt to OpenRouter API using OpenAI-compatible interface.
         OpenRouter provides access to multiple AI models through a unified API.
@@ -763,7 +769,7 @@ class term_agent:
             return None
 
     # --- Groq Function ---
-    def connect_to_groq(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json_object', timeout=None):
+    def connect_to_groq(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json', timeout=None):
         """
         Send a prompt to Groq API and return the response as a string.
         Groq provides access to high-performance LLMs through a unified API.
@@ -786,8 +792,14 @@ class term_agent:
         if timeout is not None:
             timeout = self.ai_api_timeout
             
-        if Groq is None:
+        # Check if Groq is available
+        if not GROQ_AVAILABLE:
             self.logger.error("Groq Python package is not installed. Install it with: pip install groq")
+            return None
+
+        # Validate API key
+        if not self.api_key:
+            self.logger.error("No Groq API key configured. Please set GROQ_API_KEY in your .env file.")
             return None
 
         try:
@@ -804,7 +816,8 @@ class term_agent:
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    response_format={"type": "json_object"}
+                    response_format={"type": "json_object"},
+                    stream=False
                 )
             else:
                 response = client.chat.completions.create(
@@ -814,7 +827,8 @@ class term_agent:
                         {"role": "user",   "content": prompt}
                     ],
                     max_tokens=max_tokens,
-                    temperature=temperature
+                    temperature=temperature,
+                    stream=False
                 )
             self.logger.info(f"Groq prompt: {prompt}")
             self.logger.debug(f"Groq raw response: {response}")
