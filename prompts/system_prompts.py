@@ -13,6 +13,7 @@ def get_agent_system_prompt(
     linux_version: str,
     is_root: bool = False,
     auto_explain_command: bool = True,
+    user_prvileges: str = "user"
 ) -> str:
     """
     Generate the main agent system prompt with environment context.
@@ -64,10 +65,12 @@ def get_agent_system_prompt(
             '- {"tool":"compress_context","arguments":{"input":"<raw_data_or_previous_output>","goal":"reduce_tokens","max_tokens":1000} }\n'
             '- {"tool":"finish","summary":"a detailed summary or answer to a question depending on the task","goal_success":true|false}\n\n'
         )
-    if is_root:
-        header = f"dt={current_datetime}\nwd={workspace}\nenv={linux_distro} {linux_version} with root privileges"
-    else:
-        header = f"dt={current_datetime}\nwd={workspace}\nenv={linux_distro} {linux_version}"
+    # if is_root:
+    #     header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version} with root privileges"
+    # else:
+    #     header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version}"
+    header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version}\nuser_privileges={user_prvileges}"
+    
 
     base_prompt = (
         f"{header}\n"

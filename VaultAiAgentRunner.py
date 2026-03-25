@@ -90,6 +90,8 @@ class VaultAIAgentRunner:
         # Get current date and time for context
         current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        user_prvileges = terminal.check_user_privileges()
+
         if system_prompt_agent is None:
             # Use the prompts module to generate the system prompt
             is_root = (user == "root")
@@ -100,6 +102,7 @@ class VaultAIAgentRunner:
                 linux_version=self.linux_version,
                 is_root=is_root,
                 auto_explain_command=terminal.auto_explain_command,
+                user_prvileges=user_prvileges
             )
         else:
             self.system_prompt_agent = system_prompt_agent

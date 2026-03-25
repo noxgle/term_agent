@@ -921,13 +921,13 @@ Summarize the key information from these search results:
 
 {chr(10).join(sources_text)}
 
-Provide a concise summary of the main findings (2-3 paragraphs)."""
+Provide a concise summary of the main findings (2-3 paragraphs).\nOutput JSON only."""
 
         try:
             response = self.ai_handler.send_request(
                 system_prompt="You are a helpful assistant that summarizes web search results.",
                 user_prompt=prompt,
-                request_format="text"
+                request_format="json"
             )
             
             if response:
