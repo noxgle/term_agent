@@ -69,7 +69,7 @@ def get_agent_system_prompt(
     #     header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version} with root privileges"
     # else:
     #     header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version}"
-    header = f"Today is: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version}\nuser_privileges={user_prvileges}"
+    header = f"Current time: {current_datetime}\nworkspace={workspace}\nenv={linux_distro} {linux_version}\nuser_privileges={user_prvileges}"
     
 
     base_prompt = (
