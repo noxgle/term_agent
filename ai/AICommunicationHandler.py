@@ -69,6 +69,9 @@ class AICommunicationHandler:
                 # Invalid value, default to true
                 self.use_timeout_api = True
             
+            # Load fallback cycle configuration (how many times to cycle through all engines before giving up)
+            self._max_fallback_cycles = int(os.getenv("AI_FALLBACK_MAX_CYCLES", "3"))
+            
             self.logger.debug(f"AI API timeout config loaded: timeout={self.ai_api_timeout}s, "
                              f"max_retries={self.ai_api_max_retries}, retry_delay={self.ai_api_retry_delay}s, "
                              f"backoff={self.ai_api_retry_backoff}, use_timeout_api={self.use_timeout_api}, "
@@ -82,6 +85,7 @@ class AICommunicationHandler:
             self.ai_api_retry_backoff = 2
             self.ai_main_thread_timeout_buffer = 5
             self.use_timeout_api = True
+            self._max_fallback_cycles = 3
 
     def _get_next_engine(self) -> str:
         """
@@ -422,23 +426,30 @@ class AICommunicationHandler:
         """
         Route request to appropriate AI engine with timeout using threading and signal-based fallback.
         Supports multi-engine routing (round-robin and fallback modes).
+        In fallback mode: cycles through all engines, and after 3 consecutive failures on the last engine,
+        cycles back to the first engine.
         
         Returns:
             Tuple of (response, engine_name) or (None, None) on failure
         """
+        max_fallback_cycles = getattr(self, '_max_fallback_cycles', 3)
+        
         # Determine engines to try based on routing mode
         if len(self.ai_engines) == 1:
             engines_to_try = [self.ai_engines[0]]
         elif self.ai_engine_route == "round-robin":
-            # Round-robin: try only the selected engine
             engines_to_try = [self._get_next_engine()]
+            max_fallback_cycles = 1
         else:  # fallback mode
-            # Fallback: try all engines in order
             engines_to_try = self.ai_engines.copy()
         
         last_exception = None
+        consecutive_last_engine_fails = 0
+        num_engines = len(engines_to_try)
+        current_index = 0
         
-        for engine in engines_to_try:
+        while current_index < num_engines:
+            engine = engines_to_try[current_index]
             self.logger.debug(f"Attempting engine: {engine}")
             
             # Create a queue for thread-safe result passing
@@ -486,10 +497,30 @@ class AICommunicationHandler:
                     else:
                         self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
                         last_exception = ValueError(f"Empty response from {engine}")
+                        # Track consecutive failures on last engine
+                        if current_index == num_engines - 1:
+                            consecutive_last_engine_fails += 1
+                            self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                            if consecutive_last_engine_fails >= max_fallback_cycles:
+                                self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                                consecutive_last_engine_fails = 0
+                                current_index = 0
+                                continue
+                        current_index += 1
                         continue
                 except queue.Empty:
                     self.logger.warning(f"Engine {engine} timed out after {main_thread_timeout}s (worker timeout: {self.ai_api_timeout}s), trying next engine")
                     last_exception = TimeoutError(f"Timeout from {engine}")
+                    # Track consecutive failures on last engine
+                    if current_index == num_engines - 1:
+                        consecutive_last_engine_fails += 1
+                        self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                        if consecutive_last_engine_fails >= max_fallback_cycles:
+                            self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                            consecutive_last_engine_fails = 0
+                            current_index = 0
+                            continue
+                    current_index += 1
                     continue
             
             except TimeoutError:
@@ -506,6 +537,16 @@ class AICommunicationHandler:
                 self.logger.warning(f"AI API call timed out after {self.ai_api_timeout} seconds. "
                                   f"Engine: {engine}, Thread alive: {worker_thread.is_alive()}")
                 last_exception = TimeoutError(f"Timeout from {engine}")
+                # Track consecutive failures on last engine
+                if current_index == num_engines - 1:
+                    consecutive_last_engine_fails += 1
+                    self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                    if consecutive_last_engine_fails >= max_fallback_cycles:
+                        self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                        consecutive_last_engine_fails = 0
+                        current_index = 0
+                        continue
+                current_index += 1
                 continue
             
             except Exception as e:
@@ -519,6 +560,16 @@ class AICommunicationHandler:
                 
                 self.logger.warning(f"Engine {engine} failed: {e}, trying next engine")
                 last_exception = e
+                # Track consecutive failures on last engine
+                if current_index == num_engines - 1:
+                    consecutive_last_engine_fails += 1
+                    self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                    if consecutive_last_engine_fails >= max_fallback_cycles:
+                        self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                        consecutive_last_engine_fails = 0
+                        current_index = 0
+                        continue
+                current_index += 1
                 continue
             
             finally:
@@ -535,23 +586,30 @@ class AICommunicationHandler:
         """
         Route request to appropriate AI engine (legacy method without timeout).
         Supports multi-engine routing (round-robin and fallback modes).
+        In fallback mode: cycles through all engines, and after 3 consecutive failures on the last engine,
+        cycles back to the first engine.
         
         Returns:
             Tuple of (response, engine_name) or (None, None) on failure
         """
+        max_fallback_cycles = getattr(self, '_max_fallback_cycles', 3)
+        
         # Determine engines to try based on routing mode
         if len(self.ai_engines) == 1:
             engines_to_try = [self.ai_engines[0]]
         elif self.ai_engine_route == "round-robin":
-            # Round-robin: try only the selected engine
             engines_to_try = [self._get_next_engine()]
+            max_fallback_cycles = 1
         else:  # fallback mode
-            # Fallback: try all engines in order
             engines_to_try = self.ai_engines.copy()
         
         last_exception = None
+        consecutive_last_engine_fails = 0
+        num_engines = len(engines_to_try)
+        current_index = 0
         
-        for engine in engines_to_try:
+        while current_index < num_engines:
+            engine = engines_to_try[current_index]
             self.logger.debug(f"Attempting engine: {engine}")
             try:
                 result = self._call_single_engine(engine, system_prompt, user_prompt, max_tokens=max_tokens)
@@ -560,10 +618,29 @@ class AICommunicationHandler:
                 else:
                     self.logger.warning(f"Engine {engine} returned empty result, trying next engine")
                     last_exception = ValueError(f"Empty response from {engine}")
+                    # Track consecutive failures on last engine
+                    if current_index == num_engines - 1:
+                        consecutive_last_engine_fails += 1
+                        self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                        if consecutive_last_engine_fails >= max_fallback_cycles:
+                            self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                            consecutive_last_engine_fails = 0
+                            current_index = 0
+                            continue
+                    current_index += 1
             except Exception as e:
                 self.logger.warning(f"Engine {engine} failed: {e}, trying next engine")
                 last_exception = e
-                continue
+                # Track consecutive failures on last engine
+                if current_index == num_engines - 1:
+                    consecutive_last_engine_fails += 1
+                    self.logger.debug(f"Last engine failed {consecutive_last_engine_fails}/{max_fallback_cycles} times")
+                    if consecutive_last_engine_fails >= max_fallback_cycles:
+                        self.logger.info(f"All engines failed {max_fallback_cycles} consecutive cycles, restarting from first engine")
+                        consecutive_last_engine_fails = 0
+                        current_index = 0
+                        continue
+                current_index += 1
         
         # All engines failed
         if last_exception:
