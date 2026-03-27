@@ -773,6 +773,8 @@ AGENT_MODE=hybrid
 SHOW_PERFORMANCE_SUMMARY=false
 # enable correctness critic on successful completion
 ENABLE_CRITIC_SUB_AGENT=true
+# gate finish with a single critic verdict check (Correct required)
+LOOP_CRITIC_SUB_AGENT=false
 
 # logging configuration, options: DEBUG, INFO, WARNING, ERROR, CRITICAL
 LOG_LEVEL=INFO

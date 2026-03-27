@@ -182,6 +182,10 @@ class VaultAIAgentRunner:
         self.enable_critic_sub_agent = (
             os.getenv("ENABLE_CRITIC_SUB_AGENT", "true").lower() == "true"
         )
+        # Critic finish gate toggle (controlled via .env)
+        self.loop_critic_sub_agent = (
+            os.getenv("LOOP_CRITIC_SUB_AGENT", "false").lower() == "true"
+        )
 
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
@@ -2295,25 +2299,25 @@ class VaultAIAgentRunner:
                                 )
                                 continue
                         # If no plan exists, allow finish without checking plan status
-                        
-                        # Track which model created the summary
-                        model_used = getattr(self.ai_handler, 'ai_engines', [getattr(self.ai_handler, 'ai_engine', 'unknown')])[0]
-                        self.summary_model_creator = model_used
-                        
-                        terminal.print_console(f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}")
-                        self.summary = summary_text
-                        task_finished_successfully = True
-                        agent_should_stop_this_turn = True
-                        try:
-                            # Log finish along with the request id for traceability
-                            self.logger.info("Agent signaled finish with summary: %s; request_id=%s; model=%s", summary_text, request_id, model_used)
-                        except Exception:
-                            pass
-                        
-                        # Display model information in summary
-                        terminal.print_console(f"Summary created by: {model_used}")
 
-                        # --- CriticSubAgent: Correctness Score (only on success) ---
+                        should_gate_finish_with_critic = (
+                            self.goal_success
+                            and self.enable_critic_sub_agent
+                            and self.loop_critic_sub_agent
+                            and self.critic_sub_agent is not None
+                        )
+                        if (
+                            self.goal_success
+                            and self.enable_critic_sub_agent
+                            and self.critic_sub_agent is None
+                            and self.loop_critic_sub_agent
+                        ):
+                            self.logger.warning(
+                                "LOOP_CRITIC_SUB_AGENT is enabled but CriticSubAgent is unavailable; "
+                                "continuing without critic gate."
+                            )
+
+                        # --- CriticSubAgent: Correctness Score / optional finish gate ---
                         if (
                             self.goal_success
                             and self.enable_critic_sub_agent
@@ -2331,6 +2335,49 @@ class VaultAIAgentRunner:
                                 terminal.print_console(f"\n[WARN] Critic Sub-Agent encountered an error: {e}")
                                 self.logger.warning("CriticSubAgent.run failed: %s", e)
                         # --- End CriticSubAgent ---
+
+                        if should_gate_finish_with_critic:
+                            critic_verdict = self.critic_verdict.strip()
+                            if critic_verdict != "Correct":
+                                terminal.print_console(
+                                    "\n[WARN] Finish blocked by Critic Sub-Agent verdict "
+                                    f"'{critic_verdict or 'Unknown'}'."
+                                )
+                                self.context_manager.add_user_message(
+                                    "Your 'finish' action was rejected by CriticSubAgent. "
+                                    f"Critic rating: {self.critic_rating}/10. "
+                                    f"Verdict: {critic_verdict or 'Unknown'}. "
+                                    f"Rationale: {self.critic_rationale or 'No rationale provided.'} "
+                                    "Please continue working and call 'finish' only after fully addressing "
+                                    "the user goal."
+                                )
+                                try:
+                                    self.logger.info(
+                                        "Finish rejected by critic verdict=%s rating=%s request_id=%s",
+                                        critic_verdict or "Unknown",
+                                        self.critic_rating,
+                                        request_id,
+                                    )
+                                except Exception:
+                                    pass
+                                continue
+
+                        # Track which model created the summary
+                        model_used = getattr(self.ai_handler, 'ai_engines', [getattr(self.ai_handler, 'ai_engine', 'unknown')])[0]
+                        self.summary_model_creator = model_used
+
+                        terminal.print_console(f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}")
+                        self.summary = summary_text
+                        task_finished_successfully = True
+                        agent_should_stop_this_turn = True
+                        try:
+                            # Log finish along with the request id for traceability
+                            self.logger.info("Agent signaled finish with summary: %s; request_id=%s; model=%s", summary_text, request_id, model_used)
+                        except Exception:
+                            pass
+
+                        # Display model information in summary
+                        terminal.print_console(f"Summary created by: {model_used}")
 
                         # --- FinishSubAgent: Deep Analysis ---
                         # Ask user whether to run the deep analysis sub-agent
