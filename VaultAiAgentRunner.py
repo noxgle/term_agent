@@ -2033,7 +2033,70 @@ class VaultAIAgentRunner:
 
         if self.compact_mode:
             self._run_compact_pipeline()
-            if not self.hybrid_mode or not self._compact_should_fallback():
+            compact_finish_blocked_by_critic = False
+
+            # Apply critic scoring/gate in compact pipeline before final return.
+            if (
+                self.goal_success
+                and self.enable_critic_sub_agent
+                and self.critic_sub_agent is not None
+            ):
+                try:
+                    critic_result = self.critic_sub_agent.run(
+                        user_goal=self.user_goal,
+                        agent_summary=self.summary or "Agent reported task finished.",
+                    )
+                    self.critic_rating = critic_result.get("rating", 0)
+                    self.critic_verdict = critic_result.get("verdict", "")
+                    self.critic_rationale = critic_result.get("rationale", "")
+                except Exception as e:
+                    terminal.print_console(f"\n[WARN] Critic Sub-Agent encountered an error: {e}")
+                    self.logger.warning("CriticSubAgent.run failed in compact pipeline: %s", e)
+            elif (
+                self.goal_success
+                and self.enable_critic_sub_agent
+                and self.loop_critic_sub_agent
+                and self.critic_sub_agent is None
+            ):
+                self.logger.warning(
+                    "LOOP_CRITIC_SUB_AGENT is enabled but CriticSubAgent is unavailable "
+                    "in compact pipeline; continuing without critic gate."
+                )
+
+            if (
+                self.goal_success
+                and self.enable_critic_sub_agent
+                and self.loop_critic_sub_agent
+                and self.critic_sub_agent is not None
+                and self.critic_verdict.strip() != "Correct"
+            ):
+                compact_finish_blocked_by_critic = True
+                critic_verdict = self.critic_verdict.strip() or "Unknown"
+                terminal.print_console(
+                    "\n[WARN] Compact finish blocked by Critic Sub-Agent verdict "
+                    f"'{critic_verdict}'."
+                )
+                self.context_manager.add_user_message(
+                    "Your compact final answer was rejected by CriticSubAgent. "
+                    f"Critic rating: {self.critic_rating}/10. "
+                    f"Verdict: {critic_verdict}. "
+                    f"Rationale: {self.critic_rationale or 'No rationale provided.'} "
+                    "Please continue working and provide a corrected final answer."
+                )
+                try:
+                    self.logger.info(
+                        "Compact finish rejected by critic verdict=%s rating=%s",
+                        critic_verdict,
+                        self.critic_rating,
+                    )
+                except Exception:
+                    pass
+                self.summary = ""
+                self.goal_success = False
+
+            if not compact_finish_blocked_by_critic and (
+                not self.hybrid_mode or not self._compact_should_fallback()
+            ):
                 summary_text = self.summary or "Agent reported task finished."
                 self.terminal.print_console(
                     f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}"
