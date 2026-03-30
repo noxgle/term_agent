@@ -186,6 +186,10 @@ class VaultAIAgentRunner:
         self.loop_critic_sub_agent = (
             os.getenv("LOOP_CRITIC_SUB_AGENT", "false").lower() == "true"
         )
+        # Finish Sub-Agent toggle (controlled via .env)
+        self.show_finish_sub_agent = (
+            os.getenv("SHOW_FINISH_SUB_AGENT", "true").lower() == "true"
+        )
 
         # Initialize SecurityValidator for command validation and security checks
         self.security_validator = SecurityValidator()
@@ -2447,7 +2451,7 @@ class VaultAIAgentRunner:
 
                         # --- FinishSubAgent: Deep Analysis ---
                         # Ask user whether to run the deep analysis sub-agent
-                        if self.finish_sub_agent is not None:
+                        if self.finish_sub_agent is not None and self.show_finish_sub_agent:
                             run_analysis = self._get_user_input(
                                 "\nVaultAI> Run Deep Analysis Sub-Agent for a detailed session report? [y/N]: ",
                                 multiline=False
