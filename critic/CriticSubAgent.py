@@ -101,7 +101,7 @@ class CriticSubAgent:
                     out = result.get("out", "")
                     tool = result.get("tool", "unknown")
                     code = result.get("code", -1)
-                    prompt += f"Result {i} (tool={tool}, exit_code={code}):\n{out[:2000]}\n\n"  # Limit output length
+                    prompt += f"Result {i} (tool={tool}, exit_code={code}):\n{out[:20000]}\n\n"  # Limit output length
             prompt += "Evaluate correctness of the answer relative to the prompt, considering the actual command results.\n"
         else:
             prompt += "Evaluate correctness of the answer relative to the prompt.\n"

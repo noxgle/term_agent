@@ -166,6 +166,7 @@ class VaultAIAgentRunner:
         self.context_manager.add_user_message(f"Your goal: {filtered_goal}.")
 
         self.steps = []
+        self.command_results = []  # Store command execution results for critic evaluation
         self.summary = ""
         self.goal_success = False
         self.critic_rating = 0
@@ -186,9 +187,17 @@ class VaultAIAgentRunner:
         self.loop_critic_sub_agent = (
             os.getenv("LOOP_CRITIC_SUB_AGENT", "false").lower() == "true"
         )
+        # Critic verdict threshold (controlled via .env)
+        # Hierarchy: Correct (strictest) > Partially > Incorrect (most lenient)
+        self.default_critic_verdict = os.getenv("DEFAULT_CRITIC_VERDICT", "Correct").strip()
         # Finish Sub-Agent toggle (controlled via .env)
         self.show_finish_sub_agent = (
             os.getenv("SHOW_FINISH_SUB_AGENT", "true").lower() == "true"
+        )
+        # Output type detection toggle (controlled via .env)
+        # When disabled, all bash output is treated as plain text
+        self.enable_output_type_detection = (
+            os.getenv("ENABLE_OUTPUT_TYPE_DETECTION", "true").lower() == "true"
         )
 
         # Initialize SecurityValidator for command validation and security checks
@@ -1688,6 +1697,38 @@ class VaultAIAgentRunner:
             status = self.compact_state.get("status")
         return status in (None, "blocked") or not self.goal_success
 
+    def _is_critic_verdict_acceptable(self, verdict: str) -> bool:
+        """
+        Check if critic verdict meets the configured threshold.
+        
+        Hierarchy: Correct (strictest) > Partially > Incorrect (most lenient)
+        - "Correct": Only accept "Correct" verdict
+        - "Partially": Accept "Correct" or "Partially" verdicts
+        - "Incorrect": Accept any verdict ("Correct", "Partially", "Incorrect")
+        
+        Args:
+            verdict: The verdict string from CriticSubAgent
+            
+        Returns:
+            True if the verdict meets or exceeds the configured threshold
+        """
+        verdict_levels = {
+            "Correct": 0,
+            "Partially": 1,
+            "Incorrect": 2,
+        }
+        # Normalize the verdict
+        normalized_verdict = verdict.strip()
+        # Handle case-insensitive comparison
+        for key in verdict_levels:
+            if normalized_verdict.lower() == key.lower():
+                normalized_verdict = key
+                break
+        
+        verdict_level = verdict_levels.get(normalized_verdict, 3)  # Unknown = highest (reject)
+        threshold_level = verdict_levels.get(self.default_critic_verdict, 0)
+        return verdict_level <= threshold_level
+
     def _run_compact_pipeline(self) -> None:
         terminal = self.terminal
         state = self.compact_state or self._init_compact_state()
@@ -2037,73 +2078,8 @@ class VaultAIAgentRunner:
 
         if self.compact_mode:
             self._run_compact_pipeline()
-            compact_finish_blocked_by_critic = False
 
-            # Apply critic scoring/gate in compact pipeline before final return.
-            if (
-                self.goal_success
-                and self.enable_critic_sub_agent
-                and self.critic_sub_agent is not None
-            ):
-                try:
-                    # Pass compact state results to critic for better evaluation
-                    agent_results = self.compact_state.get("results", []) if isinstance(self.compact_state, dict) else None
-                    critic_result = self.critic_sub_agent.run(
-                        user_goal=self.user_goal,
-                        agent_summary=self.summary or "Agent reported task finished.",
-                        agent_results=agent_results,
-                    )
-                    self.critic_rating = critic_result.get("rating", 0)
-                    self.critic_verdict = critic_result.get("verdict", "")
-                    self.critic_rationale = critic_result.get("rationale", "")
-                except Exception as e:
-                    terminal.print_console(f"\n[WARN] Critic Sub-Agent encountered an error: {e}")
-                    self.logger.warning("CriticSubAgent.run failed in compact pipeline: %s", e)
-            elif (
-                self.goal_success
-                and self.enable_critic_sub_agent
-                and self.loop_critic_sub_agent
-                and self.critic_sub_agent is None
-            ):
-                self.logger.warning(
-                    "LOOP_CRITIC_SUB_AGENT is enabled but CriticSubAgent is unavailable "
-                    "in compact pipeline; continuing without critic gate."
-                )
-
-            if (
-                self.goal_success
-                and self.enable_critic_sub_agent
-                and self.loop_critic_sub_agent
-                and self.critic_sub_agent is not None
-                and self.critic_verdict.strip() != "Correct"
-            ):
-                compact_finish_blocked_by_critic = True
-                critic_verdict = self.critic_verdict.strip() or "Unknown"
-                terminal.print_console(
-                    "\n[WARN] Compact finish blocked by Critic Sub-Agent verdict "
-                    f"'{critic_verdict}'."
-                )
-                self.context_manager.add_user_message(
-                    "Your compact final answer was rejected by CriticSubAgent. "
-                    f"Critic rating: {self.critic_rating}/10. "
-                    f"Verdict: {critic_verdict}. "
-                    f"Rationale: {self.critic_rationale or 'No rationale provided.'} "
-                    "Please continue working and provide a corrected final answer."
-                )
-                try:
-                    self.logger.info(
-                        "Compact finish rejected by critic verdict=%s rating=%s",
-                        critic_verdict,
-                        self.critic_rating,
-                    )
-                except Exception:
-                    pass
-                self.summary = ""
-                self.goal_success = False
-
-            if not compact_finish_blocked_by_critic and (
-                not self.hybrid_mode or not self._compact_should_fallback()
-            ):
+            if not self.hybrid_mode or not self._compact_should_fallback():
                 summary_text = self.summary or "Agent reported task finished."
                 self.terminal.print_console(
                     f"\nVaultAI> Agent finished its task.\nSummary: {summary_text}"
@@ -2394,9 +2370,13 @@ class VaultAIAgentRunner:
                             and self.critic_sub_agent is not None
                         ):
                             try:
+                                # Pass command results to critic for better evaluation
+                                # Limit to last 5 results to avoid token overflow
+                                agent_results = self.command_results[-5:] if self.command_results else None
                                 critic_result = self.critic_sub_agent.run(
                                     user_goal=self.user_goal,
                                     agent_summary=summary_text,
+                                    agent_results=agent_results,
                                 )
                                 self.critic_rating = critic_result.get("rating", 0)
                                 self.critic_verdict = critic_result.get("verdict", "")
@@ -2408,7 +2388,7 @@ class VaultAIAgentRunner:
 
                         if should_gate_finish_with_critic:
                             critic_verdict = self.critic_verdict.strip()
-                            if critic_verdict != "Correct":
+                            if not self._is_critic_verdict_acceptable(critic_verdict):
                                 terminal.print_console(
                                     "\n[WARN] Finish blocked by Critic Sub-Agent verdict "
                                     f"'{critic_verdict or 'Unknown'}'."
@@ -2530,6 +2510,18 @@ class VaultAIAgentRunner:
                         cmd_duration = self._end_timing(cmd_timing_id, f"COMMAND_EXECUTION_{command[:50]}", code == 0)
 
                         self.steps.append(f"Step {len(self.steps) + 1}: executed '{command}' (code {code})")
+                        
+                        # Store command result for critic evaluation (compact version to save memory)
+                        out_str = out if isinstance(out, str) else str(out)
+                        max_result_chars = 20000  # Limit stored output to save memory
+                        compressed_out = out_str[:max_result_chars] if len(out_str) > max_result_chars else out_str
+                        self.command_results.append({
+                            "tool": "bash",
+                            "command": command,
+                            "code": int(code),
+                            "out": compressed_out,
+                        })
+                        
                         #terminal.print_console(f"Result (exit code: {code}):\n{out}")
                         terminal.print_console(f"\n{out}")
                         try:
@@ -2557,7 +2549,11 @@ class VaultAIAgentRunner:
 
                         # Build smart feedback based on exit code
 
-                        output_type = detect_output_type(out, command)
+                        # Use output type detection if enabled, otherwise default to "text"
+                        if self.enable_output_type_detection:
+                            output_type = detect_output_type(out, command)
+                        else:
+                            output_type = "text"
                         if output_type == "empty":
                             original_feedback = (
                                 f"Command '{command}' executed with exit code {code} and no output.\n"
@@ -3722,37 +3718,35 @@ class VaultAIAgentRunner:
                 #self.terminal.print_console("\nFinal Action Plan:")
                 #self.plan_manager.display_plan(show_details=True)
                 
-                continue_choice = self._get_user_input("\nVaultAI> Do you want continue this thread? [y/N]: ", multiline=False).lower().strip()
-                if continue_choice == 'y':
-                    terminal.console.print("\nVaultAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
-                    user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
-                    new_instruction = terminal.process_input(user_input)
+                # Automatically continue - no prompt, just ask for next goal
+                terminal.console.print("\nVaultAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
+                user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
+                new_instruction = terminal.process_input(user_input)
 
-                    # Preserve completed plan history in context before clearing
-                    completed_plan_context = self.plan_manager.get_context_for_ai()
-                    self.context_manager.add_system_message(
-                        f"[COMPLETED TASK]\n"
-                        f"Goal: {self.user_goal}\n"
-                        f"Summary: {self.summary}\n"
-                        f"Plan that was executed:\n{completed_plan_context}\n"
-                        f"[END COMPLETED TASK]\n\n"
-                        f"The above task was fully completed. Now proceed with the new instruction."
-                    )
-                    self.context_manager.add_user_message(f"New instruction: {new_instruction}")
+                # Preserve completed plan history in context before clearing
+                completed_plan_context = self.plan_manager.get_context_for_ai()
+                self.context_manager.add_system_message(
+                    f"[COMPLETED TASK]\n"
+                    f"Goal: {self.user_goal}\n"
+                    f"Summary: {self.summary}\n"
+                    f"Plan that was executed:\n{completed_plan_context}\n"
+                    f"[END COMPLETED TASK]\n\n"
+                    f"The above task was fully completed. Now proceed with the new instruction."
+                )
+                self.context_manager.add_user_message(f"New instruction: {new_instruction}")
 
-                    self.steps = []
-                    self.summary = ""
-                    self.critic_rating = 0
-                    self.critic_verdict = ""
-                    self.critic_rationale = ""
-                    # Update the goal and reset plan for the new task
-                    self.user_goal = new_instruction
-                    self.plan_manager.clear()
-                    # Create a new plan for the new goal
-                    #self._initialize_plan()
-                    # Continue the while loop
-                else:
-                    keep_running = False
+                self.steps = []
+                self.command_results = []  # Reset command results for new task
+                self.summary = ""
+                self.critic_rating = 0
+                self.critic_verdict = ""
+                self.critic_rationale = ""
+                # Update the goal and reset plan for the new task
+                self.user_goal = new_instruction
+                self.plan_manager.clear()
+                # Create a new plan for the new goal
+                #self._initialize_plan()
+                # Continue the while loop
             else:
                 # If the loop broke for any other reason (error, user cancellation), stop.
                 keep_running = False
