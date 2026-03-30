@@ -2042,9 +2042,12 @@ class VaultAIAgentRunner:
                 and self.critic_sub_agent is not None
             ):
                 try:
+                    # Pass compact state results to critic for better evaluation
+                    agent_results = self.compact_state.get("results", []) if isinstance(self.compact_state, dict) else None
                     critic_result = self.critic_sub_agent.run(
                         user_goal=self.user_goal,
                         agent_summary=self.summary or "Agent reported task finished.",
+                        agent_results=agent_results,
                     )
                     self.critic_rating = critic_result.get("rating", 0)
                     self.critic_verdict = critic_result.get("verdict", "")

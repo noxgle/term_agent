@@ -9,7 +9,7 @@ original prompt, producing a score from 0 to 10.
 import json
 import re
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 
@@ -50,13 +50,14 @@ class CriticSubAgent:
         self.logger = logger or self._create_dummy_logger()
         self.console = getattr(terminal, 'console', Console())
 
-    def run(self, user_goal: str, agent_summary: str) -> Dict[str, Any]:
+    def run(self, user_goal: str, agent_summary: str, agent_results: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         """
         Execute the critic sub-agent.
 
         Args:
             user_goal: Original goal provided by the user
             agent_summary: Summary provided by the agent in the 'finish' tool call
+            agent_results: Optional list of actual command results/outputs for context
 
         Returns:
             dict: Parsed critic result with rating, verdict, and rationale
@@ -66,7 +67,7 @@ class CriticSubAgent:
         )
         self.logger.info("CriticSubAgent: Starting critique for goal: %s", user_goal)
 
-        prompt = self._build_critic_prompt(user_goal, agent_summary)
+        prompt = self._build_critic_prompt(user_goal, agent_summary, agent_results)
 
         critic_result = self.ai_handler.send_request(
             system_prompt=self.CRITIC_SYSTEM_PROMPT,
@@ -84,14 +85,28 @@ class CriticSubAgent:
         )
         return parsed
 
-    def _build_critic_prompt(self, user_goal: str, agent_summary: str) -> str:
-        return (
+    def _build_critic_prompt(self, user_goal: str, agent_summary: str, agent_results: Optional[List[Dict[str, Any]]] = None) -> str:
+        prompt = (
             "=== USER PROMPT ===\n"
             f"{user_goal}\n\n"
             "=== AGENT ANSWER ===\n"
             f"{agent_summary}\n\n"
-            "Evaluate correctness of the answer relative to the prompt."
         )
+        
+        # Include actual command results if available for better evaluation
+        if agent_results and isinstance(agent_results, list) and len(agent_results) > 0:
+            prompt += "=== ACTUAL COMMAND RESULTS ===\n"
+            for i, result in enumerate(agent_results[:3], 1):  # Limit to first 3 results
+                if isinstance(result, dict):
+                    out = result.get("out", "")
+                    tool = result.get("tool", "unknown")
+                    code = result.get("code", -1)
+                    prompt += f"Result {i} (tool={tool}, exit_code={code}):\n{out[:2000]}\n\n"  # Limit output length
+            prompt += "Evaluate correctness of the answer relative to the prompt, considering the actual command results.\n"
+        else:
+            prompt += "Evaluate correctness of the answer relative to the prompt.\n"
+        
+        return prompt
 
     def _parse_critic_result(
         self,

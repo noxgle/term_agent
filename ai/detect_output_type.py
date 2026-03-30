@@ -34,7 +34,21 @@ def detect_output_type(text: str, command: str = None) -> str:
     if any(re.search(r'\bat\s+\S+\(.*\)', l) for l in sample):
         return "stacktrace"
 
-    # --- 2. Logi (dmesg + timestampy) ---
+    # --- 2. Tabele ---
+    header = lines[0]
+    header_cols = header.split()
+
+    if len(header_cols) >= 4:
+        similar = 0
+        for l in lines[1:10]:
+            cols = l.split()
+            if abs(len(cols) - len(header_cols)) <= 2:
+                similar += 1
+
+        if similar >= 3:
+            return "table"
+
+    # --- 3. Logi (dmesg + timestampy) ---
 
     # 🔥 dmesg pattern: [ 123.456 ]
     if any(re.match(r'^\[\s*\d+\.\d+\]', l) for l in sample):
@@ -54,27 +68,13 @@ def detect_output_type(text: str, command: str = None) -> str:
     if timestamp_hits > len(sample) * 0.3:
         return "log"
 
-    # --- 3. JSON (dopiero po logach!) ---
+    # --- 4. JSON (dopiero po logach!) ---
     try:
         parsed = json.loads(joined)
         if isinstance(parsed, (dict, list)):
             return "json"
     except Exception:
         pass
-
-    # --- 4. Tabele ---
-    header = lines[0]
-    header_cols = header.split()
-
-    if len(header_cols) >= 4:
-        similar = 0
-        for l in lines[1:10]:
-            cols = l.split()
-            if abs(len(cols) - len(header_cols)) <= 2:
-                similar += 1
-
-        if similar >= 3:
-            return "table"
 
     # --- 5. Key-value ---
     kv_hits = sum(1 for l in sample if "=" in l and not l.startswith(" "))
