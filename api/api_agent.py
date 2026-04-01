@@ -30,6 +30,8 @@ class ApiRunParams:
     compact_mode: Optional[bool] = None
     force_plan: Optional[bool] = None
     pipeline_mode: Optional[str] = None
+    enable_critic_sub_agent: Optional[bool] = None
+    default_critic_verdict: Optional[str] = None
 
 
 def _build_terminal(params: ApiRunParams) -> term_agent:
@@ -99,6 +101,18 @@ def run_agent_via_api(params: ApiRunParams) -> Dict[str, Any]:
         # Check environment variable if parameter not provided
         env_force_plan = os.getenv("FORCE_PLAN", "false").lower()
         runner.force_plan = env_force_plan in ("true", "1", "yes", "on")
+
+    # Enable critic sub-agent: API param > env fallback
+    if params.enable_critic_sub_agent is not None:
+        runner.enable_critic_sub_agent = params.enable_critic_sub_agent
+    else:
+        runner.enable_critic_sub_agent = os.getenv("ENABLE_CRITIC_SUB_AGENT", "false").lower() in ("true", "1", "yes", "on")
+
+    # Default critic verdict: API param > env fallback
+    if params.default_critic_verdict is not None:
+        runner.default_critic_verdict = params.default_critic_verdict
+    else:
+        runner.default_critic_verdict = os.getenv("DEFAULT_CRITIC_VERDICT", "Correct").strip()
 
     runner.run()
 

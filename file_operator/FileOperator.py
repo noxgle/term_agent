@@ -986,68 +986,90 @@ class FileOperator:
             # Use grep for efficient remote search
             # -n: show line numbers
             # -i: case insensitive
-            # -C: context lines
+            # -C: context lines (before and after)
+            # grep -C output format:
+            #   - For matches: "line_number:content"
+            #   - For context:  "line_number-content"
+            #   - Separator:    "--"
             grep_cmd = f"grep -n -i -C {context_lines} {escaped_query} {self._q(file_path)}"
             
             out, code = self.terminal.execute_remote_pexpect(grep_cmd, remote, password=password)
             
             if code == 0 or out:
-                # Parse grep output
+                # Parse grep output correctly
+                # Format: linenum:match or linenum-context
                 matches = []
                 total_matches = 0
                 current_match = None
+                expecting_context_after = False
                 
-                for line in out.strip().split('\n'):
-                    line = line.strip()
-                    if not line:
+                lines = out.strip().split('\n')
+                for line in lines:
+                    if not line.strip():
                         continue
                     
-                    # Check if this is a separator line (---)
-                    if line == "---":
+                    stripped = line.strip()
+                    
+                    # Skip separator lines (--)
+                    if stripped == "--":
+                        # Reset expecting_context_after when we hit a separator
+                        expecting_context_after = False
                         continue
                     
-                    # Check if this is a context line (starts with > or <)
-                    if line.startswith(">") or line.startswith("<"):
+                    # Find the first colon or dash separator
+                    # Format: "linenum:content" for match or "linenum-content" for context
+                    sep_pos = -1
+                    sep_char = None
+                    for i, ch in enumerate(stripped):
+                        if ch == ':':
+                            sep_pos = i
+                            sep_char = ':'
+                            break
+                        elif ch == '-':
+                            # Could be context line or negative line number (unlikely but handle it)
+                            if i > 0 and stripped[:i].isdigit():
+                                sep_pos = i
+                                sep_char = '-'
+                                break
+                    
+                    if sep_pos == -1:
+                        # No separator found - might be multiline content continuation
+                        if current_match and expecting_context_after:
+                            current_match["context_after"].append(stripped)
+                        continue
+                    
+                    # Extract line number
+                    prefix = stripped[:sep_pos]
+                    rest = stripped[sep_pos + 1:]
+                    
+                    try:
+                        line_num = int(prefix)
+                    except ValueError:
+                        # Not a valid line number - might be grep error or weird output
+                        continue
+                    
+                    if sep_char == ':':
+                        # This is a MATCH line
+                        current_match = {
+                            "line_number": line_num,
+                            "content": rest,
+                            "context_before": [],
+                            "context_after": []
+                        }
+                        matches.append(current_match)
+                        total_matches += 1
+                        expecting_context_after = True
+                        
+                        # Limit results
+                        if len(matches) >= max_results:
+                            break
+                    elif sep_char == '-':
+                        # This is a CONTEXT line
                         if current_match:
-                            if line.startswith(">"):
-                                current_match["context_after"].append(line[1:].strip())
+                            if expecting_context_after:
+                                current_match["context_after"].append(rest)
                             else:
-                                current_match["context_before"].append(line[1:].strip())
-                        continue
-                    
-                    # Parse match line: line_number:content
-                    if ":" in line:
-                        parts = line.split(":", 1)
-                        if len(parts) == 2:
-                            try:
-                                line_num = int(parts[0])
-                                content = parts[1]
-                                
-                                # Create new match
-                                current_match = {
-                                    "line_number": line_num,
-                                    "content": content,
-                                    "context_before": [],
-                                    "context_after": []
-                                }
-                                matches.append(current_match)
-                                total_matches += 1
-                                
-                                # Limit results
-                                if len(matches) >= max_results:
-                                    break
-                            except ValueError:
-                                # Not a match line, might be context
-                                if current_match:
-                                    current_match["context_after"].append(line)
-                        else:
-                            # Just content, no line number
-                            if current_match:
-                                current_match["context_after"].append(line)
-                    else:
-                        # Context line without prefix
-                        if current_match:
-                            current_match["context_after"].append(line)
+                                current_match["context_before"].append(rest)
                 
                 self.logger.info(f"Remote search in '{file_path}' completed. Total matches: {total_matches}, Returned: {len(matches)}")
                 

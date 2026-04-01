@@ -19,6 +19,7 @@ from ai.detect_output_type import detect_output_type, summarize_table
 from ai.stacktrace_summarize import summarize_stacktrace
 from ai.kv_summarize import summarize_kv
 from ai.json_summarize import summarize_json
+from ai.table_summarizer import summarize_generic_table
 import logging
 from file_operator.FileOperator import FileOperator
 from plan.ActionPlanManager import ActionPlanManager, StepStatus, create_simple_plan
@@ -2513,13 +2514,12 @@ class VaultAIAgentRunner:
                         
                         # Store command result for critic evaluation (compact version to save memory)
                         out_str = out if isinstance(out, str) else str(out)
-                        max_result_chars = 20000  # Limit stored output to save memory
-                        compressed_out = out_str[:max_result_chars] if len(out_str) > max_result_chars else out_str
+
                         self.command_results.append({
                             "tool": "bash",
                             "command": command,
                             "code": int(code),
-                            "out": compressed_out,
+                            "out": f"{summarize_generic_table(out_str)}",
                         })
                         
                         #terminal.print_console(f"Result (exit code: {code}):\n{out}")

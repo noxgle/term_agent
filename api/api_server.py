@@ -30,6 +30,8 @@ class RunRequest(BaseModel):
     compact_mode: Optional[bool] = None
     force_plan: Optional[bool] = None
     pipeline_mode: Optional[str] = None
+    enable_critic_sub_agent: Optional[bool] = None
+    default_critic_verdict: Optional[str] = None
 
 
 class RunResponse(BaseModel):
@@ -94,6 +96,8 @@ def _build_params(payload: RunRequest) -> ApiRunParams:
         compact_mode=compact_mode,
         force_plan=payload.force_plan,
         pipeline_mode=pipeline_mode,
+        enable_critic_sub_agent=payload.enable_critic_sub_agent,
+        default_critic_verdict=payload.default_critic_verdict,
     )
 
 
