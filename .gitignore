@@ -6,6 +6,7 @@ logs/
 hf_cache/
 .env
 .auth/
+node_modules/
 app.log
 test_*
 .dockerignore

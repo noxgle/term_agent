@@ -16,6 +16,12 @@ fi
 if ! command -v pip3 &> /dev/null; then
     deps_missing+=(python3-pip)
 fi
+if ! command -v node &> /dev/null; then
+    deps_missing+=(nodejs)
+fi
+if ! command -v npm &> /dev/null; then
+    deps_missing+=(npm)
+fi
 if [ ${#deps_missing[@]} -ne 0 ]; then
     echo "Missing required packages: ${deps_missing[*]}"
     echo "Please install them using:"
@@ -61,6 +67,20 @@ pip install --upgrade google-genai || { echo "Failed to install google-genai"; e
 echo "Installing requirements..."
 pip install -r requirements.txt || { echo "Failed to install requirements"; exit 1; }
 
+# Install Codex CLI locally for ChatGPT Plus/Pro mode (codex-cli engine)
+echo "Installing Codex CLI locally (node_modules/.bin/codex)..."
+npm install --no-save @openai/codex || { echo "Failed to install Codex CLI package"; exit 1; }
+
+# Verify Codex CLI installation
+if [ ! -x "./node_modules/.bin/codex" ]; then
+    echo "Codex CLI binary not found at ./node_modules/.bin/codex"
+    exit 1
+fi
+./node_modules/.bin/codex --version >/dev/null 2>&1 || {
+    echo "Codex CLI verification failed"
+    exit 1
+}
+
 # Create .env file from template if it doesn't exist
 if [ ! -f .env ]; then
     echo "Creating .env file from template..."
@@ -75,6 +95,7 @@ echo ""
 echo "To start Vault 3000 in chat mode, run: python term_ask.py"
 echo "To start Vault 3000 in agent mode, run: python term_ag.py"
 echo "To start Vault 3000 in prompt mode, run: python PromptCreator.py"
+echo "To use ChatGPT Plus/Pro with codex-cli engine, run: ./node_modules/.bin/codex login --device-auth"
 
 # Add aliases
 echo -e "\nWould you like to add aliases to your shell configuration? (y/n)"
@@ -104,3 +125,4 @@ echo "To start Vault 3000 in chat mode, run: ask term_ask.py"
 echo "To start Vault 3000 in agent mode, run: ag term_ag.py"
 echo "To start Vault 3000 in remote agent mode, run: ag term_ag.py test@192.168.0.1"
 echo "To start Vault 3000 in prompt mode, run: python PromptCreator.py"
+echo "Codex CLI login (for AI_ENGINE=codex-cli): ./node_modules/.bin/codex login --device-auth"
