@@ -124,7 +124,7 @@ Configure multiple engines and routing mode in your `.env` file:
 
 ```ini
 # Multiple engines can be specified as comma-separated list
-AI_ENGINE=openai,ollama,google,openrouter
+AI_ENGINE=openai,ollama,google,openrouter,codex-cli
 
 # Routing mode: round-robin or fallback
 AI_ENGINE_ROUTE=fallback
@@ -137,6 +137,10 @@ GOOGLE_API_KEY=your_google_key_here
 GOOGLE_MODEL=gemini-2.5-flash-preview-05-20
 OPENROUTER_API_KEY=your_openrouter_key_here
 OPENROUTER_MODEL=openrouter/llama-3.1-70b-instruct:free
+
+# codex-cli configuration (ChatGPT Plus/Pro via local Codex CLI)
+CODEX_COMMAND=codex
+CODEX_MODEL=gpt-5.3-codex
 ```
 
 ### Supported AI Engines
@@ -148,6 +152,7 @@ OPENROUTER_MODEL=openrouter/llama-3.1-70b-instruct:free
 | **Ollama Cloud** | Hosted Ollama models | Cloud | Managed service with local model benefits |
 | **Google Gemini** | Google's AI models | Cloud | Strong reasoning, Google ecosystem integration |
 | **OpenRouter** | Unified API for 100+ models | Cloud | Access to diverse model selection |
+| **codex-cli** | ChatGPT Plus/Pro via local Codex CLI | Local CLI + Cloud | Subscription-based coding and agent workflows |
 
 ### Configuration Examples
 
@@ -201,11 +206,11 @@ OPENROUTER_TEMPERATURE=0.5
 # AI API timeout in seconds
 AI_API_TIMEOUT=120
 
-# Maximum retry attempts (0 = no limit)
+# Maximum retry attempts
 AI_API_MAX_RETRIES=3
 
 # Base delay between retries in seconds
-AI_API_RETRY_DELAY=2
+AI_API_RETRY_DELAY=5
 
 # Backoff multiplier (2 = exponential backoff)
 AI_API_RETRY_BACKOFF=2
@@ -241,6 +246,23 @@ The system provides detailed logging for multi-engine operations:
 - Check API keys are valid
 - Verify network connectivity for cloud engines
 - Ensure local Ollama server is running
+
+#### codex-cli Notes
+- Install Codex CLI and authenticate first: `codex login --device-auth`
+- If your shell is not loading global binaries, set an absolute path in `.env`:
+  - `CODEX_COMMAND=/absolute/path/to/codex`
+- If a Codex model is rejected by your ChatGPT plan, switch model (for example `CODEX_MODEL=gpt-5.3-codex`).
+
+## OpenAI API vs ChatGPT OAuth (Important)
+
+These are different auth paths and should not be mixed:
+
+- `AI_ENGINE=openai` uses **OpenAI Platform API** credentials.
+  - Use `OPENAI_AUTH_MODE=api_key` + `OPENAI_API_KEY`.
+- `AI_ENGINE=codex-cli` uses your **ChatGPT Plus/Pro** login through Codex CLI.
+  - Use `codex login --device-auth`.
+
+If you use ChatGPT OAuth token with OpenAI Platform API checks, you may see scope errors like `api.model.read` or `model.request`.
 
 #### Fallback Not Working
 - Verify all engines are properly configured
@@ -728,14 +750,22 @@ Copy `.env.copy` to `.env` and paste your API key(s).
 
 Example `.env` file:
 ```
-# engine options: openai, ollama, ollama-cloud, google, openrouter
+# engine options: openai, ollama, ollama-cloud, google, openrouter, codex-cli
 AI_ENGINE=ollama
+
+# optional: use ChatGPT Plus/Pro via Codex CLI instead of OpenAI API
+# AI_ENGINE=codex-cli
 
 # openai configuration
 OPENAI_API_KEY=openai_api_key_here
+OPENAI_AUTH_MODE=api_key
 OPENAI_MODEL=gpt-4o-mini
 OPENAI_TEMPERATURE=0.5
 OPENAI_MAX_TOKENS=1000
+
+# codex-cli configuration (ChatGPT Plus/Pro)
+CODEX_COMMAND=codex
+CODEX_MODEL=gpt-5.3-codex
 
 # ollama configuration
 # granite3.3:8b,gemma3.3:12b,cogito:8b,qwen3:8b
@@ -813,6 +843,8 @@ python term_ask.py
 python term_ag.py
 ```
 
+Input submission in the main agent prompt is **Ctrl+S**.
+
 Force compact or normal pipeline:
 
 ```bash
@@ -824,6 +856,31 @@ python term_ag.py --hybrid
 > **Operating Modes:** By default, the agent runs in **Collaborative Mode** and asks for confirmation before executing each command (`[y/N]`). To run in **Fully Automatic Mode**, either:
 > - Set `AUTO_ACCEPT=true` in your `.env` file before starting
 > - Press `Ctrl+A` during a session to switch from collaborative to automatic mode on-the-fly
+
+For server workflows, keep `AUTO_ACCEPT=false` to manually approve each action.
+
+### ChatGPT Plus/Pro mode (codex-cli)
+
+1. Install Codex CLI (local project install is supported):
+
+```bash
+npm install --no-save @openai/codex
+```
+
+2. Sign in with your ChatGPT account:
+
+```bash
+./node_modules/.bin/codex login --device-auth
+```
+
+3. Configure `.env`:
+
+```ini
+AI_ENGINE=codex-cli
+CODEX_COMMAND=/absolute/path/to/node_modules/.bin/codex
+CODEX_MODEL=gpt-5.3-codex
+AUTO_ACCEPT=false
+```
 
 ### Remote agent mode (SSH):
 

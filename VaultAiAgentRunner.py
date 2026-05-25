@@ -3718,10 +3718,18 @@ class VaultAIAgentRunner:
                 #self.terminal.print_console("\nFinal Action Plan:")
                 #self.plan_manager.display_plan(show_details=True)
                 
-                # Automatically continue - no prompt, just ask for next goal
+                auto_continue = os.getenv("CONTINUE_AFTER_TASK", "false").lower() in ("true", "1", "yes", "on")
+                if not auto_continue:
+                    keep_running = False
+                    continue
+
+                # Optional continuation mode
                 terminal.console.print("\nVaultAI> Prompt your next goal and press [cyan]Ctrl+S[/] to start!")
                 user_input = self._get_user_input(f"{self.input_text}> ", multiline=True)
                 new_instruction = terminal.process_input(user_input)
+                if not new_instruction or not new_instruction.strip():
+                    keep_running = False
+                    continue
 
                 # Preserve completed plan history in context before clearing
                 completed_plan_context = self.plan_manager.get_context_for_ai()

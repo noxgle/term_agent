@@ -5,6 +5,8 @@ import subprocess
 import sys
 import random
 import argparse
+import shutil
+import tempfile
 from dotenv import load_dotenv
 from openai import OpenAI
 from google import genai
@@ -16,6 +18,7 @@ import pexpect
 import re
 from prompt_toolkit import prompt
 from prompt_toolkit.key_binding import KeyBindings
+from auth.openai_device_oauth import OpenAIDeviceOAuthManager
 try:
     from groq import Groq
     GROQ_AVAILABLE = True
@@ -106,6 +109,7 @@ class term_agent:
             print(f"ValutAI> ERROR: .env file not found in {self.basedir}. Please create one based on .env.copy.")
             sys.exit(1)
         load_dotenv()
+        self.openai_oauth = OpenAIDeviceOAuthManager(self.basedir)
         # --- Logging config from .env ---
         log_level = os.getenv("LOG_LEVEL", "INFO").upper()
         log_file = os.getenv("LOG_FILE", "")
@@ -155,6 +159,13 @@ class term_agent:
         queue_listener.start()
 
         self.logger = logging.getLogger("TerminalAIAgent")
+        self.openai_oauth.logger = self.logger
+        self.openai_auth_mode = os.getenv("OPENAI_AUTH_MODE", "api_key").strip().lower()
+        if self.openai_auth_mode not in ("api_key", "oauth"):
+            self.logger.warning(
+                f"Invalid OPENAI_AUTH_MODE '{self.openai_auth_mode}', defaulting to 'api_key'"
+            )
+            self.openai_auth_mode = "api_key"
         
         # Parse AI_ENGINE as comma-separated list for multi-engine support
         ai_engine_env = os.getenv("AI_ENGINE", "openai")
@@ -175,7 +186,16 @@ class term_agent:
             "openrouter": os.getenv("OPENROUTER_API_KEY", ""),
             "ollama": None,  # Ollama doesn't require API key
             "groq": os.getenv("GROQ_API_KEY", ""),
+            "codex-cli": None,
         }
+
+        # Optional OpenAI OAuth mode (device code flow)
+        if self.openai_oauth.is_enabled():
+            oauth_token = self.openai_oauth.get_valid_access_token(interactive=False)
+            if oauth_token:
+                self.engine_api_keys["openai"] = oauth_token
+
+        self._validate_openai_auth_configuration()
         
         # Per-engine model configurations
         self.engine_models = {
@@ -210,18 +230,28 @@ class term_agent:
                 "temperature": float(os.getenv("GROQ_TEMPERATURE", "0.5")),
                 "max_tokens": int(os.getenv("GROQ_MAX_TOKENS", "1000")),
             },
+            "codex-cli": {
+                "model": os.getenv("CODEX_MODEL", "gpt-5.2-codex"),
+                "command": os.getenv("CODEX_COMMAND", "codex"),
+            },
         }
         
         # API key selection logic (primary engine for backward compatibility)
         self.api_key = self.engine_api_keys.get(self.ai_engine)
         if self.ai_engine in ["openai", "google", "ollama-cloud", "openrouter"] and not self.api_key:
-            self.logger.critical(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
-            raise RuntimeError(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
+            if self.ai_engine == "openai" and self.openai_oauth.is_enabled():
+                pass
+            else:
+                self.logger.critical(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
+                raise RuntimeError(f"You must set the correct API key in the .env file for engine {self.ai_engine}.")
         
         # Validate API keys for all configured engines
         for engine in self.ai_engines:
             if engine in ["openai", "google", "ollama-cloud", "openrouter"] and not self.engine_api_keys.get(engine):
-                self.logger.warning(f"No API key configured for engine '{engine}' - it will fail when used")
+                if engine == "openai" and self.openai_oauth.is_enabled():
+                    self.logger.info("OpenAI OAuth mode enabled; token will be resolved on demand.")
+                else:
+                    self.logger.warning(f"No API key configured for engine '{engine}' - it will fail when used")
         
         # Log multi-engine configuration
         if len(self.ai_engines) > 1:
@@ -246,6 +276,8 @@ class term_agent:
         self.groq_model = self.engine_models["groq"]["model"]
         self.groq_temperature = self.engine_models["groq"]["temperature"]
         self.groq_max_tokens = self.engine_models["groq"]["max_tokens"]
+        self.codex_model = self.engine_models["codex-cli"]["model"]
+        self.codex_command = self.engine_models["codex-cli"]["command"]
         self.ssh_remote_timeout = int(os.getenv("SSH_REMOTE_TIMEOUT", "120"));
         self.local_command_timeout = int(os.getenv("LOCAL_COMMAND_TIMEOUT", "300"))
         # AI API timeout and retry configuration
@@ -271,6 +303,65 @@ class term_agent:
         
         # Workspace directory - defaults to pwd or override from .env
         self.workspace = os.getenv("WORKSPACE_DIR", "") or os.getcwd()
+
+    def _validate_openai_auth_configuration(self):
+        if self.openai_auth_mode == "oauth":
+            if not os.getenv("OPENAI_OAUTH_CLIENT_ID", "").strip():
+                self.logger.warning(
+                    "OPENAI_AUTH_MODE=oauth and OPENAI_OAUTH_CLIENT_ID is empty. "
+                    "Login flow will try without client_id; if provider requires it, set OPENAI_OAUTH_CLIENT_ID."
+                )
+        elif self.openai_auth_mode == "api_key":
+            # Enforced only when OpenAI engine is configured/used.
+            if "openai" in self.ai_engines and not os.getenv("OPENAI_API_KEY", "").strip():
+                self.logger.warning("OPENAI_AUTH_MODE=api_key but OPENAI_API_KEY is empty.")
+
+    def get_engine_api_key(self, engine: str, interactive: bool = False, required: bool = True):
+        if engine == "openai" and self.openai_oauth.is_enabled():
+            token = self.openai_oauth.get_valid_access_token(interactive=interactive, console=self.console)
+            if token:
+                self.engine_api_keys["openai"] = token
+                if self.ai_engine == "openai":
+                    self.api_key = token
+                return token
+            if required:
+                raise RuntimeError(
+                    "OpenAI OAuth token unavailable. Run: python term_ag.py --openai-login"
+                )
+            return None
+        if engine == "openai" and self.openai_auth_mode == "api_key":
+            key = self.engine_api_keys.get("openai")
+            if not key and required:
+                raise RuntimeError(
+                    "OPENAI_AUTH_MODE=api_key requires OPENAI_API_KEY in .env"
+                )
+            return key
+        key = self.engine_api_keys.get(engine)
+        if required and engine in ["google", "ollama-cloud", "openrouter", "groq"] and not key:
+            raise RuntimeError(f"No API key/token configured for engine '{engine}'.")
+        return key
+
+    def ensure_openai_auth_ready(self, interactive: bool = False):
+        if "openai" not in self.ai_engines and self.ai_engine != "openai":
+            return
+        self.get_engine_api_key("openai", interactive=interactive, required=True)
+
+    def openai_login(self) -> bool:
+        token = self.openai_oauth.login_device_flow(console=self.console)
+        if token:
+            self.engine_api_keys["openai"] = token
+            if self.ai_engine == "openai":
+                self.api_key = token
+            return True
+        return False
+
+    def openai_logout(self) -> bool:
+        ok = self.openai_oauth.logout()
+        if ok:
+            self.engine_api_keys["openai"] = ""
+            if self.ai_engine == "openai":
+                self.api_key = ""
+        return ok
 
 
     def print_vault_tip(self):
@@ -516,7 +607,8 @@ class term_agent:
             timeout = self.ai_api_timeout
 
         
-        client = OpenAI(api_key=self.api_key, timeout=timeout)
+        api_key = self.get_engine_api_key("openai", interactive=False, required=True)
+        client = OpenAI(api_key=api_key, timeout=timeout)
         try:
             if format == 'json':
                 response = client.chat.completions.create(
@@ -843,6 +935,60 @@ class term_agent:
             self.logger.error(f"Groq connection error: {e}")
             return None
 
+    def connect_to_codex_cli(self, role_system_content, prompt, model=None, timeout=None, force_json=False):
+        """Send prompt through local Codex CLI (ChatGPT Plus/Pro login)."""
+        if model is None:
+            model = self.codex_model
+        cmd = self.codex_command
+        if not shutil.which(cmd):
+            raise RuntimeError(f"Codex CLI not found: {cmd}")
+
+        full_prompt = f"{role_system_content}\n\n{prompt}"
+        json_hint = force_json or (
+            "json" in (role_system_content or "").lower()
+            or "json" in (prompt or "").lower()
+        )
+        if json_hint:
+            full_prompt += (
+                "\n\nCRITICAL OUTPUT RULE: Return ONLY valid JSON. "
+                "No markdown, no explanations, no text before/after JSON."
+            )
+        with tempfile.NamedTemporaryFile(prefix="codex-last-", suffix=".txt", delete=False) as tmp:
+            output_file = tmp.name
+        args = [
+            cmd,
+            "exec",
+            "--skip-git-repo-check",
+            "--model",
+            model,
+            "--output-last-message",
+            output_file,
+        ]
+        args.append(full_prompt)
+        try:
+            effective_timeout = timeout if timeout is not None else self.ai_api_timeout
+            proc = subprocess.run(args, capture_output=True, text=True, timeout=effective_timeout)
+            if proc.returncode != 0:
+                raise RuntimeError(f"Codex CLI failed ({proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
+            output = ""
+            try:
+                with open(output_file, "r", encoding="utf-8") as f:
+                    output = f.read().strip()
+            except Exception:
+                output = (proc.stdout or "").strip()
+            if not output:
+                raise RuntimeError("Codex CLI returned empty output")
+            return output
+        except Exception as e:
+            self.logger.error(f"Codex CLI error: {e}")
+            raise
+        finally:
+            try:
+                if output_file and os.path.exists(output_file):
+                    os.remove(output_file)
+            except Exception:
+                pass
+
     def run(self, command, remote=None):
         """
         Run a shell command locally or remotely (via SSH).
@@ -1010,10 +1156,23 @@ class term_agent:
     def check_ai_online(self):
         if self.ai_engine == "openai":
             try:
-                client = OpenAI(api_key=self.api_key)
+                api_key = self.get_engine_api_key("openai", interactive=False, required=False)
+                if not api_key:
+                    if self.openai_oauth.is_enabled():
+                        return False, "OpenAI OAuth token unavailable. Run --openai-login.", self.default_model
+                    return False, "OPENAI_API_KEY missing in .env.", self.default_model
+                client = OpenAI(api_key=api_key)
                 client.models.list()
                 return True, "OpenAI API is online.", self.default_model
             except Exception as e:
+                err_text = str(e)
+                if self.openai_oauth.is_enabled() and "api.model.read" in err_text:
+                    return (
+                        False,
+                        "ChatGPT OAuth token does not have OpenAI Platform API scopes (api.model.read). "
+                        "Use OPENAI_AUTH_MODE=api_key for OpenAI API, or add a dedicated Codex/ChatGPT backend.",
+                        self.default_model,
+                    )
                 return False, f"OpenAI API unavailable: {e}", self.default_model
         elif self.ai_engine == "ollama":
             try:
@@ -1058,6 +1217,16 @@ class term_agent:
                 return True, "OpenRouter API is online.", self.openrouter_model
             except Exception as e:
                 return False, f"OpenRouter API unavailable: {e}", self.openrouter_model
+        elif self.ai_engine == "codex-cli":
+            try:
+                if not shutil.which(self.codex_command):
+                    return False, f"Codex CLI not found: {self.codex_command}", self.codex_model
+                status = subprocess.run([self.codex_command, "login", "status"], capture_output=True, text=True, timeout=10)
+                if status.returncode == 0:
+                    return True, "Codex CLI is authenticated.", self.codex_model
+                return False, f"Codex CLI auth required: {status.stderr.strip() or status.stdout.strip()}", self.codex_model
+            except Exception as e:
+                return False, f"Codex CLI unavailable: {e}", self.codex_model
         else:
             return False, f"Unknown AI engine: {self.ai_engine}", None
 
@@ -1072,7 +1241,22 @@ class term_agent:
             try:
                 if engine == "openai":
                     try:
-                        client = OpenAI(api_key=self.engine_api_keys.get(engine, ""))
+                        api_key = self.get_engine_api_key("openai", interactive=False, required=False)
+                        if not api_key:
+                            if self.openai_oauth.is_enabled():
+                                engine_status[engine] = {
+                                    "status": "offline",
+                                    "message": "OpenAI OAuth token unavailable. Run --openai-login.",
+                                    "model": self.engine_models[engine]["model"]
+                                }
+                            else:
+                                engine_status[engine] = {
+                                    "status": "offline",
+                                    "message": "OPENAI_API_KEY missing in .env.",
+                                    "model": self.engine_models[engine]["model"]
+                                }
+                            continue
+                        client = OpenAI(api_key=api_key)
                         client.models.list()
                         engine_status[engine] = {
                             "status": "online",
@@ -1080,6 +1264,15 @@ class term_agent:
                             "model": self.engine_models[engine]["model"]
                         }
                     except Exception as e:
+                        err_text = str(e)
+                        if self.openai_oauth.is_enabled() and "api.model.read" in err_text:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": "ChatGPT OAuth token lacks OpenAI Platform scopes (api.model.read). "
+                                           "Use OPENAI_AUTH_MODE=api_key for OpenAI API.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                            continue
                         engine_status[engine] = {
                             "status": "offline",
                             "message": f"OpenAI API unavailable: {e}",
@@ -1199,6 +1392,34 @@ class term_agent:
                             "message": f"Groq API unavailable: {e}",
                             "model": self.engine_models[engine]["model"]
                         }
+                elif engine == "codex-cli":
+                    try:
+                        if not shutil.which(self.codex_command):
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": f"Codex CLI not found: {self.codex_command}",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                            continue
+                        status = subprocess.run([self.codex_command, "login", "status"], capture_output=True, text=True, timeout=10)
+                        if status.returncode == 0:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "Codex CLI is authenticated.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": f"Codex CLI auth required: {status.stderr.strip() or status.stdout.strip()}",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"Codex CLI unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
                 else:
                     engine_status[engine] = {
                         "status": "offline",
@@ -1281,6 +1502,8 @@ Usage:
   term_ag.py                    # Run locally
   term_ag.py user@host          # Run remotely via SSH
   term_ag.py -p, --prompt       # Run Prompt Creator sub-agent
+  term_ag.py --openai-login     # Start OpenAI OAuth device login
+  term_ag.py --openai-logout    # Remove saved OpenAI OAuth token
   term_ag.py --help             # Show this help message
 
 Controls:
@@ -1294,6 +1517,10 @@ Controls:
                         help='Run Prompt Creator sub-agent to create a prompt with AI assistance')
     parser.add_argument('--plan', action='store_true',
                         help='Force action plan creation for the task')
+    parser.add_argument('--openai-login', action='store_true',
+                        help='Run OpenAI OAuth device login flow and save token')
+    parser.add_argument('--openai-logout', action='store_true',
+                        help='Remove saved OpenAI OAuth token')
     mode_group = parser.add_mutually_exclusive_group()
     mode_group.add_argument('--compact', action='store_true',
                             help='Force compact pipeline (overrides AGENT_MODE/COMPACT_MODE)')
@@ -1305,6 +1532,30 @@ Controls:
     args = parser.parse_args()
     
     agent = term_agent()
+
+    if args.openai_logout:
+        removed = agent.openai_logout()
+        if removed:
+            agent.console.print("OpenAI OAuth token removed.")
+        else:
+            agent.console.print("No OpenAI OAuth token file found.")
+        return
+
+    if args.openai_login:
+        success = agent.openai_login()
+        if not success:
+            agent.console.print("OpenAI OAuth login failed.")
+            sys.exit(1)
+        agent.console.print("OpenAI OAuth login completed.")
+        return
+
+    if agent.openai_oauth.is_enabled() and ("openai" in agent.ai_engines or agent.ai_engine == "openai"):
+        try:
+            agent.ensure_openai_auth_ready(interactive=False)
+        except Exception as e:
+            agent.console.print(f"[red]{e}[/]")
+            agent.console.print("Run: python term_ag.py --openai-login")
+            sys.exit(1)
     agent.console.print(PIPBOY_ASCII)
     agent.console.print(f"{agent.print_vault_tip()}\n")
     

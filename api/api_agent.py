@@ -39,6 +39,9 @@ def _build_terminal(params: ApiRunParams) -> term_agent:
     terminal.auto_accept = True
     terminal.interactive_mode = False
     terminal.auto_explain_command = False
+    if "openai" in terminal.ai_engines or terminal.ai_engine == "openai":
+        # API mode is non-interactive: OAuth token must already exist/refresh.
+        terminal.ensure_openai_auth_ready(interactive=False)
 
     if params.host:
         if not params.ssh_password:

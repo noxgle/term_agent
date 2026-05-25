@@ -125,7 +125,10 @@ class AICommunicationHandler:
         api_keys = getattr(self.terminal, 'engine_api_keys', {})
         
         config = engine_configs.get(engine, {})
-        config['api_key'] = api_keys.get(engine)
+        if hasattr(self.terminal, 'get_engine_api_key'):
+            config['api_key'] = self.terminal.get_engine_api_key(engine, interactive=False)
+        else:
+            config['api_key'] = api_keys.get(engine)
         
         return config
 
@@ -192,6 +195,9 @@ class AICommunicationHandler:
             self.terminal.groq_model = config.get('model') or self.terminal.groq_model
             self.terminal.groq_temperature = config.get('temperature', self.terminal.groq_temperature)
             self.terminal.groq_max_tokens = config.get('max_tokens', self.terminal.groq_max_tokens)
+        elif engine == "codex-cli":
+            original_model = self.terminal.codex_model
+            self.terminal.codex_model = config.get('model') or self.terminal.codex_model
         
         try:
             # Make the actual API call
@@ -207,6 +213,15 @@ class AICommunicationHandler:
                 return self.terminal.connect_to_openrouter(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
             elif engine == "groq":
                 return self.terminal.connect_to_groq(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "codex-cli":
+                force_json = getattr(self, '_request_format_hint', 'json') == 'json'
+                return self.terminal.connect_to_codex_cli(
+                    system_prompt,
+                    user_prompt,
+                    model=config.get('model'),
+                    timeout=call_timeout,
+                    force_json=force_json,
+                )
             else:
                 raise ValueError(f"Unsupported AI engine: {engine}")
         finally:
@@ -231,6 +246,8 @@ class AICommunicationHandler:
                 elif engine == "groq":
                     self.terminal.groq_model = original_model
                     self.terminal.groq_temperature = original_temperature
+                elif engine == "codex-cli":
+                    self.terminal.codex_model = original_model
 
     def send_request(
         self,
@@ -271,6 +288,7 @@ class AICommunicationHandler:
         for attempt in range(1, range_limit + 1):
             try:
                 # Use the selected API method based on configuration
+                self._request_format_hint = request_format
                 if self.use_timeout_api:
                     self.logger.debug(f"Using timeout-enabled API call (attempt {attempt}/{max_attempts})")
                     response, used_engine = self._call_ai_api_with_timeout(system_prompt, user_prompt, max_tokens=max_tokens)
@@ -302,12 +320,26 @@ class AICommunicationHandler:
                 )
                 
                 if request_format == "json":
-                    return self._process_json_response(response)
+                    processed = self._process_json_response(response)
+                    if processed is not None:
+                        return processed
+
+                    # Codex CLI sometimes returns plain text despite JSON instructions.
+                    # Try one targeted repair pass before failing/retrying.
+                    if used_engine == "codex-cli":
+                        repaired = self._repair_json_with_engine(response, used_engine, max_tokens=max_tokens)
+                        if repaired is not None:
+                            return repaired
+                    raise ValueError("Invalid JSON response")
                 
                 return response
             
             except Exception as e:
                 self._handle_retry_error(attempt, max_attempts, e)
+
+                if not self._is_retryable_error(e):
+                    self.logger.error(f"Non-retryable AI error, aborting retries: {e}")
+                    break
                 
                 # Check if we should retry
                 should_retry = max_attempts == float('inf') or attempt < max_attempts
@@ -366,6 +398,7 @@ class AICommunicationHandler:
         for attempt in range(1, range_limit + 1):
             try:
                 # Use the selected API method based on configuration
+                self._request_format_hint = request_format
                 if self.use_timeout_api:
                     self.logger.debug(f"Using timeout-enabled API call (attempt {attempt}/{max_attempts})")
                     response, used_engine = self._call_ai_api_with_timeout(system_prompt, user_prompt, max_tokens=max_tokens)
@@ -398,12 +431,20 @@ class AICommunicationHandler:
                 
                 if request_format == "json":
                     processed_response = self._process_json_response(response)
+                    if processed_response is None and used_engine == "codex-cli":
+                        processed_response = self._repair_json_with_engine(response, used_engine, max_tokens=max_tokens)
+                    if processed_response is None:
+                        raise ValueError("Invalid JSON response")
                     return processed_response, used_engine
                 
                 return response, used_engine
             
             except Exception as e:
                 self._handle_retry_error(attempt, max_attempts, e)
+
+                if not self._is_retryable_error(e):
+                    self.logger.error(f"Non-retryable AI error, aborting retries: {e}")
+                    break
                 
                 # Check if we should retry
                 should_retry = max_attempts == float('inf') or attempt < max_attempts
@@ -421,6 +462,44 @@ class AICommunicationHandler:
                     break  # No more retries allowed
         
         return None, None
+
+    def _repair_json_with_engine(self, broken_response: str, engine: str, max_tokens: Optional[int] = None) -> Optional[str]:
+        """Ask the same engine to convert text into strict JSON-only output."""
+        try:
+            repair_system = (
+                "You are a strict JSON repair assistant. "
+                "Return only valid JSON with double-quoted keys/strings. "
+                "No markdown, no prose, no code fences."
+            )
+            repair_user = (
+                "Convert the following AI output into the expected JSON structure. "
+                "Preserve intent and values. If fields are missing, infer minimally.\n\n"
+                f"SOURCE_OUTPUT:\n{broken_response}"
+            )
+            repaired_raw = self._call_single_engine(engine, repair_system, repair_user, max_tokens=max_tokens, timeout=self.ai_api_timeout)
+            if not repaired_raw:
+                return None
+            return self._process_json_response(repaired_raw)
+        except Exception as e:
+            self.logger.debug(f"JSON repair with engine failed: {e}")
+            return None
+
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Return False for deterministic request/auth/model errors."""
+        text = str(error).lower()
+        non_retry_markers = [
+            "invalid_request_error",
+            "not supported when using codex with a chatgpt account",
+            "not inside a trusted directory",
+            "invalid json response",
+            "could not extract valid json",
+            "missing scopes",
+            "insufficient permissions",
+            "401",
+            "403",
+            "404",
+        ]
+        return not any(marker in text for marker in non_retry_markers)
 
     def _call_ai_api_with_timeout(self, system_prompt: str, user_prompt: str, max_tokens: Optional[int] = None) -> Tuple[Optional[str], Optional[str]]:
         """

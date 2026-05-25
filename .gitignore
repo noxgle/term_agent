@@ -5,6 +5,7 @@ logs/
 .venv/
 hf_cache/
 .env
+.auth/
 app.log
 test_*
 .dockerignore
