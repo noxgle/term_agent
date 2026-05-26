@@ -80,7 +80,7 @@ Welcome to Vault 3000, your Fallout-inspired Linux Terminal AI Agent! This power
 ## Features
 - **Task automation**: The agent can perform tasks and commands based on user goals.
 - **API**: The agent can be accessed via the API.
-- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud), OpenRouter (unified API for multiple models).
+- **Multiple AI engine support**: OpenAI (ChatGPT), Google Gemini, Ollama (local and cloud), llama.cpp (OpenAI-compatible API), OpenRouter (unified API for multiple models).
 - **Multi-Engine AI Routing**: Connect to multiple AI operators with two intelligent routing modes:
   - **Round-Robin**: Distributes requests evenly across configured engines for load balancing
   - **Fallback**: Automatically tries engines in sequence for high availability when providers fail
@@ -124,7 +124,7 @@ Configure multiple engines and routing mode in your `.env` file:
 
 ```ini
 # Multiple engines can be specified as comma-separated list
-AI_ENGINE=openai,ollama,google,openrouter,codex-cli
+AI_ENGINE=openai,ollama,llama-cpp,google,openrouter,codex-cli
 
 # Routing mode: round-robin or fallback
 AI_ENGINE_ROUTE=fallback
@@ -133,6 +133,8 @@ AI_ENGINE_ROUTE=fallback
 OPENAI_API_KEY=your_openai_key_here
 OLLAMA_URL=http://localhost:11434/api/generate
 OLLAMA_MODEL=llama3.2:latest
+LLAMA_CPP_URL=http://127.0.0.1:8080/v1/chat/completions
+LLAMA_CPP_MODEL=
 GOOGLE_API_KEY=your_google_key_here
 GOOGLE_MODEL=gemini-2.5-flash-preview-05-20
 OPENROUTER_API_KEY=your_openrouter_key_here
@@ -149,6 +151,7 @@ CODEX_MODEL=gpt-5.3-codex
 |--------|-------------|-------------|-------------|
 | **OpenAI** | ChatGPT models (GPT-4, GPT-3.5) | Cloud | High-quality responses, advanced reasoning |
 | **Ollama** | Local LLM models | Local | Privacy-focused, offline capability |
+| **llama-cpp** | OpenAI-compatible llama.cpp server | Local/Remote | Self-hosted models via `/v1/chat/completions` |
 | **Ollama Cloud** | Hosted Ollama models | Cloud | Managed service with local model benefits |
 | **Google Gemini** | Google's AI models | Cloud | Strong reasoning, Google ecosystem integration |
 | **OpenRouter** | Unified API for 100+ models | Cloud | Access to diverse model selection |

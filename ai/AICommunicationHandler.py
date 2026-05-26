@@ -171,6 +171,14 @@ class AICommunicationHandler:
             original_temperature = self.terminal.ollama_temperature
             self.terminal.ollama_model = config.get('model') or self.terminal.ollama_model
             self.terminal.ollama_temperature = config.get('temperature', self.terminal.ollama_temperature)
+        elif engine == "llama-cpp":
+            original_model = self.terminal.llama_cpp_model
+            original_temperature = self.terminal.llama_cpp_temperature
+            self.terminal.api_key = config.get('api_key') or self.terminal.api_key
+            self.terminal.llama_cpp_model = config.get('model') or self.terminal.llama_cpp_model
+            self.terminal.llama_cpp_temperature = config.get('temperature', self.terminal.llama_cpp_temperature)
+            self.terminal.llama_cpp_max_tokens = config.get('max_tokens', self.terminal.llama_cpp_max_tokens)
+            self.terminal.llama_cpp_url = config.get('url') or self.terminal.llama_cpp_url
         elif engine == "ollama-cloud":
             original_model = self.terminal.ollama_cloud_model
             original_temperature = self.terminal.ollama_cloud_temperature
@@ -203,6 +211,8 @@ class AICommunicationHandler:
             # Make the actual API call
             if engine == "ollama":
                 return self.terminal.connect_to_ollama(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
+            elif engine == "llama-cpp":
+                return self.terminal.connect_to_llama_cpp(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
             elif engine == "ollama-cloud":
                 return self.terminal.connect_to_ollama_cloud(system_prompt, user_prompt, max_tokens=call_max_tokens, timeout=call_timeout)
             elif engine == "google":
@@ -235,6 +245,9 @@ class AICommunicationHandler:
                 elif engine == "ollama":
                     self.terminal.ollama_model = original_model
                     self.terminal.ollama_temperature = original_temperature
+                elif engine == "llama-cpp":
+                    self.terminal.llama_cpp_model = original_model
+                    self.terminal.llama_cpp_temperature = original_temperature
                 elif engine == "ollama-cloud":
                     self.terminal.ollama_cloud_model = original_model
                     self.terminal.ollama_cloud_temperature = original_temperature

@@ -185,6 +185,7 @@ class term_agent:
             "ollama-cloud": os.getenv("OLLAMA_CLOUD_TOKEN", ""),
             "openrouter": os.getenv("OPENROUTER_API_KEY", ""),
             "ollama": None,  # Ollama doesn't require API key
+            "llama-cpp": os.getenv("LLAMA_CPP_API_KEY", ""),
             "groq": os.getenv("GROQ_API_KEY", ""),
             "codex-cli": None,
         }
@@ -209,6 +210,12 @@ class term_agent:
                 "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.5")),
                 "max_tokens": int(os.getenv("OPENAI_MAX_TOKENS", "150")),
                 "url": os.getenv("OLLAMA_URL", "http://localhost:11434/api/chat"),
+            },
+            "llama-cpp": {
+                "model": os.getenv("LLAMA_CPP_MODEL", ""),
+                "temperature": float(os.getenv("LLAMA_CPP_TEMPERATURE", "0.5")),
+                "max_tokens": int(os.getenv("LLAMA_CPP_MAX_TOKENS", "1000")),
+                "url": os.getenv("LLAMA_CPP_URL", "http://127.0.0.1:8080/v1/chat/completions"),
             },
             "ollama-cloud": {
                 "model": os.getenv("OLLAMA_CLOUD_MODEL", "gpt-oss:120b"),
@@ -267,6 +274,10 @@ class term_agent:
         self.ollama_url = self.engine_models["ollama"]["url"]
         self.ollama_model = self.engine_models["ollama"]["model"]
         self.ollama_temperature = self.engine_models["ollama"]["temperature"]
+        self.llama_cpp_url = self.engine_models["llama-cpp"]["url"]
+        self.llama_cpp_model = self.engine_models["llama-cpp"]["model"]
+        self.llama_cpp_temperature = self.engine_models["llama-cpp"]["temperature"]
+        self.llama_cpp_max_tokens = self.engine_models["llama-cpp"]["max_tokens"]
         self.ollama_cloud_model = self.engine_models["ollama-cloud"]["model"]
         self.ollama_cloud_temperature = self.engine_models["ollama-cloud"]["temperature"]
         self.gemini_model = self.engine_models["google"]["model"]
@@ -709,6 +720,74 @@ class term_agent:
         except Exception as e:
             self.logger.error(f"Ollama connection error: {e}")
             self.print_console(f"Ollama connection error: {e}")
+            return None
+
+    def _normalize_llama_cpp_chat_url(self, url: str) -> str:
+        base = (url or "").strip()
+        if not base:
+            return "http://127.0.0.1:8080/v1/chat/completions"
+        if base.endswith("/v1/chat/completions"):
+            return base
+        if base.endswith("/v1"):
+            return base + "/chat/completions"
+        if base.endswith("/"):
+            base = base[:-1]
+        return base + "/v1/chat/completions"
+
+    def connect_to_llama_cpp(self, role_system_content, prompt, model=None, max_tokens=None, temperature=None, format='json', timeout=None):
+        """Send prompt to llama.cpp OpenAI-compatible chat completions API."""
+        if model is None:
+            model = self.llama_cpp_model
+        if max_tokens is None:
+            max_tokens = self.llama_cpp_max_tokens
+        if temperature is None:
+            temperature = self.llama_cpp_temperature
+        if timeout is None:
+            timeout = self.ai_api_timeout
+
+        url = self._normalize_llama_cpp_chat_url(self.llama_cpp_url)
+        payload = {
+            "messages": [
+                {"role": "system", "content": role_system_content},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": False,
+        }
+        if model:
+            payload["model"] = model
+
+        if format == 'json':
+            payload["response_format"] = {"type": "json_object"}
+
+        headers = {"Content-Type": "application/json"}
+        api_key = self.engine_api_keys.get("llama-cpp")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code >= 400 and format == 'json':
+                # Some llama.cpp builds may not support response_format.
+                # Retry once without response_format, rely on prompt instructions for JSON.
+                payload.pop("response_format", None)
+                resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            message = data.get("choices", [{}])[0].get("message", {})
+            content = message.get("content")
+            if (content is None or content == "") and isinstance(message, dict):
+                # Some llama.cpp-compatible backends return text in reasoning_content.
+                content = message.get("reasoning_content")
+            if content is None:
+                self.logger.error(f"llama.cpp response content missing: {data}")
+                return None
+            if isinstance(content, str):
+                return content.strip()
+            return str(content)
+        except Exception as e:
+            self.logger.error(f"llama.cpp connection error: {e}")
             return None
 
     # --- Ollama Cloud Function ---
@@ -1205,6 +1284,28 @@ class term_agent:
                     return False, f"Ollama API unavailable: HTTP {resp.status_code}", self.ollama_model
             except Exception as e:
                 return False, f"Ollama API unavailable: {e}", self.ollama_model
+        elif self.ai_engine == "llama-cpp":
+            try:
+                url = self._normalize_llama_cpp_chat_url(self.llama_cpp_url)
+                headers = {"Content-Type": "application/json"}
+                api_key = self.engine_api_keys.get("llama-cpp")
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                # Lightweight chat-completions probe; many llama.cpp deployments don't expose /v1/models.
+                probe_payload = {
+                    "messages": [{"role": "user", "content": "ping"}],
+                    "max_tokens": 1,
+                    "temperature": 0,
+                    "stream": False,
+                }
+                if self.llama_cpp_model:
+                    probe_payload["model"] = self.llama_cpp_model
+                resp = requests.post(url, headers=headers, json=probe_payload, timeout=5)
+                if resp.status_code < 400:
+                    return True, "llama.cpp API is online.", self.llama_cpp_model
+                return False, f"llama.cpp API unavailable: HTTP {resp.status_code}", self.llama_cpp_model
+            except Exception as e:
+                return False, f"llama.cpp API unavailable: {e}", self.llama_cpp_model
         elif self.ai_engine == "ollama-cloud":
             try:
                 client = ollama.Client(
@@ -1320,6 +1421,40 @@ class term_agent:
                         engine_status[engine] = {
                             "status": "offline",
                             "message": f"Ollama API unavailable: {e}",
+                            "model": self.engine_models[engine]["model"]
+                        }
+                elif engine == "llama-cpp":
+                    try:
+                        url = self._normalize_llama_cpp_chat_url(self.engine_models[engine]["url"])
+                        headers = {"Content-Type": "application/json"}
+                        api_key = self.engine_api_keys.get(engine, "")
+                        if api_key:
+                            headers["Authorization"] = f"Bearer {api_key}"
+                        probe_payload = {
+                            "messages": [{"role": "user", "content": "ping"}],
+                            "max_tokens": 1,
+                            "temperature": 0,
+                            "stream": False,
+                        }
+                        if self.engine_models[engine].get("model"):
+                            probe_payload["model"] = self.engine_models[engine]["model"]
+                        resp = requests.post(url, headers=headers, json=probe_payload, timeout=5)
+                        if resp.status_code < 400:
+                            engine_status[engine] = {
+                                "status": "online",
+                                "message": "llama.cpp API is online.",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                        else:
+                            engine_status[engine] = {
+                                "status": "offline",
+                                "message": f"llama.cpp API unavailable: HTTP {resp.status_code}",
+                                "model": self.engine_models[engine]["model"]
+                            }
+                    except Exception as e:
+                        engine_status[engine] = {
+                            "status": "offline",
+                            "message": f"llama.cpp API unavailable: {e}",
                             "model": self.engine_models[engine]["model"]
                         }
                         
