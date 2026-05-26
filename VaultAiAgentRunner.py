@@ -3311,7 +3311,7 @@ class VaultAIAgentRunner:
                         continue
 
                     elif tool == "list_directory":
-                        dir_path = action_item.get("path")
+                        dir_path = action_item.get("path") or action_item.get("command_or_path")
                         recursive = action_item.get("recursive", False)
                         pattern = action_item.get("pattern")
                         explain = action_item.get("explain", "")

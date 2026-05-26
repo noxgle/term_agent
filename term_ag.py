@@ -287,6 +287,11 @@ class term_agent:
         self.ai_api_retry_backoff = float(os.getenv("AI_API_RETRY_BACKOFF", "2"))
         self.auto_accept = True if os.getenv("AUTO_ACCEPT", "false").lower() == "true" else False
         self.block_dangerous_commands = True if os.getenv("BLOCK_DANGEROUS_COMMANDS", "false").lower() == "true" else False
+        # Remote safety controls:
+        # - REMOTE_FORCE_COOPERATIVE=true: force manual approvals in SSH sessions
+        # - REMOTE_ALLOW_CTRL_A_AUTO_SWITCH=false: block one-way Ctrl+A auto switch in SSH sessions
+        self.remote_force_cooperative = True if os.getenv("REMOTE_FORCE_COOPERATIVE", "true").lower() == "true" else False
+        self.remote_allow_ctrl_a_auto_switch = True if os.getenv("REMOTE_ALLOW_CTRL_A_AUTO_SWITCH", "false").lower() == "true" else False
         # interactive_mode is the inverse of auto_accept; kept for clarity
         self.interactive_mode = not self.auto_accept
         self.auto_explain_command = True if os.getenv("AUTO_EXPLAIN_COMMAND", "false").lower() == "true" else False
@@ -943,7 +948,15 @@ class term_agent:
         if not shutil.which(cmd):
             raise RuntimeError(f"Codex CLI not found: {cmd}")
 
-        full_prompt = f"{role_system_content}\n\n{prompt}"
+        codex_guardrail = (
+            "CRITICAL EXECUTION POLICY:\n"
+            "- Do NOT execute shell commands yourself.\n"
+            "- Do NOT inspect filesystem yourself.\n"
+            "- Do NOT perform autonomous tool actions.\n"
+            "- Return only JSON tool instructions for the external orchestrator (VaultAI).\n"
+            "- If information is needed, request it via appropriate tool action in JSON."
+        )
+        full_prompt = f"{role_system_content}\n\n{codex_guardrail}\n\n{prompt}"
         json_hint = force_json or (
             "json" in (role_system_content or "").lower()
             or "json" in (prompt or "").lower()
@@ -958,16 +971,25 @@ class term_agent:
         args = [
             cmd,
             "exec",
+            "--sandbox",
+            "read-only",
             "--skip-git-repo-check",
             "--model",
             model,
             "--output-last-message",
             output_file,
+            "-",
         ]
-        args.append(full_prompt)
         try:
             effective_timeout = timeout if timeout is not None else self.ai_api_timeout
-            proc = subprocess.run(args, capture_output=True, text=True, timeout=effective_timeout)
+            self.logger.debug("Codex CLI prompt length: %d chars", len(full_prompt))
+            proc = subprocess.run(
+                args,
+                input=full_prompt,
+                capture_output=True,
+                text=True,
+                timeout=effective_timeout,
+            )
             if proc.returncode != 0:
                 raise RuntimeError(f"Codex CLI failed ({proc.returncode}): {proc.stderr.strip() or proc.stdout.strip()}")
             output = ""
@@ -1450,6 +1472,12 @@ class term_agent:
             If already automatic, do nothing (inform user).
             """
             try:
+                if self.ssh_connection and not self.remote_allow_ctrl_a_auto_switch:
+                    try:
+                        self.console.print("ValutAI> Ctrl+A auto-switch is disabled in remote mode.")
+                    except Exception:
+                        pass
+                    return
                 # Only switch to automatic mode; do not toggle back
                 if not self.auto_accept:
                     self.auto_accept = True
@@ -1585,6 +1613,14 @@ Controls:
         agent_mode = "hybrid"
         compact_mode_override = True
         hybrid_mode_override = True
+
+    # Codex CLI should behave like API planner (JSON tool actions), not execute work directly.
+    # Force normal pipeline for codex-cli unless user explicitly set --compact.
+    if agent.ai_engine == "codex-cli" and not args.compact and not args.normal:
+        agent_mode = "normal"
+        compact_mode_override = False
+        hybrid_mode_override = False
+        agent.console.print("[yellow]ValutAI> codex-cli detected: forcing normal pipeline for tool-approval flow.[/]")
     
     agent.console.print("\nWelcome, Vault Dweller, to the Vault 3000.")
     agent.console.print(f"Mode: Linux Terminal AI Agent ({agent_mode} mode)")
@@ -1676,6 +1712,9 @@ Controls:
                 host = remote
                 port = None
         agent.ssh_connection = True
+        if agent.remote_force_cooperative:
+            agent.auto_accept = False
+            agent.interactive_mode = True
         agent.remote_host = remote
         agent.user = user
         agent.host = host

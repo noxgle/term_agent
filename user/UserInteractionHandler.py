@@ -22,5 +22,26 @@ class UserInteractionHandler:
                 key_bindings=self.key_bindings,
             )
             return user_input
-        except Exception:
+        except (EOFError, KeyboardInterrupt):
+            return ""
+        except Exception as e:
+            # Do not silently swallow prompt-toolkit failures.
+            # For single-line confirmations (y/n), fallback to plain input()
+            # so manual approvals still work in CLI mode.
+            try:
+                if hasattr(self.terminal, "logger"):
+                    self.terminal.logger.warning(
+                        "Prompt toolkit input failed (multiline=%s): %s",
+                        multiline,
+                        e,
+                    )
+            except Exception:
+                pass
+
+            if not multiline:
+                try:
+                    return input(prompt_text)
+                except Exception:
+                    return ""
+
             return ""

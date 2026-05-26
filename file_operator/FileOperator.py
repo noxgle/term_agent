@@ -627,12 +627,17 @@ class FileOperator:
             
             # Parse ls -l format: permissions, links, owner, group, size, date, date, date, name
             match = re.match(
-                r'^([d\-ls]) ([rwx\-]{9})\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+(\w+\s+\d+\s+\d+:?\d*)\s+(.+)$',
+                # Example:
+                # drwxrwxrwt 30 root root 28672 May 26 12:08 /tmp
+                # -rw-r--r--  1 user user   123 May 26 12:08 /tmp/file
+                r'^([dl\-][rwxstST\-]{9})\s+(\d+)\s+(\S+)\s+(\S+)\s+(\d+)\s+([A-Za-z]{3}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4}))\s+(.+)$',
                 line
             )
             
             if match:
-                perm_char, perms, links, owner, group, size, date, name = match.groups()
+                perms_full, links, owner, group, size, date, name = match.groups()
+                perm_char = perms_full[0]
+                perms = perms_full[1:]
                 
                 # Determine type
                 entry_type = "directory" if perm_char == 'd' else "file"
