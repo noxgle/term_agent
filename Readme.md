@@ -180,6 +180,23 @@ AI_ENGINE_ROUTE=fallback
 ```
 *Tries premium models first, falls back to alternatives if unavailable.*
 
+#### llama.cpp API Setup (OpenAI-Compatible)
+```ini
+AI_ENGINE=llama-cpp
+
+# You can provide base URL, /v1, or full /v1/chat/completions
+LLAMA_CPP_URL=http://192.168.200.38:8089
+LLAMA_CPP_MODEL=
+LLAMA_CPP_TEMPERATURE=0.5
+LLAMA_CPP_MAX_TOKENS=1000
+LLAMA_CPP_API_KEY=
+```
+
+Notes:
+- `LLAMA_CPP_API_KEY` is optional and should be set only if your gateway/proxy requires Bearer auth.
+- `LLAMA_CPP_MODEL` may be left empty when the server has a default loaded model.
+- Vault 3000 normalizes `LLAMA_CPP_URL` automatically to the OpenAI-compatible chat endpoint.
+
 ### Advanced Configuration
 
 #### Per-Engine Settings
